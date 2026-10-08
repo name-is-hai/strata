@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Write the current theme color into the browser policy directories
 # strata:args=<rrggbb>

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Install a supported browser
 # strata:args=<chromium|chrome|brave|brave-origin|edge|firefox|zen>

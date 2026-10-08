@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Open the screen-recording choices or stop an active recording
 # strata:hidden=true

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Check if a toggle is enabled (flag file exists)
 # strata:args=<flag-name>

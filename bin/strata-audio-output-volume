@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Adjust output volume and show the Strata OSD
 # strata:args=<raise|lower|mute-toggle|+N|-N>

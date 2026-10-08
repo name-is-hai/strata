@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Toggle idle behavior so the system either idles normally or stays awake
 # strata:group=toggle

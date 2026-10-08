@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Launch a floating terminal with the Strata presentation wrapper
 # strata:args=<command>

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Show the weather status notification after Strata has started.
 # To put it into use, remove .sample from this file name.

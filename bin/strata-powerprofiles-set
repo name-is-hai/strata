@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set and remember the power profile for AC or battery use
 # strata:args=[autodetect|ac|battery] [power-saver|balanced|performance]

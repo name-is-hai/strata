@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Native messaging host: copy a Chromium tab URL to the clipboard
 # strata:hidden=true

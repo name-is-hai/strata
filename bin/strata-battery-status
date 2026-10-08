@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Returns a formatted battery status string with percentage and power draw/charge.
 # strata:args=[--shell]

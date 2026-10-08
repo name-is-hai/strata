@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Restart the Strata shell
 # strata:examples=strata restart shell

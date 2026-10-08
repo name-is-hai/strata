@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Sync current Strata theme environment into tmux
 # strata:hidden=true

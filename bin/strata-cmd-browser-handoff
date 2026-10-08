@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Hand a command line to the running Chromium-based browser
 # strata:args=<browser-command> [browser-args...]

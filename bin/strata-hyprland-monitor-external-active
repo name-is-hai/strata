@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Returns true when Hyprland has an active external monitor
 # strata:hidden=true

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Scale text everywhere — strata shell, GTK apps, and terminals
 # strata:args=[size|reset]

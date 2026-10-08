@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Returns true when the laptop lid is closed
 # strata:hidden=true

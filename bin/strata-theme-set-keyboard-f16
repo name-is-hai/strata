@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Apply the current theme keyboard color to Framework Laptop 16 keyboards
 # strata:hidden=true

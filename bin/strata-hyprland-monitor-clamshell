@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Apply clamshell display state to Hyprland monitors
 # strata:hidden=true

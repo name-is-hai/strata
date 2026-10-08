@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Launch the default editor selected via Strata defaults.
 # strata:args=[--inline] <path>

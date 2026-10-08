@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Returns a weather condition icon, adjusted for live sunrise and sunset.
 

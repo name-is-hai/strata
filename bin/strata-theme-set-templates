@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Generate themed config files from Strata templates
 # strata:hidden=true

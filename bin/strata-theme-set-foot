@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Apply current Strata theme colors to running Foot terminals
 # strata:hidden=true

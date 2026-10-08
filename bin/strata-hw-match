@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Match against the computer's DMI product name or product family (case-insensitive).
 # strata:args=<pattern>

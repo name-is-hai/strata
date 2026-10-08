@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Launch the Strata shell with its log kept in the journal
 # strata:hidden=true

@@ -1,4 +1,4 @@
-#!/bin/bash -p
+#!/usr/bin/env bash -p
 
 # Preserve sudo options while preventing authentication from refreshing the
 # credential cache. Timestamp maintenance and informational modes stand alone.

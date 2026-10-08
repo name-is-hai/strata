@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Install VS Code and configure Strata defaults for secrets, updates, and theme
 

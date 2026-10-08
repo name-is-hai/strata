@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Restart audio services and recover stuck USB audio devices.
 # strata:examples=strata restart audio | strata-restart-audio

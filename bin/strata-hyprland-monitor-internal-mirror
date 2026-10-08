@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Enable, disable, toggle, or recover mirroring the internal display to an external monitor
 # strata:args=<on|off|toggle|recover>

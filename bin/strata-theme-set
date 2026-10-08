@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Apply an Strata theme
 # strata:args=<theme-name>

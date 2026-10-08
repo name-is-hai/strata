@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set and show lightweight desktop notification reminders
 # strata:args=[-i|--interactive] | <minutes> [message] | show [-j|--json] | clear

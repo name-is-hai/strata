@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Install one of the approved terminals and set it as the default for Strata (Super + Return etc).
 # strata:args=<alacritty|foot|ghostty|kitty>

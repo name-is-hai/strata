@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=List available monospace fonts
 # strata:examples=strata font list | strata font set "CaskaydiaMono Nerd Font"

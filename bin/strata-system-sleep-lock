@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Lock before suspend and wait for the session lock to become secure
 # strata:group=system

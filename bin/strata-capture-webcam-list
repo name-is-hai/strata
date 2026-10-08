@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=List webcam devices that support video capture
 # strata:hidden=true

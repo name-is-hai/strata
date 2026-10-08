@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Launch the default browser as determined by xdg-settings.
 # strata:args=[url]

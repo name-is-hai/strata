@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Display a "Done!" or "Failed!" message and wait for user to press any key.
 # strata:args=[exit-code]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Launch a TUI or focus an existing terminal window for it
 # strata:args=[--app-id=<app-id>] <command> [args...]

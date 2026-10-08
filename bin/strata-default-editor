@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set the default editor used by strata-launch-editor
 # strata:args=[code|cursor|zed|sublime_text|helix|vim|emacs|nvim]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Report whether Strata is recording or the desktop is being shared
 # strata:hidden=true

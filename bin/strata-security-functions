@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:hidden=true
 # strata:summary=Provide internal helpers for command-scoped sudo authentication

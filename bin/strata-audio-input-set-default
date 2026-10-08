@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set the default audio input and move active streams
 # strata:args=<node-id> <source-name>

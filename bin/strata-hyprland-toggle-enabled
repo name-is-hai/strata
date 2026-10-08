@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Check if a Hyprland toggle is currently enabled.
 # strata:args=<flag-name>

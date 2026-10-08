@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Install the native messaging host for the Copy URL Chromium extension
 

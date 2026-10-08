@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Print PulseAudio sink availability for the shell
 # strata:group=audio

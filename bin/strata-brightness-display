@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Show or adjust brightness on the focused display.
 # strata:args=[--no-osd] [--monitor name] [+N%|N%-|N%|off|on]

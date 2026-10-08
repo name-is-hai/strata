@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Print the most likely display backlight device.
 # strata:examples=strata-hw-display

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Show or pin the Wi-Fi band for the active connection
 # strata:group=network

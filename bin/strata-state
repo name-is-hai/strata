@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Manage persistent state files for Strata toggles and settings.
 # strata:args=<set|clear> <state-name-or-pattern>

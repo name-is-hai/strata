@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Send an IPC call to the running Strata shell
 # strata:args=[-q] <target> <method> [args...]

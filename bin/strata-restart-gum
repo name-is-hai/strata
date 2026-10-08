@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Export the current theme's gum styling into the environment
 # strata:hidden=true

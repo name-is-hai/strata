@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set the current background image or video
 # strata:args=<path-to-media>

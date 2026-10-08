@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Show or adjust Apple Studio Display and Apple XDR Display brightness using asdcontrol.
 # strata:args=[--no-osd] [+N%|N%-|N%]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Generate a Wi-Fi QR matrix for the shell
 # strata:group=network

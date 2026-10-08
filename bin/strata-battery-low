@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Send the low battery warning notification and run battery-low hooks.
 # strata:args=<percentage>

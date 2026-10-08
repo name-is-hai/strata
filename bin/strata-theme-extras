@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=List the user-installed themes that came from a git clone
 # strata:examples=strata theme extras

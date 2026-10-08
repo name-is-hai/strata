@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Sync Strata theme to VS Code, VSCodium, and Cursor
 # strata:hidden=true

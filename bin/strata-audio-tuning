@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Manage the speaker tuning for this laptop
 # strata:args=<on|off|status|match|fronted-sink> [--force]

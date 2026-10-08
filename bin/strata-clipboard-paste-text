@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Copy text to the clipboard and type or paste it
 # strata:group=clipboard

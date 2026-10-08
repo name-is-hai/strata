@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Shut down after closing application windows
 # strata:examples=strata shutdown | strata system shutdown

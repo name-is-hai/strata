@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Print OSC sequences for an Strata color theme
 # strata:hidden=true

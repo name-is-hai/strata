@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This hook is called with the current battery percentage when the low battery
 # notification is sent. To put it into use, remove .sample from this file name.

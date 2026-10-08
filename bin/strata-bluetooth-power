@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Turn Bluetooth on or off, remembered across reboots
 # strata:group=bluetooth

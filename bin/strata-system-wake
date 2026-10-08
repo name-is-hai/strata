@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Wake displays and restore brightness after idle
 # strata:group=system

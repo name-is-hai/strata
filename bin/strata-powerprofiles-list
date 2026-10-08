@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Returns a list of all the available power profiles on the system.
 # strata:args=[--active-state]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Control a Bluetooth device
 # strata:group=bluetooth

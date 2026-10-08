@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Print the sink whose volume and mute a given output really uses
 # strata:args=[sink-name]

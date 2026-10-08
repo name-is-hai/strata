@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Toggle nightlight screen temperature
 # strata:args=[--status]

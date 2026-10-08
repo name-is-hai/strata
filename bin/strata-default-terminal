@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set the default terminal used by xdg-terminal-exec
 # strata:args=[alacritty|foot|ghostty|kitty]

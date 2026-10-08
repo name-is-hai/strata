@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Shared helpers for editing ~/.config/strata/shell.json (source this, don't run it).
 # strata:hidden=true

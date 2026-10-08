@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Toggle bar visibility without killing the Strata shell
 # strata:args=[toggle|on|off]

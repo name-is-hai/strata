@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Install Emacs with Strata theme and font integration via the strata-emacs AUR package
 

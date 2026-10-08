@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Control the Strata menu (toggle / summon / close / refresh)
 # strata:args=[toggle|summon|close|refresh|ping] [route]

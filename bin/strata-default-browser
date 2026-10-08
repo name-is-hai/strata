@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Set the default browser for Strata and XDG handlers
 # strata:args=[chromium|chrome|brave|brave-origin|edge|firefox|zen]

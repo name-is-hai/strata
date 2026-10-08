@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Show or configure the system DNS provider
 # strata:args=[Cloudflare|Google|DHCP|Custom]

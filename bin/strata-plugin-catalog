@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # strata:summary=Emit every first-party and user plugin manifest as JSON
 # strata:group=plugin
