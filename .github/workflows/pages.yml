@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate DNF metadata
         run: |
-          podman run --rm --userns keep-id -v "$PWD:/repo:Z" -w /repo fedora:44 \
+          podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo fedora:44 \
             bash -lc 'dnf install -y createrepo_c && scripts/refresh-repodata.sh'
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
