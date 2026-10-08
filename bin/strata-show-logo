@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# strata:summary=Display the Strata logo in the terminal using green color.
+
+clear
+echo -e "\033[32m"
+cat <$STRATA_PATH/logo.txt
+echo -e "\033[0m"
+echo

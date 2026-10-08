@@ -1,0 +1,6 @@
+#!/bin/bash
+# strata:summary=Launch emojis
+# strata:group=menu
+# strata:examples=strata menu emoji
+
+strata-shell shell toggle strata.emojis

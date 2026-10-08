@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# strata:summary=Apply the current theme keyboard color to supported keyboards
+# strata:hidden=true
+
+strata-theme-set-keyboard-asus-rog
+strata-theme-set-keyboard-f16

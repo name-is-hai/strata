@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# strata:summary=Check if a Hyprland toggle is currently enabled.
+# strata:args=<flag-name>
+
+[[ -f "$HOME/.local/state/strata/toggles/hypr/$1.lua" ]]

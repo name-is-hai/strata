@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# strata:summary=Reload btop configuration (used by the Strata theme switching).
+
+pkill -SIGUSR2 btop

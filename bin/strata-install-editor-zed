@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# strata:summary=Install Zed Editor and configure it with the current Strata theme
+
+echo "Installing Zed Editor..."
+strata-pkg-add zed omazed
+
+# Apply Strata theme to Zed
+omazed setup
+
+setsid uwsm-app -- gtk-launch dev.zed.Zed >/dev/null 2>&1 &

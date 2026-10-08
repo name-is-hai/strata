@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# strata:summary=Open the Strata background switcher
+# strata:group=theme
+# strata:name=bg-switcher
+# strata:aliases=strata background
+
+theme_name=$(cat "$HOME/.local/state/strata/current/theme.name" 2>/dev/null)
+current_background=$(readlink -f "$HOME/.local/state/strata/current/background" 2>/dev/null)
+
+strata-menu-images \
+  --selected "$current_background" \
+  "$HOME/.local/state/strata/current/theme/backgrounds" \
+  "$HOME/.config/strata/backgrounds/$theme_name"

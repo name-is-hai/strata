@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.polkit",
+  "name": "Polkit Agent",
+  "version": "1.0.0",
+  "author": "Strata",
+  "description": "Theme-aware authentication dialog for privileged actions.",
+  "strata": {
+    "capabilities": [
+      "authentication"
+    ]
+  },
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "PolkitAgent.qml"
+  }
+}

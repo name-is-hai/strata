@@ -1,0 +1,6 @@
+#!/bin/bash
+# strata:summary=Launch the clipboard manager
+# strata:group=menu
+# strata:examples=strata menu clipboard
+
+strata-shell shell toggle strata.clipboard

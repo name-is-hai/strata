@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# strata:summary=Cache background switcher thumbnails for the current theme
+
+theme_name=$(cat "$HOME/.local/state/strata/current/theme.name" 2>/dev/null)
+
+strata-menu-images \
+  --cache-only \
+  "$HOME/.local/state/strata/current/theme/backgrounds" \
+  "$HOME/.config/strata/backgrounds/$theme_name"

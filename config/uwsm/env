@@ -1,0 +1,13 @@
+export STRATA_PATH=/usr/share/strata
+export PATH=/usr/share/strata/bin:$PATH
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_DESKTOP=Hyprland
+export XDG_SESSION_TYPE=wayland
+export MOZ_ENABLE_WAYLAND=1
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+export QT_QPA_PLATFORM=wayland
+export SDL_VIDEODRIVER=wayland
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export SDL_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx

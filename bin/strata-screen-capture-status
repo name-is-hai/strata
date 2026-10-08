@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# strata:summary=Report whether Strata is recording or the desktop is being shared
+# strata:hidden=true
+
+if pgrep --quiet -f '^gpu-screen-recorder' || pgrep --quiet -x wf-recorder; then
+  echo recording
+  exit 0
+fi
+
+# xdg-desktop-portal exposes desktop shares to applications as PipeWire video
+# capture streams. PipeWire documents media.role=Screen for both recording and
+# sharing; recording was handled above so this remaining state is a share.
+if command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  if pw-dump 2>/dev/null | jq -e '
+    any(.[];
+      .type == "PipeWire:Interface:Node"
+      and (.info.props["media.role"]? == "Screen")
+      and ((.info.props["media.class"]? // "") | test("^(Stream/Input/Video|Video/Source)$"))
+    )
+  ' >/dev/null 2>&1; then
+    echo sharing
+    exit 0
+  fi
+fi
+
+echo idle

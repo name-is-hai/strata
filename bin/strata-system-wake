@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# strata:summary=Wake displays and restore brightness after idle
+# strata:group=system
+# strata:name=wake
+# strata:examples=strata system wake
+
+strata-brightness-display on
+strata-brightness-keyboard restore
+strata-hyprland-monitor-clamshell >/dev/null 2>&1 || true

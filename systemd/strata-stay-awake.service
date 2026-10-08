@@ -1,0 +1,9 @@
+[Unit]
+Description=Strata Stay Awake inhibitor
+
+[Service]
+Type=simple
+# hypridle respects desktop idle inhibitors and logind honours this blocker
+# before a direct systemctl suspend.  Keeping this process alive therefore
+# prevents lock, display-off, and suspend until the user turns Stay Awake off.
+ExecStart=/usr/bin/systemd-inhibit --what=idle:sleep --mode=block --who=Strata --why=Stay Awake /usr/bin/sleep infinity

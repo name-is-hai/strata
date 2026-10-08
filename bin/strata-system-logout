@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# strata:summary=Log out after closing application windows
+# strata:examples=strata logout | strata system logout
+# strata:aliases=strata logout
+
+nohup bash -c "sleep 2 && uwsm stop" >/dev/null 2>&1 &
+
+strata-osd -i logout -m "Logging out" -d 5000
+
+# Now close all windows
+strata-hyprland-window-close-all
+sleep 1 # Allow apps like Chrome to shutdown correctly

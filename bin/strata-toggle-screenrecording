@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# strata:summary=Open the screen-recording choices or stop an active recording
+# strata:hidden=true
+
+case "$(strata-screen-capture-status)" in
+  recording) exec strata-capture-screenrecording --stop-recording ;;
+  *) exec strata-menu summon trigger.capture.screenrecord ;;
+esac

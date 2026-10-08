@@ -1,1 +1,7 @@
 .DS_Store
+BUILD/
+BUILDROOT/
+RPMS/
+SOURCES/
+SRPMS/
+results/

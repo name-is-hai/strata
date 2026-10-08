@@ -1,0 +1,103 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+source_root=/usr/share/strata/user-config
+home_source=/usr/share/strata/user-home
+shell_source=/usr/share/strata/shell
+force=0
+dry_run=0
+
+for argument in "$@"; do
+    case $argument in
+        --force) force=1 ;;
+        --dry-run) dry_run=1 ;;
+        *)
+            echo "Usage: strata-apply-config [--force] [--dry-run]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ ! -d $source_root ]]; then
+    echo "Strata configuration is not installed at $source_root" >&2
+    exit 1
+fi
+
+timestamp=$(date +%Y%m%d-%H%M%S)
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+
+run() {
+    if (( dry_run )); then
+        printf 'Would run:'
+        printf ' %q' "$@"
+        printf '\n'
+    else
+        "$@"
+    fi
+}
+
+while IFS= read -r -d '' source_file; do
+    relative=${source_file#"$source_root"/}
+    destination=$config_home/$relative
+    run install -d "$(dirname "$destination")"
+
+    if [[ -e $destination || -L $destination ]]; then
+        if (( ! force )); then
+            printf 'Keeping existing %s\n' "$destination"
+            continue
+        fi
+        run cp -a -- "$destination" "$destination.backup-$timestamp"
+    fi
+
+    run install -m 0644 "$source_file" "$destination"
+    (( dry_run )) || printf 'Installed %s\n' "$destination"
+done < <(find "$source_root" -type f -print0 | sort -z)
+
+if [[ -d $home_source ]]; then
+    while IFS= read -r -d '' source_file; do
+        relative=${source_file#"$home_source"/}
+        destination=$HOME/$relative
+        if [[ -e $destination || -L $destination ]]; then
+            if (( ! force )); then
+                printf 'Keeping existing %s\n' "$destination"
+                continue
+            fi
+            run cp -a -- "$destination" "$destination.backup-$timestamp"
+        fi
+        run install -d "$(dirname "$destination")"
+        run install -m 0644 "$source_file" "$destination"
+        (( dry_run )) || printf 'Installed %s\n' "$destination"
+    done < <(find "$home_source" -type f -print0 | sort -z)
+fi
+
+shell_destination=$config_home/quickshell/strata
+legacy_shell=$config_home/quickshell/my-distro
+
+# The former package owned this exact symlink. It contains no user data, so it
+# is safe to retire when moving to the Strata namespace. A real directory or
+# an unknown symlink is always left untouched.
+if [[ ! -e $shell_destination && ! -L $shell_destination && -L $legacy_shell ]] && \
+   [[ $(readlink -f -- "$legacy_shell") == /usr/share/quickshell/my-distro ]]; then
+    run rm -- "$legacy_shell"
+    (( dry_run )) || printf 'Migrated packaged shell link from %s\n' "$legacy_shell"
+fi
+
+run install -d "$(dirname "$shell_destination")"
+if [[ -e $shell_destination || -L $shell_destination ]]; then
+    if (( force )); then
+        run cp -a -- "$shell_destination" "$shell_destination.backup-$timestamp"
+        run rm -rf -- "$shell_destination"
+    elif [[ $(readlink -f -- "$shell_destination") != "$shell_source" ]]; then
+        printf 'Keeping existing %s\n' "$shell_destination"
+        shell_destination=
+    fi
+fi
+
+if [[ -n $shell_destination && ! -e $shell_destination && ! -L $shell_destination ]]; then
+    run ln -s "$shell_source" "$shell_destination"
+    (( dry_run )) || printf 'Linked %s\n' "$shell_destination"
+fi
+
+echo "Strata configuration is ready."
+echo "If you are upgrading from My Distro, add STRATA_PATH and PATH from"
+echo "$source_root/uwsm/env to your existing ~/.config/uwsm/env, then log out and back in."

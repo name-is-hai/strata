@@ -1,0 +1,416 @@
+#!/bin/bash
+
+# strata:summary=Start or stop screen recording
+# strata:group=capture
+# strata:args=[--fullscreen] [--with-desktop-audio] [--with-microphone-audio] [--with-webcam] [--webcam-device=<device>] [--webcam-size=<small|medium|large>] [--resolution=<size>] [--stop-recording]
+# strata:examples=strata screenrecord | strata capture screenrecording --with-desktop-audio
+# strata:aliases=strata screenrecord
+#
+# Env: STRATA_SCREENRECORD_USE_PORTAL=true skips the built-in slurp picker and
+# uses gpu-screen-recorder's xdg-desktop-portal capture backend instead. The
+# portal backend was originally added (PR #3401) for HDR-aware capture, support
+# for monitors driven by external GPUs, and window capture — enable it if any
+# of those matter to you. Off by default because the portal path can fail EGL
+# DMA-BUF modifier import on some configurations, leaving recording unable to
+# start.
+#
+# Env: STRATA_SCREENRECORD_DEBUG=true appends gpu-screen-recorder's stderr (and
+# the picker target it was launched with) to
+# $XDG_RUNTIME_DIR/strata-screenrecord.log so users can attach a log when
+# reporting capture failures.
+
+[[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
+OUTPUT_DIR="${STRATA_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}"
+
+if [[ ! -d $OUTPUT_DIR ]]; then
+  strata-notification-send -u critical -t 3000 "Screen recording directory does not exist: $OUTPUT_DIR"
+  exit 1
+fi
+
+DESKTOP_AUDIO="false"
+MICROPHONE_AUDIO="false"
+WEBCAM="false"
+WEBCAM_DEVICE=""
+WEBCAM_SIZE="medium"
+RESOLUTION=""
+FULLSCREEN="false"
+STOP_RECORDING="false"
+# Both of these live in the per-user runtime directory, which is 0700. What
+# RECORDING_FILE holds is read back on stop and used as a path -- ffmpeg writes
+# beside it, `mv` replaces it, and `rm -f` deletes its preview -- so a name in
+# world-writable /tmp is a name any other local account can create first and
+# then point wherever it likes. The debug log carries the recorder's stderr and
+# the picked geometry, which is nobody else's business either. Fall back to
+# the state directory when there is no session runtime dir -- :-/tmp would put
+# both files back at the fixed names this comment describes.
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/strata}"
+RECORDING_FILE="$RUNTIME_DIR/strata-screenrecord-filename"
+REGION_FILE="$RUNTIME_DIR/strata-screenrecord-region"
+LOG_FILE=$([[ ${STRATA_SCREENRECORD_DEBUG:-false} == "true" ]] && echo "$RUNTIME_DIR/strata-screenrecord.log" || echo "/dev/null")
+
+for arg in "$@"; do
+  case "$arg" in
+  --with-desktop-audio) DESKTOP_AUDIO="true" ;;
+  --with-microphone-audio) MICROPHONE_AUDIO="true" ;;
+  --with-webcam) WEBCAM="true" ;;
+  --webcam-device=*) WEBCAM_DEVICE="${arg#*=}" ;;
+  --webcam-size=*) WEBCAM_SIZE="${arg#*=}" ;;
+  --resolution=*) RESOLUTION="${arg#*=}" ;;
+  --fullscreen) FULLSCREEN="true" ;;
+  --stop-recording) STOP_RECORDING="true" ;;
+  esac
+done
+
+case $WEBCAM_SIZE in
+small | medium | large) ;;
+*)
+  echo "Invalid webcam size: $WEBCAM_SIZE (expected small, medium, or large)" >&2
+  exit 1
+  ;;
+esac
+
+# Fedora ships wf-recorder but not gpu-screen-recorder. Preserve the canonical
+# command and its toggle behavior with a minimal Fedora backend instead of
+# keeping a second, unrelated screen-recording entry point.
+fallback_wf_recorder() {
+  local pid_file="$RUNTIME_DIR/strata-screenrecord-wf.pid"
+  local output_file="$RUNTIME_DIR/strata-screenrecord-wf.output"
+  local mic_pid_file="$RUNTIME_DIR/strata-screenrecord-mic.pid"
+  local mic_file="$RUNTIME_DIR/strata-screenrecord-mic.wav"
+  local pid=""
+
+  if [[ -r $pid_file ]]; then
+    read -r pid <"$pid_file" || true
+  fi
+
+  if [[ $STOP_RECORDING == "true" || -n $pid ]]; then
+    if [[ $pid =~ ^[0-9]+$ ]] && [[ $(ps -p "$pid" -o comm= 2>/dev/null) == "wf-recorder" ]]; then
+      kill -INT "$pid" 2>/dev/null || true
+      for _ in {1..50}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+      done
+    fi
+
+    local mic_pid=""
+    [[ -r $mic_pid_file ]] && read -r mic_pid <"$mic_pid_file" || true
+    if [[ $mic_pid =~ ^[0-9]+$ ]] && kill -0 "$mic_pid" 2>/dev/null; then
+      kill -INT "$mic_pid" 2>/dev/null || true
+      for _ in {1..30}; do
+        kill -0 "$mic_pid" 2>/dev/null || break
+        sleep 0.1
+      done
+    fi
+
+    local saved=""
+    [[ -r $output_file ]] && read -r saved <"$output_file" || true
+    if [[ -n $saved && -s $saved && -s $mic_file ]]; then
+      local mixed="${saved%.mp4}-mixed.mp4"
+      if ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "$saved" 2>/dev/null | grep -q audio; then
+        ffmpeg -y -i "$saved" -i "$mic_file" \
+          -filter_complex '[0:a][1:a]amix=inputs=2:duration=first:normalize=0[a]' \
+          -map 0:v -map '[a]' -c:v copy -c:a aac "$mixed" -loglevel error && mv "$mixed" "$saved"
+      else
+        ffmpeg -y -i "$saved" -i "$mic_file" \
+          -map 0:v -map 1:a -c:v copy -c:a aac -shortest "$mixed" -loglevel error && mv "$mixed" "$saved"
+      fi
+      rm -f "$mixed"
+    fi
+    rm -f "$pid_file" "$output_file" "$mic_pid_file" "$mic_file"
+    [[ -z $saved ]] || strata-notification-send "Screen recording saved" "$saved"
+    toggle_screenrecording_indicator
+    return 0
+  fi
+
+  if [[ $WEBCAM == "true" || -n $RESOLUTION ]]; then
+    strata-notification-send -u critical "Unsupported recording option" \
+      "Webcam and resolution overrides require gpu-screen-recorder."
+    return 2
+  fi
+
+  mkdir -p "$RUNTIME_DIR"
+  local filename="$OUTPUT_DIR/Screenrec_$(date '+%Y-%m-%d_%H-%M-%S').mp4"
+  local recorder_args=(-f "$filename")
+
+  if [[ $FULLSCREEN == "true" ]]; then
+    recorder_args=(-o "$(strata-hyprland-monitor-focused)" "${recorder_args[@]}")
+  else
+    local target geometry
+    target=$(strata-capture-region smart --match-monitor) || return 0
+    case "$target" in
+      monitor:*) recorder_args=(-o "${target#monitor:}" "${recorder_args[@]}") ;;
+      *)
+        [[ $target =~ ^-?[0-9]+,-?[0-9]+[[:space:]][0-9]+x[0-9]+$ ]] || return 1
+        recorder_args=(-g "$target" "${recorder_args[@]}")
+        ;;
+    esac
+  fi
+  [[ $DESKTOP_AUDIO == "false" ]] || recorder_args=(--audio "${recorder_args[@]}")
+
+  if [[ $MICROPHONE_AUDIO == "true" ]]; then
+    rm -f "$mic_file" "$mic_pid_file"
+    pw-record --rate=48000 --channels=1 "$mic_file" >/dev/null 2>&1 &
+    local mic_pid=$!
+    sleep 0.2
+    if ! kill -0 "$mic_pid" 2>/dev/null; then
+      rm -f "$mic_file"
+      strata-notification-send -u critical "Screen recording error" "Could not start microphone capture."
+      return 2
+    fi
+    printf '%s\n' "$mic_pid" >"$mic_pid_file"
+  fi
+
+  wf-recorder "${recorder_args[@]}" >/dev/null 2>&1 &
+  pid=$!
+  sleep 0.2
+  if ! kill -0 "$pid" 2>/dev/null; then
+    if [[ -r $mic_pid_file ]]; then
+      local failed_mic_pid=""
+      read -r failed_mic_pid <"$mic_pid_file" || true
+      [[ $failed_mic_pid =~ ^[0-9]+$ ]] && kill -INT "$failed_mic_pid" 2>/dev/null || true
+    fi
+    rm -f "$mic_pid_file" "$mic_file"
+    strata-notification-send -u critical "Screen recording error" "Could not start wf-recorder."
+    return 2
+  fi
+  printf '%s\n' "$pid" >"$pid_file"
+  printf '%s\n' "$filename" >"$output_file"
+  toggle_screenrecording_indicator
+  strata-notification-send "Screen recording started" "Run the shortcut again to stop."
+}
+
+if ! command -v gpu-screen-recorder >/dev/null 2>&1; then
+  fallback_wf_recorder
+  exit $?
+fi
+
+start_webcam_overlay() {
+  cleanup_webcam
+
+  # Auto-detect first available webcam if none specified
+  if [[ -z $WEBCAM_DEVICE ]]; then
+    WEBCAM_DEVICE=$(strata-capture-webcam-list | sed -n '1s/[[:space:]].*//p')
+    if [[ -z $WEBCAM_DEVICE ]]; then
+      strata-notification-send -u critical -t 3000 "No webcam devices found"
+      return 1
+    fi
+  fi
+
+  # Try preferred 16:9 resolutions in order, use first available
+  local preferred_resolutions=("640x360" "1280x720" "1920x1080")
+  local capture_options="framerate=30"
+  local available_formats=$(v4l2-ctl --list-formats-ext -d "$WEBCAM_DEVICE" 2>/dev/null)
+
+  for resolution in "${preferred_resolutions[@]}"; do
+    if echo "$available_formats" | grep -q "$resolution"; then
+      capture_options="video_size=$resolution,$capture_options"
+      break
+    fi
+  done
+
+  mpv "av://v4l2:$WEBCAM_DEVICE" \
+    --profile=low-latency --untimed --no-cache \
+    --demuxer-lavf-o="$capture_options" \
+    '--vf=lavfi=[crop=ih*8/9:ih]' \
+    --title="WebcamOverlay" --wayland-app-id="WebcamOverlay-$WEBCAM_SIZE" \
+    --no-border --no-audio --no-osc --osd-level=0 \
+    --really-quiet &>/dev/null &
+
+  # The move has to settle before gpu-screen-recorder starts, or the camera is
+  # recorded sliding into its corner. Waiting for the map is what the blind
+  # second was partly guessing at, so the remainder is trimmed to hold the
+  # pre-capture delay where it was: starting later costs the first words spoken.
+  local waited=0
+  while ((waited < 40)) && ! hyprctl clients -j | jq -e 'any(.[]; .title == "WebcamOverlay")' >/dev/null 2>&1; do
+    sleep 0.05
+    ((waited++))
+  done
+
+  [[ ${1:-} == region:* ]] && echo "${1#region:}" >"$REGION_FILE"
+  strata-capture-webcam-resize "$WEBCAM_SIZE"
+
+  sleep 0.6
+}
+
+cleanup_webcam() {
+  pkill -f "WebcamOverlay" 2>/dev/null
+  rm -f "$REGION_FILE"
+}
+
+default_resolution() {
+  local width height
+  read -r width height < <(hyprctl monitors -j | jq -r '.[] | select(.focused == true) | "\(.width) \(.height)"')
+  if ((width > 3840 || height > 2160)); then
+    echo "3840x2160"
+  else
+    echo "0x0"
+  fi
+}
+
+# Echoes "monitor:NAME" when the selection matches an entire monitor (prefer
+# -w <monitor> over a region capture — same kms backend, but no scaling math
+# and full native res), otherwise "region:WxH+X+Y". Returns non-zero if the
+# user cancelled the picker.
+select_capture_target() {
+  local target
+  target=$(strata-capture-region smart --match-monitor) || return 1
+
+  if [[ $target == monitor:* ]]; then
+    echo "$target"
+    return
+  fi
+
+  [[ $target =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || return 1
+
+  # gpu-screen-recorder wants region geometry in the compositor's logical
+  # coordinate space — same space slurp returns — so pass the values through
+  # untouched. (gsr scales to physical pixels itself based on the monitor.)
+  echo "region:${BASH_REMATCH[3]}x${BASH_REMATCH[4]}+${BASH_REMATCH[1]}+${BASH_REMATCH[2]}"
+}
+
+start_screenrecording() {
+  mkdir -p "$RUNTIME_DIR" || return 1
+  # XDG_STATE_HOME may be outside a private home; protect existing fallbacks too.
+  if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
+    chmod 700 "$RUNTIME_DIR" || return 1
+  fi
+  local capture_args=()
+  local target
+
+  # Opt-in path for HDR, external-GPU monitors, and window capture (all things
+  # the portal backend supports and the kms backend doesn't). Default flow uses
+  # slurp + the kms backend, which avoids the EGL DMA-BUF modifier import
+  # failures the portal path can hit on some configurations.
+  if [[ $FULLSCREEN == "true" ]]; then
+    target="monitor:$(strata-hyprland-monitor-focused)"
+    capture_args=(-w "${target#monitor:}" -s "${RESOLUTION:-$(default_resolution)}")
+  elif [[ ${STRATA_SCREENRECORD_USE_PORTAL:-false} == "true" ]]; then
+    target="portal"
+    capture_args=(-w portal -s "${RESOLUTION:-$(default_resolution)}")
+  else
+    target=$(select_capture_target) || return 1
+
+    case $target in
+    monitor:*)
+      capture_args=(-w "${target#monitor:}" -s "${RESOLUTION:-$(default_resolution)}")
+      ;;
+    region:*)
+      capture_args=(-w "${target#region:}")
+      [[ -n $RESOLUTION ]] && capture_args+=(-s "$RESOLUTION")
+      ;;
+    esac
+  fi
+
+  [[ $WEBCAM == "true" ]] && start_webcam_overlay "$target"
+
+  local filename="$OUTPUT_DIR/screenrecording-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
+  local audio_devices=""
+  local audio_args=()
+
+  [[ $DESKTOP_AUDIO == "true" ]] && audio_devices+="default_output"
+
+  if [[ $MICROPHONE_AUDIO == "true" ]]; then
+    # Merge audio tracks into one - separate tracks only play one at a time in most players
+    [[ -n $audio_devices ]] && audio_devices+="|"
+    audio_devices+="default_input"
+  fi
+
+  [[ -n $audio_devices ]] && audio_args+=(-a "$audio_devices" -ac aac)
+
+  echo "===== $(date '+%F %T') args: $* target: $target =====" >>"$LOG_FILE"
+  gpu-screen-recorder "${capture_args[@]}" -k auto -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" 2>>"$LOG_FILE" &
+  local pid=$!
+
+  while kill -0 $pid 2>/dev/null && [[ ! -f $filename ]]; do
+    sleep 0.2
+  done
+
+  if kill -0 $pid 2>/dev/null; then
+    echo "$filename" >"$RECORDING_FILE"
+    toggle_screenrecording_indicator
+  fi
+}
+
+stop_screenrecording() {
+  pkill -SIGINT -f "^gpu-screen-recorder" # SIGINT required to save video properly
+
+  # Wait a maximum of 5 seconds to finish before hard killing
+  local count=0
+  while pgrep -f "^gpu-screen-recorder" >/dev/null && ((count < 50)); do
+    sleep 0.1
+    count=$((count + 1))
+  done
+
+  toggle_screenrecording_indicator
+  cleanup_webcam
+
+  if pgrep -f "^gpu-screen-recorder" >/dev/null; then
+    pkill -9 -f "^gpu-screen-recorder"
+    strata-notification-send -u critical -t 5000 "Screen recording error" "Recording process had to be force-killed. Video may be corrupted."
+  else
+    finalize_recording
+    local filename=$(cat "$RECORDING_FILE" 2>/dev/null)
+    echo "$filename"
+    local preview="${filename%.mp4}-preview.png"
+
+    # Generate a preview thumbnail from the first frame
+    ffmpeg -y -i "$filename" -ss 00:00:00.1 -vframes 1 -q:v 2 "$preview" -loglevel quiet 2>/dev/null
+
+    strata-notification-send "Screen recording saved" "Open with Super + Alt + , (or click this)" \
+      -t 10000 --image "${preview:-$filename}" \
+      --exec mpv -- "$filename"
+
+    # The shell loads the thumbnail into memory when the toast appears and never
+    # re-reads the file, so the preview only has to outlive that load -- not the
+    # toast. Clear it out of the recordings directory a moment later.
+    (
+      sleep 2
+      rm -f "$preview"
+    ) &
+  fi
+
+  rm -f "$RECORDING_FILE"
+}
+
+toggle_screenrecording_indicator() {
+  strata-shell -q strata.indicators refresh
+}
+
+screenrecording_active() { [[ $(strata-screen-capture-status) == recording ]]; }
+
+finalize_recording() {
+  local latest
+  latest=$(cat "$RECORDING_FILE" 2>/dev/null)
+  [[ -f $latest ]] || return
+
+  # Re-encode only when the first GOP contains discardable warmup packets — stream copy can't
+  # trim those (it rewinds to the keyframe). Clean recordings stay on the fast stream-copy path.
+  local video_codec=(-c:v copy)
+  if ffprobe -v error -select_streams v:0 -read_intervals %+0.2 -show_entries packet=flags -of csv=p=0 "$latest" 2>/dev/null | grep -q D; then
+    video_codec=(-c:v libx264 -preset veryfast -crf 20)
+  fi
+
+  # Trim the first frame, and normalize audio to -14 LUFS if present, in a single pass
+  local args=(-y -ss 0.1 -i "$latest" "${video_codec[@]}")
+  if ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "$latest" 2>/dev/null | grep -q audio; then
+    # Hard-mute the first 400ms to drop the PipeWire capture-open pop (a near-clipping
+    # transient around 130-200ms that a gentle fade-in can't attenuate enough), then a
+    # 50ms fade avoids a click at the boundary before loudnorm normalizes the rest.
+    args+=(-af "volume=enable='lt(t,0.4)':volume=0,afade=t=in:st=0.4:d=0.05,loudnorm=I=-14:TP=-1.5:LRA=11")
+  fi
+
+  local processed="${latest%.mp4}-processed.mp4"
+  if ffmpeg "${args[@]}" "$processed" -loglevel quiet 2>/dev/null; then
+    mv "$processed" "$latest"
+  else
+    rm -f "$processed"
+  fi
+}
+
+if screenrecording_active; then
+  stop_screenrecording
+elif [[ $STOP_RECORDING == "true" ]]; then
+  exit 1
+else
+  start_screenrecording || cleanup_webcam
+fi

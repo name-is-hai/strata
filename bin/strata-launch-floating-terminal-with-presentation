@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# strata:summary=Launch a floating terminal with the Strata presentation wrapper
+# strata:args=<command>
+
+# Export the current theme's gum styling so gum widgets match the active theme
+# even after a theme switch (the inherited environment is captured at login).
+source strata-restart-gum
+
+cmd="$*"
+# 130 is the user bailing with Ctrl-C; anything else gets the Done/Failed prompt.
+presentation_script="strata-show-logo; $cmd; code=\$?; if (( code != 130 )); then strata-show-done \$code; fi"
+
+exec setsid uwsm-app -- ghostty --class=org.strata.terminal --title=Strata -e bash -c "$presentation_script"

@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# strata:summary=Take a screenshot
+# strata:group=capture
+# strata:args=[smart|region|windows|fullscreen|scroll] [copy|save]
+# strata:examples=strata screenshot | strata capture screenshot region
+# strata:aliases=strata screenshot
+
+if [[ -n ${STRATA_SCREENSHOT_DIR:-} && -z ${OMASNAP_SCREENSHOT_DIR:-} ]]; then
+  export OMASNAP_SCREENSHOT_DIR="$STRATA_SCREENSHOT_DIR"
+fi
+
+omasnap_args=()
+for arg in "$@"; do
+  case "$arg" in
+    copy) omasnap_args+=(--copy) ;;
+    save) omasnap_args+=(--save) ;;
+    slurp) ;;
+    *) omasnap_args+=("$arg") ;;
+  esac
+done
+
+if command -v omasnap >/dev/null 2>&1; then
+  exec omasnap "${omasnap_args[@]}"
+fi
+
+# Fedora does not currently package omasnap. Keep the canonical Strata command
+# useful with the small Wayland capture stack already required by the desktop.
+mode="smart"
+destination="copy"
+
+for arg in "$@"; do
+  case "$arg" in
+    smart | region | fullscreen) mode="$arg" ;;
+    copy | save) destination="$arg" ;;
+    slurp) mode="region" ;;
+    windows | scroll)
+      echo "strata-capture-screenshot: '$arg' requires omasnap" >&2
+      exit 2
+      ;;
+  esac
+done
+
+grim_args=()
+case "$mode" in
+  smart | region)
+    geometry=$(slurp) || exit 0
+    grim_args=(-g "$geometry")
+    ;;
+  fullscreen) ;;
+esac
+
+if [[ $destination == copy ]]; then
+  grim "${grim_args[@]}" - | wl-copy --type image/png
+  strata-notification-send "Screenshot copied" "The screenshot is in the clipboard."
+else
+  pictures=$(xdg-user-dir PICTURES 2>/dev/null || true)
+  directory="${STRATA_SCREENSHOT_DIR:-${pictures:-$HOME/Pictures}/Screenshots}"
+  install -d "$directory"
+  output="$directory/Screenshot-$(date +%Y%m%d-%H%M%S).png"
+  grim "${grim_args[@]}" "$output"
+  strata-notification-send "Screenshot saved" "$output"
+fi

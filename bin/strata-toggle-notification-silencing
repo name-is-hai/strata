@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# strata:summary=Toggle notification do-not-disturb mode
+
+state=$(strata-shell notifications toggleDnd 2>/dev/null || echo "")
+strata-shell -q strata.indicators refresh

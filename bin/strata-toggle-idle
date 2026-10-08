@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# strata:summary=Toggle idle behavior so the system either idles normally or stays awake
+# strata:group=toggle
+# strata:args=[toggle|stay-awake|allow-idle|status]
+# strata:examples=strata toggle idle | strata toggle idle stay-awake | strata-toggle-idle --status
+
+STATE_DIR="$HOME/.local/state/strata/indicators"
+STATE_FILE="$STATE_DIR/stay-awake"
+INHIBITOR_UNIT="strata-stay-awake.service"
+
+stay_awake_enabled() {
+  [[ -f $STATE_FILE ]]
+}
+
+print_status() {
+  if stay_awake_enabled; then
+    printf '{"enabled":true,"class":"enabled","tooltip":"Allow Idle Lock"}\n'
+  else
+    printf '{"enabled":false,"class":"disabled","tooltip":"Stay Awake"}\n'
+  fi
+}
+
+print_idle_state() {
+  if stay_awake_enabled; then
+    printf 'disabled\n'
+  else
+    printf 'enabled\n'
+  fi
+}
+
+sync_inhibitor() {
+  local action=stop
+  stay_awake_enabled && action=start
+
+  if ! systemctl --user daemon-reload >/dev/null 2>&1 || \
+      ! systemctl --user "$action" "$INHIBITOR_UNIT"; then
+    echo "Unable to ${action} the Strata Stay Awake inhibitor." >&2
+    return 1
+  fi
+}
+
+apply_state() {
+  case "$1" in
+    stay-awake)
+      systemctl --user daemon-reload >/dev/null 2>&1
+      if ! systemctl --user start "$INHIBITOR_UNIT"; then
+        echo "Unable to enable Stay Awake." >&2
+        return 1
+      fi
+      mkdir -p "$STATE_DIR"
+      touch "$STATE_FILE"
+      ;;
+    allow-idle)
+      systemctl --user daemon-reload >/dev/null 2>&1
+      if ! systemctl --user stop "$INHIBITOR_UNIT"; then
+        echo "Unable to allow normal idle behavior." >&2
+        return 1
+      fi
+      rm -f "$STATE_FILE"
+      ;;
+  esac
+
+  # File watching updates the idle service, but explicitly refresh the panel
+  # as well so its Stay Awake indicator follows CLI and keybinding changes.
+  strata-shell -q strata.indicators refresh >/dev/null 2>&1 || true
+}
+
+case "${1:-toggle}" in
+  toggle)
+    if stay_awake_enabled; then
+      apply_state allow-idle
+    else
+      apply_state stay-awake
+    fi
+    print_idle_state
+    ;;
+  stay-awake|awake|on)
+    apply_state stay-awake
+    print_idle_state
+    ;;
+  allow-idle|idle|off)
+    apply_state allow-idle
+    print_idle_state
+    ;;
+  sync)
+    sync_inhibitor
+    print_idle_state
+    ;;
+  status|--status)
+    print_status
+    ;;
+  *)
+    echo "Usage: strata-toggle-idle [toggle|stay-awake|allow-idle|status]" >&2
+    exit 1
+    ;;
+esac

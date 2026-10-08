@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# strata:summary=Reload hyprland configuration (used by the Strata theme switching).
+
+hyprctl reload >/dev/null

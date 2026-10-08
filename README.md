@@ -24,8 +24,6 @@ sudo reboot
 The installer uses `install_weak_deps=False`, so Fedora does not add optional
 Node/npm documentation solely because Neovim is installed.
 
-Use `--with-optional` to include the separate optional desktop package.
-
 ## Repository layout
 
 ```text
@@ -33,6 +31,10 @@ packages/       Current Strata RPMs
 repodata/       DNF metadata, regenerated after package changes
 strata.repo     DNF repository definition
 scripts/        Bootstrap and metadata-generation scripts
+packaging/      RPM specs for Strata and its tagged Hyprland builds
+config/         Strata-owned Hyprland, UWSM, and portal entry files
+shell/           Quickshell desktop UI
+bin/, systemd/   Strata runtime commands and user services
 ```
 
 ## Publishing

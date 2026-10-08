@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# strata:summary=Refresh the current theme from its templates.
+
+THEME_NAME_PATH="$HOME/.local/state/strata/current/theme.name"
+
+if [[ -f $THEME_NAME_PATH ]]; then
+  STRATA_THEME_SKIP_BACKGROUND=1 strata-theme-set "$(cat $THEME_NAME_PATH)"
+fi
