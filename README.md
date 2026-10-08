@@ -24,32 +24,14 @@ sudo reboot
 The installer uses `install_weak_deps=False`, so Fedora does not add optional
 Node/npm documentation solely because Neovim is installed.
 
-## Repository layout
+## Development hook
 
-```text
-packages/       Current Strata RPMs
-repodata/       DNF metadata, regenerated after package changes
-strata.repo     DNF repository definition
-scripts/        Bootstrap and metadata-generation scripts
-packaging/      RPM specs for Strata and its tagged Hyprland builds
-config/         Strata-owned Hyprland, UWSM, and portal entry files
-shell/           Quickshell desktop UI
-bin/, systemd/   Strata runtime commands and user services
+Install the repository hook once on a build machine:
+
+```bash
+prek install
 ```
 
-## Publishing
-
-1. Create the public GitHub repository `name-is-hai/strata`.
-2. Push this directory's `main` branch.
-3. In GitHub repository settings, set Pages source to **GitHub Actions**.
-4. The included workflow generates `repodata` and publishes the repository at
-   `https://name-is-hai.github.io/strata/`.
-
-Before adding a newly built RPM, remove its older package version from
-`packages/`, run `scripts/refresh-repodata.sh`, then run
-`scripts/verify-repo.sh`. DNF metadata should contain one current build of
-each package.
-
-The repository is not RPM-signed yet, so `gpgcheck=0` is intentional for this
-personal bootstrap repository. Add an RPM signing key before sharing it with
-other users.
+When a staged RPM under `packages/` changes, the hook regenerates `repodata/`,
+stages the new metadata, and verifies that DNF can resolve the required Strata
+packages. It requires `createrepo_c` and `dnf` on that build machine.

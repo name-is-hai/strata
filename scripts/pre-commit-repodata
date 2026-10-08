@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
+
+# Prek invokes this hook only when an RPM under packages/ is staged. Generate
+# the matching index in the working tree, stage it, and prove DNF can read it.
+scripts/refresh-repodata.sh
+git add repodata
+scripts/verify-repo.sh

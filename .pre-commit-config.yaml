@@ -1,0 +1,12 @@
+fail_fast: true
+default_stages: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: strata-repodata
+        name: regenerate and verify Strata DNF metadata
+        entry: scripts/pre-commit-repodata
+        language: system
+        pass_filenames: false
+        files: ^packages/.*\.rpm$
