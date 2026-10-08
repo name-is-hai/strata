@@ -9,7 +9,7 @@ desktop dependencies, and the tagged Quickshell package comes from its COPR.
 After this repository is published with GitHub Pages, run:
 
 ```bash
-curl -fsSLO https://name-is-hai.github.io/strata-repo/scripts/strata-install
+curl -fsSLO https://name-is-hai.github.io/strata/scripts/strata-install
 chmod +x strata-install
 ./strata-install --enable-sddm
 ```
@@ -37,11 +37,11 @@ scripts/        Bootstrap and metadata-generation scripts
 
 ## Publishing
 
-1. Create the public GitHub repository `name-is-hai/strata-repo`.
+1. Create the public GitHub repository `name-is-hai/strata`.
 2. Push this directory's `main` branch.
 3. In GitHub repository settings, set Pages source to **GitHub Actions**.
 4. The included workflow generates `repodata` and publishes the repository at
-   `https://name-is-hai.github.io/strata-repo/`.
+   `https://name-is-hai.github.io/strata/`.
 
 Before adding a newly built RPM, remove its older package version from
 `packages/`, run `scripts/refresh-repodata.sh`, then run

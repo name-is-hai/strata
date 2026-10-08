@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 set -euo pipefail
 
-repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata-repo}
+repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata}
 enable_sddm=0
 install_optional=0
 
