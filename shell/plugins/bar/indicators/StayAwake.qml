@@ -9,8 +9,8 @@ BarIndicator {
   active: idleService ? idleService.stayAwake : false
   activeText: "󰅶"
   inactiveText: "󰅶"
-  activeTooltipText: "Allow Idle Lock"
-  inactiveTooltipText: "Stay Awake"
+  activeTooltipText: "Allow automatic suspend"
+  inactiveTooltipText: "Prevent automatic suspend"
 
   function toggle() {
     if (root.idleService) root.idleService.setIdleEnabled(root.active)

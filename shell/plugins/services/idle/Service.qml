@@ -70,7 +70,7 @@ Item {
 
   function handleIdleChanged() {
     logEvent("idle-monitor", idleMonitor.isIdle ? "idle" : "active")
-    if (!root.idleEnabled || !root.lockEnabled) return
+    if (!root.lockEnabled) return
     if (idleMonitor.isIdle) lockSystem("lock-timeout")
     else endIdleCycle("activity")
   }
@@ -108,7 +108,7 @@ Item {
 
     logEvent("stay-awake", (enabled ? "enabled" : "disabled") + (reason ? " " + reason : ""))
     if (enabled) root.endIdleCycle("stay-awake")
-    else Qt.callLater(root.handleIdleChanged)
+    Qt.callLater(root.handleIdleChanged)
 
     return enabled ? "disabled" : "enabled"
   }
@@ -126,7 +126,7 @@ Item {
 
   IdleMonitor {
     id: idleMonitor
-    enabled: root.idleEnabled && root.lockEnabled
+    enabled: root.lockEnabled
     timeout: Math.max(1, root.lockTimeoutSeconds)
     respectInhibitors: true
     onIsIdleChanged: root.handleIdleChanged()

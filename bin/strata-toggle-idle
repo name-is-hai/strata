@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# strata:summary=Toggle idle behavior so the system either idles normally or stays awake
+# strata:summary=Toggle automatic suspend while preserving normal idle locking
 # strata:group=toggle
 # strata:args=[toggle|stay-awake|allow-idle|status]
 # strata:examples=strata toggle idle | strata toggle idle stay-awake | strata-toggle-idle --status
@@ -15,7 +15,7 @@ stay_awake_enabled() {
 
 print_status() {
   if stay_awake_enabled; then
-    printf '{"enabled":true,"class":"enabled","tooltip":"Allow Idle Lock"}\n'
+    printf '{"enabled":true,"class":"enabled","tooltip":"Allow automatic suspend"}\n'
   else
     printf '{"enabled":false,"class":"disabled","tooltip":"Stay Awake"}\n'
   fi
