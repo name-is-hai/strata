@@ -54,6 +54,9 @@ install -Dpm 0644 packaging/strata-lock-password \
 cp -a bin shell themes docs %{buildroot}%{_datadir}/strata/
 cp -a runtime-version %{buildroot}%{_datadir}/strata/version
 
+ln -s %{_datadir}/strata/bin/strata-apply-config \
+    %{buildroot}%{_bindir}/strata-apply-config
+
 install -d %{buildroot}%{_datadir}/quickshell/strata
 cp -al %{buildroot}%{_datadir}/strata/shell/. \
     %{buildroot}%{_datadir}/quickshell/strata/
