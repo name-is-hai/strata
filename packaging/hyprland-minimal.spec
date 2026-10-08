@@ -294,8 +294,7 @@ ln -sfn Hyprland %{buildroot}%{_bindir}/hyprland
 ln -sfn Hyprland.1 %{buildroot}%{_mandir}/man1/hyprland.1
 install -d %{buildroot}%{_libexecdir}/hyprland/vendor/lib64
 cp -a vendor/lib64/lib*.so* %{buildroot}%{_libexecdir}/hyprland/vendor/lib64/
-# The public SDK needs separately packaged Hypr dependency headers and adjusted
-# pkg-config metadata. Keep this runtime package free of an incomplete SDK.
+
 rm -rf %{buildroot}%{_includedir}/hyprland
 rm -f %{buildroot}%{_datadir}/pkgconfig/hyprland.pc
 rm -f %{buildroot}%{_libexecdir}/hyprland/vendor/lib64/lib*.so
