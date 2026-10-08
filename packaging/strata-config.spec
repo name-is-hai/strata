@@ -67,8 +67,6 @@ done
 
 %files
 %license LICENSE
-%license THIRD_PARTY_LICENSES/upstream-MIT.txt
-%license THIRD_PARTY_LICENSES/upstream-source.txt
 %doc docs/strata-config.md
 %{_bindir}/strata-*
 %{_userunitdir}/strata-stay-awake.service
