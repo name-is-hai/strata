@@ -1,0 +1,8 @@
+[strata]
+name=Strata packages for Fedora 44
+baseurl=https://name-is-hai.github.io/strata-repo/
+enabled=1
+gpgcheck=0
+repo_gpgcheck=0
+metadata_expire=6h
+

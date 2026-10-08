@@ -1,0 +1,59 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata-repo}
+enable_sddm=0
+install_optional=0
+
+for argument in "$@"; do
+  case "$argument" in
+    --enable-sddm) enable_sddm=1 ;;
+    --with-optional) install_optional=1 ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: strata-install [--enable-sddm] [--with-optional]
+
+Installs the Strata desktop from the configured static DNF repository.
+
+  --enable-sddm    Enable SDDM and set graphical.target after installation.
+  --with-optional  Install the separate optional Strata desktop package.
+USAGE
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $argument" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if (( EUID != 0 )); then
+  exec sudo --preserve-env=STRATA_REPO_URL "$0" "$@"
+fi
+
+repo_file=/etc/yum.repos.d/strata.repo
+install -d -m 0755 /etc/yum.repos.d
+curl --fail --location --silent --show-error "$repo_url/strata.repo" -o "$repo_file"
+
+# Strata uses the maintained tagged Quickshell build, rather than a
+# development snapshot, because Fedora's base package may lag its API.
+dnf copr enable -y errornointernet/quickshell
+
+packages=(hyprland-desktop strata-config)
+(( install_optional )) && packages+=(hyprland-desktop-optional)
+
+# Keep the base desktop small. Applications such as Neovim can otherwise pull
+# documentation and language runtimes through Fedora weak dependencies.
+dnf install -y --refresh --setopt=install_weak_deps=False "${packages[@]}"
+
+if (( enable_sddm )); then
+  systemctl enable --force sddm.service
+  systemctl set-default graphical.target
+fi
+
+cat <<'DONE'
+
+Strata is installed.
+Run `strata-apply-config` as the desktop user, then reboot or log in through
+the Hyprland/UWSM session in SDDM.
+DONE
