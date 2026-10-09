@@ -16,14 +16,12 @@ menu system
 menu background
 menu theme
 menu share
-menu reminder-set
 panel strata.clipboard
 panel strata.emojis
 panel strata.audio
 panel strata.bluetooth
 panel strata.monitor
 panel strata.clock
-panel strata.elsewhen
 panel strata.network
 panel strata.power
 audio raise

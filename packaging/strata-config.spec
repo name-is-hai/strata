@@ -1,5 +1,5 @@
 Name:           strata-config
-Version:        0.1.47
+Version:        0.1.53
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -22,6 +22,7 @@ Requires:       hyprpicker
 Requires:       wf-recorder
 Requires:       pipewire-utils
 Requires:       pam
+Requires:       strata-lock-auth
 
 %description
 Versioned Hyprland, Quickshell, UWSM and portal defaults for Strata.
@@ -47,21 +48,20 @@ install -d %{buildroot}%{_datadir}/strata/config
 cp -a runtime-config/. %{buildroot}%{_datadir}/strata/config/
 
 install -Dpm 0644 systemd/strata-stay-awake.service \
-    %{buildroot}%{_userunitdir}/strata-stay-awake.service
-install -Dpm 0644 packaging/strata-lock-password \
-    %{buildroot}%{_sysconfdir}/pam.d/strata-lock-password
+    %{buildroot}%{_prefix}/lib/systemd/user/strata-stay-awake.service
+install -Dpm 0644 default/sddm/strata.conf \
+    %{buildroot}%{_sysconfdir}/sddm.conf.d/10-strata.conf
+install -d %{buildroot}%{_datadir}/sddm/themes
+cp -a default/sddm/strata %{buildroot}%{_datadir}/sddm/themes/
 
 cp -a bin shell themes docs %{buildroot}%{_datadir}/strata/
 cp -a runtime-version %{buildroot}%{_datadir}/strata/version
-
-ln -s %{_datadir}/strata/bin/strata-apply-config \
-    %{buildroot}%{_bindir}/strata-apply-config
 
 install -d %{buildroot}%{_datadir}/quickshell/strata
 cp -al %{buildroot}%{_datadir}/strata/shell/. \
     %{buildroot}%{_datadir}/quickshell/strata/
 
-for script in scripts/strata-*; do
+for script in bin/strata-*; do
     install -Dpm 0755 "$script" %{buildroot}%{_bindir}/"$(basename "$script")"
 done
 
@@ -69,17 +69,37 @@ done
 %license LICENSE
 %doc docs/strata-config.md
 %{_bindir}/strata-*
-%{_userunitdir}/strata-stay-awake.service
-%config(noreplace) %{_sysconfdir}/pam.d/strata-lock-password
+%{_prefix}/lib/systemd/user/strata-stay-awake.service
+%config(noreplace) %{_sysconfdir}/sddm.conf.d/10-strata.conf
+%{_datadir}/sddm/themes/strata/
 %{_datadir}/strata/
 %{_datadir}/quickshell/strata/
 
 %changelog
-* Wed Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.47-1
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.53-1
+- Use the SDDM ComboBox index property for session selection
+
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.52-1
+- Match the SDDM greeter to the Strata lock-screen palette and layout
+
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.51-1
+- Use SDDM ComboBox's index property for session selection
+
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.50-1
+- Let the dedicated strata-lock-auth package own the PAM lock policy
+
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.49-1
+- Add the Strata SDDM theme using the desktop's login palette and typography
+
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.48-1
+- Move weather, globe, Wi-Fi QR, and reminders out of the base desktop;
+  they will be delivered by a separate plugin repository
+
+* Thu Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.47-1
 - Move into the unified Strata repository
 - Stop packaging personal dotfiles; package only Strata desktop entry files
 
-* Wed Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.46-1
+* Thu Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.46-1
 - Own the Strata lock PAM policy with the rest of the desktop configuration
 
 * Thu Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 0.1.45-1

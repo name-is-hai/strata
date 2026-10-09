@@ -139,7 +139,7 @@ install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %license LICENSE
 
 %changelog
-* Wed Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-16
+* Thu Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-16
 - Consolidate core, services, and application meta-packages into one spec
 - Move the Strata lock PAM policy into the configuration package
 

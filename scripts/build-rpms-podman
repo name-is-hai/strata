@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+output_dir=${STRATA_BUILD_OUTPUT:-"$repo_root/build-output"}
+fedora_release=${STRATA_FEDORA_RELEASE:-44}
+image=${STRATA_BUILD_IMAGE:-"registry.fedoraproject.org/fedora:${fedora_release}"}
+build_cpus=${STRATA_BUILD_CPUS:-1}
+fedora_release_baseurl=${STRATA_FEDORA_RELEASE_BASEURL:-}
+fedora_updates_baseurl=${STRATA_FEDORA_UPDATES_BASEURL:-}
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/build-rpms-podman [config|desktop|hyprland|utilities|fonts|all]
+
+Build selected Strata RPM source packages in a rootless Fedora container.
+
+  config      strata-config
+  desktop     hyprland-desktop and its core/services/apps subpackages
+  hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
+  utilities   hypridle, hyprlock, hyprsunset, and hyprpicker
+  fonts       jetbrains-mono-nerd-fonts
+  all         every target above
+
+RPMs are written to build-output/RPMS/ on the host. The container is limited
+to one CPU by default; set STRATA_BUILD_CPUS to raise that deliberately.
+Set STRATA_FEDORA_RELEASE, STRATA_BUILD_IMAGE, or STRATA_BUILD_OUTPUT to
+override the other defaults. Set STRATA_FEDORA_RELEASE_BASEURL and
+STRATA_FEDORA_UPDATES_BASEURL only when a Fedora mirror is unavailable.
+USAGE
+}
+
+target=${1:-0}
+case "$target" in
+  config|desktop|hyprland|utilities|fonts|all) ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+command -v podman >/dev/null 2>&1 || {
+  echo "Podman is required. Install the podman package first." >&2
+  exit 1
+}
+
+[[ $build_cpus =~ ^[1-9][0-9]*(\.[0-9]+)?$ ]] || {
+  echo "STRATA_BUILD_CPUS must be a positive number, not: $build_cpus" >&2
+  exit 2
+}
+
+mkdir -p "$output_dir"
+
+build_started=$SECONDS
+
+format_elapsed() {
+  local elapsed=$1
+  local hours=$((elapsed / 3600))
+  local minutes=$(((elapsed % 3600) / 60))
+  local seconds=$((elapsed % 60))
+
+  if (( hours > 0 )); then
+    printf '%dh %02dm %02ds' "$hours" "$minutes" "$seconds"
+  elif (( minutes > 0 )); then
+    printf '%dm %02ds' "$minutes" "$seconds"
+  else
+    printf '%ds' "$seconds"
+  fi
+}
+
+report_build_time() {
+  local status=$?
+  local elapsed=$((SECONDS - build_started))
+
+  if (( status == 0 )); then
+    printf 'Build completed in: %s\n' "$(format_elapsed "$elapsed")"
+  else
+    printf 'Build failed after: %s\n' "$(format_elapsed "$elapsed")" >&2
+  fi
+}
+
+trap report_build_time EXIT
+
+podman_args=(run --rm --pull=newer --user 0 --cpus "$build_cpus")
+[[ -t 1 ]] && podman_args+=(--tty)
+
+podman "${podman_args[@]}" \
+  -e STRATA_TARGET="$target" \
+  -e STRATA_FEDORA_RELEASE_BASEURL="$fedora_release_baseurl" \
+  -e STRATA_FEDORA_UPDATES_BASEURL="$fedora_updates_baseurl" \
+  -v "$repo_root:/src:ro,Z" \
+  -v "$output_dir:/out:Z" \
+  -w /src \
+  "$image" \
+  bash -euo pipefail -c '
+    topdir=/build/rpmbuild
+    mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SRPMS}
+
+    # A direct official endpoint is an opt-in escape hatch for a stale or
+    # unreachable metalink mirror. Normal builds keep Fedora mirror choice.
+    if [[ -n ${STRATA_FEDORA_RELEASE_BASEURL:-} ]]; then
+      sed -ri "/^(metalink|mirrorlist)=/d" /etc/yum.repos.d/fedora.repo
+      sed -ri "0,/^#baseurl=/s|^#baseurl=.*|baseurl=${STRATA_FEDORA_RELEASE_BASEURL}|" /etc/yum.repos.d/fedora.repo
+    fi
+    if [[ -n ${STRATA_FEDORA_UPDATES_BASEURL:-} ]]; then
+      sed -ri "/^(metalink|mirrorlist)=/d" /etc/yum.repos.d/fedora-updates.repo
+      sed -ri "0,/^#baseurl=/s|^#baseurl=.*|baseurl=${STRATA_FEDORA_UPDATES_BASEURL}|" /etc/yum.repos.d/fedora-updates.repo
+    fi
+
+    dnf install -y rpm-build rpmdevtools dnf-plugins-core createrepo_c
+    cp -a /src/packaging/. "$topdir/SOURCES/"
+
+    make_config_source() {
+      version=$(rpmspec -q --qf "%{VERSION}" /src/packaging/strata-config.spec)
+      source_root="/tmp/strata-config-${version}"
+      rm -rf "$source_root"
+      mkdir -p "$source_root"
+      for path in LICENSE bin config default docs packaging runtime-config runtime-default runtime-version shell systemd; do
+        cp -a "/src/$path" "$source_root/"
+      done
+      # Themes are optional: a minimal Strata checkout can intentionally omit
+      # all bundled artwork and terminal-theme templates.
+      [[ -e /src/themes ]] && cp -a /src/themes "$source_root/"
+      tar -C /tmp -czf "$topdir/SOURCES/strata-config-${version}.tar.gz" "strata-config-${version}"
+    }
+
+    build_spec() {
+      spec=$1
+      if [[ $spec == strata-config.spec ]]; then
+        make_config_source
+      else
+        # -R derives the directory from the RPM _sourcedir. Do not combine it
+        # with -C: spectool rejects two competing download directories.
+        spectool -g -R -d "_topdir $topdir" "/src/packaging/$spec"
+      fi
+      dnf builddep -y "/src/packaging/$spec"
+      rpmbuild -ba "/src/packaging/$spec" --define "_topdir $topdir"
+    }
+
+    case "$STRATA_TARGET" in
+      config) build_spec strata-config.spec ;;
+      desktop) build_spec hyprland-desktop.spec ;;
+      hyprland) build_spec hyprland-minimal.spec ;;
+      utilities) build_spec hyprland-utilities.spec ;;
+      fonts) build_spec jetbrains-mono-nerd-fonts.spec ;;
+      all)
+        build_spec hyprland-minimal.spec
+        build_spec hyprland-utilities.spec
+        build_spec jetbrains-mono-nerd-fonts.spec
+        build_spec hyprland-desktop.spec
+        build_spec strata-config.spec
+        ;;
+    esac
+
+    rm -rf /out/RPMS /out/SRPMS
+    cp -a "$topdir/RPMS" "$topdir/SRPMS" /out/
+  '
+
+echo "Built RPMs are in: $output_dir/RPMS"

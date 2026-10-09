@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=Strata
+Description=Minimal Strata login theme
+Author=Strata
+License=MIT
+Type=sddm-theme
+Version=1.0
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=strata
+QtVersion=6
