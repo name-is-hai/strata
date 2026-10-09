@@ -1,6 +1,6 @@
 Name:           hyprland-desktop
 Version:        1.0
-Release:        16%{?dist}
+Release:        17%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT
@@ -22,8 +22,8 @@ layers for DNF users.
 Summary:        Core Hyprland session
 Requires:       hyprland = 0.56.2-2.fc44
 Requires:       hyprland-guiutils = 0.56.2-2.fc44
-Requires:       uwsm >= 0.27.0
-Requires:       ghostty >= 1.3.1
+Requires:       uwsm
+Requires:       ghostty
 Requires:       jetbrains-mono-nerd-fonts >= 3.5.1
 Requires:       sddm
 Requires:       quickshell >= 0.3.1
@@ -139,6 +139,10 @@ install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %license LICENSE
 
 %changelog
+* Fri Oct 09 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-17
+- Accept Fedora 44's supported Ghostty and UWSM versions instead of pinning
+  newer minimum versions unavailable from Fedora repositories
+
 * Thu Oct 08 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-16
 - Consolidate core, services, and application meta-packages into one spec
 - Move the Strata lock PAM policy into the configuration package

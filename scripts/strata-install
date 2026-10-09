@@ -36,11 +36,17 @@ curl --fail --location --silent --show-error "$repo_url/strata.repo" -o "$repo_f
 # development snapshot, because Fedora's base package may lag its API.
 dnf copr enable -y errornointernet/quickshell
 
-packages=(hyprland-desktop strata-config)
+# Bootstrap in layers. Installing the desktop meta-package first can hide the
+# useful dependency error behind its noarch wrapper; establish the compositor
+# and Strata session core before requesting services and applications.
+dnf install -y --refresh --setopt=install_weak_deps=False \
+  hyprland hyprland-desktop-core
 
-# Keep the base desktop small. Applications such as Neovim can otherwise pull
-# documentation and language runtimes through Fedora weak dependencies.
-dnf install -y --refresh --setopt=install_weak_deps=False "${packages[@]}"
+# The full desktop meta-package then adds the independently versioned services
+# and application layers. strata-config is last because it activates defaults
+# for the installed desktop rather than supplying the runtime itself.
+dnf install -y --refresh --setopt=install_weak_deps=False \
+  hyprland-desktop strata-config
 
 if (( enable_sddm )); then
   systemctl enable --force sddm.service

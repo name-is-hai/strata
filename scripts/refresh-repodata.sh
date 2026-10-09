@@ -9,9 +9,17 @@ command -v createrepo_c >/dev/null 2>&1 || {
   exit 1
 }
 
-find packages -maxdepth 1 -type f -name '*.rpm' -print -quit | grep -q . || {
+package_list=$(mktemp)
+trap 'rm -f "$package_list"' EXIT
+find packages -maxdepth 1 -type f -name '*.rpm' -print >"$package_list"
+
+test -s "$package_list" || {
   echo "No RPMs found in $repo_root/packages." >&2
   exit 1
 }
 
-exec createrepo_c --update --checksum sha256 .
+# The repository root contains build-output/ for local use. Index the root so
+# metadata keeps package locations as packages/<name>.rpm, but explicitly list
+# the public RPM directory to prevent duplicate build artifacts from leaking
+# into the DNF repository.
+createrepo_c --checksum sha256 --pkglist "$package_list" .

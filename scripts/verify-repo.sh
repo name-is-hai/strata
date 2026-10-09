@@ -9,7 +9,7 @@ test -f "$repo_root/repodata/repomd.xml" || {
   exit 1
 }
 
-dnf -q --disablerepo='*' \
+dnf -q --refresh --disablerepo='*' \
   --repofrompath=strata-test,"$repo_url" \
   --enablerepo=strata-test \
   repoquery --qf '%{name}-%{version}-%{release}.%{arch}' \

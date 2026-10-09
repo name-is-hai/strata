@@ -150,8 +150,11 @@ podman "${podman_args[@]}" \
         ;;
     esac
 
-    rm -rf /out/RPMS /out/SRPMS
-    cp -a "$topdir/RPMS" "$topdir/SRPMS" /out/
+    # Targets are intentionally built independently. Merge their artifacts so
+    # a later `config` build does not erase the earlier `desktop` RPMs.
+    mkdir -p /out/RPMS /out/SRPMS
+    cp -a "$topdir/RPMS/." /out/RPMS/
+    cp -a "$topdir/SRPMS/." /out/SRPMS/
   '
 
 echo "Built RPMs are in: $output_dir/RPMS"
