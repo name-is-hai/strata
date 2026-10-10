@@ -54,6 +54,12 @@ dnf install -y --refresh --setopt=install_weak_deps=False \
 dnf install -y --refresh --setopt=install_weak_deps=False \
   hyprland-desktop strata-config
 
+# `dnf install` intentionally leaves an installed package alone. Follow the
+# bootstrap with an explicit upgrade so rerunning this script updates an
+# existing Strata machine to the newest repository release as well.
+dnf upgrade -y --refresh --setopt=install_weak_deps=False \
+  hyprland-desktop strata-config
+
 if [[ -n $install_user ]]; then
   if ! id "$install_user" >/dev/null 2>&1; then
     echo "Requested desktop user does not exist: $install_user" >&2
