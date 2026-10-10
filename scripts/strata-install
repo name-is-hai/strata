@@ -46,7 +46,7 @@ dnf copr enable -y errornointernet/quickshell
 # useful dependency error behind its noarch wrapper; establish the compositor
 # and Strata session core before requesting services and applications.
 dnf install -y --refresh --setopt=install_weak_deps=False \
-  hyprland hyprland-desktop-core
+  hyprland hyprland-desktop-core git
 
 # The full desktop meta-package then adds the independently versioned services
 # and application layers. strata-config is last because it activates defaults
