@@ -80,6 +80,19 @@ if [[ -n $install_user ]]; then
     echo "Set $install_user's login shell to Zsh."
   fi
 
+  # Fedora's enabled repositories do not currently provide mise. Install the
+  # official user-local binary so it remains owned and updated by this user,
+  # rather than adding another system repository. Do not run `mise install`:
+  # that would automatically fetch every optional tool in personal config.
+  mise_bin="$install_home/.local/bin/mise"
+  if [[ ! -x $mise_bin ]]; then
+    if runuser -u "$install_user" -- env HOME="$install_home" bash -c 'curl -fsSL https://mise.run | sh'; then
+      echo "Installed Mise for $install_user."
+    else
+      echo "Could not install Mise; rerun the installer once network access is available." >&2
+    fi
+  fi
+
   # Personal dotfiles remain a separate, portable repository. Clone it into
   # the conventional personal project location on a first install; on later
   # runs only fast-forward an existing Git checkout and never replace an
