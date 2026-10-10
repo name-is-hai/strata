@@ -62,6 +62,15 @@ if [[ -n $install_user ]]; then
   install_home=$(getent passwd "$install_user" | cut -d: -f6)
   runuser -u "$install_user" -- env HOME="$install_home" \
     XDG_CONFIG_HOME="$install_home/.config" strata-apply-config
+
+  # Strata ships and configures Zsh as its interactive shell. This is an
+  # installer responsibility rather than an RPM scriptlet: RPM packages must
+  # not silently alter the login shell of every account on a system.
+  current_shell=$(getent passwd "$install_user" | cut -d: -f7)
+  if [[ $current_shell != /usr/bin/zsh ]]; then
+    usermod -s /usr/bin/zsh "$install_user"
+    echo "Set $install_user's login shell to Zsh."
+  fi
 else
   echo "No desktop user was detected; run strata-apply-config after logging in."
 fi

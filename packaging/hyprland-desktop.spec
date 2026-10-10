@@ -1,6 +1,6 @@
 Name:           hyprland-desktop
 Version:        1.0
-Release:        19%{?dist}
+Release:        20%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT AND Unicode-DFS-2016
@@ -49,6 +49,12 @@ Requires:       jetbrains-mono-nerd-fonts >= 3.5.1
 Requires:       sddm
 Requires:       quickshell >= 0.3.1
 Requires:       xdg-utils
+# A usable Strata login and the small base tools used by its scripts.
+Requires:       zsh
+Requires:       rsync
+Requires:       tar
+Requires:       unzip
+Requires:       usbutils
 
 %description core
 The compositor, session manager, display manager, terminal, shell framework,
@@ -274,6 +280,9 @@ Headers and pkg-config metadata for applications using libghostty-vt.
 %{_datadir}/pkgconfig/libghostty-vt.pc
 
 %changelog
+* Sat Oct 10 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-20
+- Include Zsh and the base archive, sync, and USB utilities in the desktop core
+
 * Sat Oct 10 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-19
 - Build Ghostty and UWSM as sibling packages of the desktop source RPM
 
