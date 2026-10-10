@@ -8,15 +8,18 @@ image=${STRATA_BUILD_IMAGE:-"registry.fedoraproject.org/fedora:${fedora_release}
 build_cpus=${STRATA_BUILD_CPUS:-1}
 fedora_release_baseurl=${STRATA_FEDORA_RELEASE_BASEURL:-}
 fedora_updates_baseurl=${STRATA_FEDORA_UPDATES_BASEURL:-}
+dnf_cache_volume=${STRATA_DNF_CACHE_VOLUME:-"strata-dnf-cache-f${fedora_release}"}
+ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fedora_release}"}
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/build-rpms-podman [config|desktop|hyprland|utilities|fonts|all]
 
-Build selected Strata RPM source packages in a rootless Fedora container.
+Build selected Strata RPM source packages on this host through rootless Podman.
+All compilers and build dependencies remain in the disposable container.
 
   config      strata-config
-  desktop     hyprland-desktop and its core/services/apps subpackages
+  desktop     desktop meta-packages plus Ghostty and UWSM
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
   utilities   hypridle, hyprlock, hyprsunset, and hyprpicker
   fonts       jetbrains-mono-nerd-fonts
@@ -24,6 +27,8 @@ Build selected Strata RPM source packages in a rootless Fedora container.
 
 RPMs are written to build-output/RPMS/ on the host. The container is limited
 to one CPU by default; set STRATA_BUILD_CPUS to raise that deliberately.
+DNF metadata and Ghostty's upstream Zig dependency cache are retained in named
+Podman volumes, making later builds much faster without installing Zig locally.
 Set STRATA_FEDORA_RELEASE, STRATA_BUILD_IMAGE, or STRATA_BUILD_OUTPUT to
 override the other defaults. Set STRATA_FEDORA_RELEASE_BASEURL and
 STRATA_FEDORA_UPDATES_BASEURL only when a Fedora mirror is unavailable.
@@ -88,6 +93,8 @@ podman "${podman_args[@]}" \
   -e STRATA_FEDORA_UPDATES_BASEURL="$fedora_updates_baseurl" \
   -v "$repo_root:/src:ro,Z" \
   -v "$output_dir:/out:Z" \
+  -v "$dnf_cache_volume:/var/cache/dnf:Z" \
+  -v "$ghostty_cache_volume:/var/cache/strata:Z" \
   -w /src \
   "$image" \
   bash -euo pipefail -c '
@@ -105,7 +112,8 @@ podman "${podman_args[@]}" \
       sed -ri "0,/^#baseurl=/s|^#baseurl=.*|baseurl=${STRATA_FEDORA_UPDATES_BASEURL}|" /etc/yum.repos.d/fedora-updates.repo
     fi
 
-    dnf install -y rpm-build rpmdevtools dnf-plugins-core createrepo_c
+    dnf install -y --setopt=install_weak_deps=False \
+      rpm-build rpmdevtools dnf-plugins-core createrepo_c
     cp -a /src/packaging/. "$topdir/SOURCES/"
 
     make_config_source() {
@@ -131,7 +139,7 @@ podman "${podman_args[@]}" \
         # with -C: spectool rejects two competing download directories.
         spectool -g -R -d "_topdir $topdir" "/src/packaging/$spec"
       fi
-      dnf builddep -y "/src/packaging/$spec"
+      dnf builddep -y --setopt=install_weak_deps=False "/src/packaging/$spec"
       rpmbuild -ba "/src/packaging/$spec" --define "_topdir $topdir"
     }
 

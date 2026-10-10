@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata}
 enable_sddm=0
+install_user=${STRATA_INSTALL_USER:-${SUDO_USER:-}}
 
 for argument in "$@"; do
   case "$argument" in
@@ -14,6 +15,9 @@ Usage: strata-install [--enable-sddm]
 Installs the Strata desktop from the configured static DNF repository.
 
   --enable-sddm    Enable SDDM and set graphical.target after installation.
+
+When run as a normal user, the installer also applies Strata's user
+configuration for that user without replacing existing configuration files.
 USAGE
       exit 0
       ;;
@@ -25,7 +29,8 @@ USAGE
 done
 
 if (( EUID != 0 )); then
-  exec sudo --preserve-env=STRATA_REPO_URL "$0" "$@"
+  export STRATA_INSTALL_USER=${install_user:-$USER}
+  exec sudo --preserve-env=STRATA_REPO_URL,STRATA_INSTALL_USER "$0" "$@"
 fi
 
 repo_file=/etc/yum.repos.d/strata.repo
@@ -35,6 +40,7 @@ curl --fail --location --silent --show-error "$repo_url/strata.repo" -o "$repo_f
 # Strata uses the maintained tagged Quickshell build, rather than a
 # development snapshot, because Fedora's base package may lag its API.
 dnf copr enable -y errornointernet/quickshell
+
 
 # Bootstrap in layers. Installing the desktop meta-package first can hide the
 # useful dependency error behind its noarch wrapper; establish the compositor
@@ -48,6 +54,18 @@ dnf install -y --refresh --setopt=install_weak_deps=False \
 dnf install -y --refresh --setopt=install_weak_deps=False \
   hyprland-desktop strata-config
 
+if [[ -n $install_user ]]; then
+  if ! id "$install_user" >/dev/null 2>&1; then
+    echo "Requested desktop user does not exist: $install_user" >&2
+    exit 2
+  fi
+  install_home=$(getent passwd "$install_user" | cut -d: -f6)
+  runuser -u "$install_user" -- env HOME="$install_home" \
+    XDG_CONFIG_HOME="$install_home/.config" strata-apply-config
+else
+  echo "No desktop user was detected; run strata-apply-config after logging in."
+fi
+
 if (( enable_sddm )); then
   systemctl enable --force sddm.service
   systemctl set-default graphical.target
@@ -55,7 +73,5 @@ fi
 
 cat <<'DONE'
 
-Strata is installed.
-Run `strata-apply-config` as the desktop user, then reboot or log in through
-the Hyprland/UWSM session in SDDM.
+Strata is installed. Reboot or log in through the Hyprland/UWSM session in SDDM.
 DONE
