@@ -9,9 +9,8 @@ desktop dependencies, and the tagged Quickshell package comes from its COPR.
 After this repository is published with GitHub Pages, run:
 
 ```bash
-curl -fsSLO https://name-is-hai.github.io/strata/scripts/strata-install
-chmod +x strata-install
-./strata-install --enable-sddm
+curl -fsSL https://name-is-hai.github.io/strata/scripts/strata-install | \
+  sudo bash -s -- --enable-sddm
 ```
 
 Then, as the desktop user:
