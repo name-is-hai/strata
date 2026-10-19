@@ -20,6 +20,7 @@ import "Store.js" as Store
 import "Security.js" as Security
 import "Layout.js" as Layout
 import "Markup.js" as Markup
+import "WindowRouting.js" as WindowRouting
 import "center"
 
 Item {
@@ -1677,6 +1678,9 @@ Item {
     var windows = openWindows()
     var i
 
+    var native = WindowRouting.nativeMatches(windows, DesktopEntries.applications.values || [], source)
+    if (native.length) return mostRecent(native)
+
     var found = []
     if (name.indexOf(".") > 0) {
       for (i = 0; i < windows.length; i++)
@@ -1773,7 +1777,7 @@ Item {
         // the wrong place - including a Slack card that would have opened
         // axiom.co.
         // The sender's own window first, then the source's, then the site.
-        var win = windowForPid(row.senderPid) || windowForSource(row.source)
+        var win = windowForPid(row.senderPid) || windowForSource(row.source || row.app)
         if (win) focusWindow(win)
         // Not `indexOf(".") > 0`. A source is lifted out of text the sender
         // wrote, and "https://" + it is a URL going wherever it says - so it

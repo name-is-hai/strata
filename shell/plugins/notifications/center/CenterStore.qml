@@ -90,7 +90,7 @@ Item {
     if (argv) { service.runExecArgv(argv); focusCompleted(); return }
     var win = service.windowForPid(original.senderPid) || service.windowForSource(original.source || original.app)
     if (win) { service.focusWindow(win); focusCompleted(); return }
-    focusError = "The sending application is no longer open."
+    focusError = "No open window was found for this notification."
   }
   FileView {
     id: seenFile
