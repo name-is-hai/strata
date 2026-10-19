@@ -117,9 +117,14 @@ report describes source intent, not the contents of old published RPMs.
 
 ## Direct runtime dependency inventory
 
-This inventory includes every explicit `Requires` declaration in the five specs.
+This inventory includes explicit `Requires` declarations in the original five specs,
+plus the restored lock-auth spec below.
 RPM macros and version constraints are kept as written; automatically generated
 library dependencies are outside this inventory. `BuildRequires` are excluded.
+
+### strata-lock-auth.spec
+
+**strata-lock-auth**: `pam`. Release CI now builds this policy package from source.
 
 ### hyprland-desktop.spec
 

@@ -18,7 +18,7 @@ Build selected Strata RPM source packages on this host through rootless Podman.
 All compilers and build dependencies remain in the disposable container.
 Pass multiple targets to reuse the same build container and DNF dependencies.
 
-  config      Strata config and casting backend RPMs
+  config      Strata config, casting backends and lock authentication RPMs
   desktop     desktop meta-packages plus Zen Browser, Ghostty, and UWSM
   zen         Zen Browser packages only; no Ghostty/UWSM compilation
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
@@ -179,7 +179,10 @@ podman "${podman_args[@]}" \
     mkdir -p /out/RPMS /out/SRPMS
     for target in $STRATA_TARGETS; do
       case "$target" in
-        config) build_spec strata-config.spec ;;
+        config)
+          build_spec strata-config.spec
+          build_spec strata-lock-auth.spec
+          ;;
         desktop) build_spec hyprland-desktop.spec ;;
         zen) build_spec hyprland-desktop.spec zen_only ;;
         hyprland) build_spec hyprland-minimal.spec ;;
@@ -191,6 +194,7 @@ podman "${podman_args[@]}" \
           build_spec jetbrains-mono-nerd-fonts.spec
           build_spec hyprland-desktop.spec
           build_spec strata-config.spec
+          build_spec strata-lock-auth.spec
           ;;
       esac
       # Keep completed packages even if a later target fails.

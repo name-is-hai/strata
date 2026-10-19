@@ -16,14 +16,16 @@ official Zen Linux archive during the build and writes `zen-browser` plus
 other desktop RPMs.
 
 Use `all` to build every source package. Results are written to
-`build-output/RPMS/`. Test those RPMs in a VM before copying the selected,
-tested files into `packages/` for publication.
+`build-output/RPMS/`. Test those RPMs in a VM. Publication uses CI-built
+release assets; generated RPMs and metadata are excluded from Git.
 
 The `config` target uses one source spec, `packaging/strata-config.spec`, to build
 five runtime RPMs: `strata-config`, `strata-casting`, `strata-waycast`,
 `strata-doubletake` and `strata-cast`. The desktop and backends share one
 release version and source archive while remaining separately installable.
-Use `config` for casting builds as well; there is no separate `casting` target.
+The same `config` target also builds `strata-lock-auth` from its own spec,
+including the password PAM policy. Use `config` for casting builds as well;
+there is no separate `casting` target.
 
 These tools live in `bin/` and are also installed as `strata build rpms`,
 `strata repo refresh`, and `strata repo verify`. Installed developer commands
@@ -46,7 +48,7 @@ The public tools do not replace Hyprland’s private Hyprcursor runtime library.
 
 ## Preparing the 1.0 release
 
-The source release is `1.0.0`. Build the changed targets together:
+The source release is `1.0.1`. Build the changed targets together:
 
 ```bash
 bin/strata-build-rpms config desktop utilities
@@ -62,39 +64,31 @@ The engine is packaged separately so neither browser RPM exceeds the per-file
 limit. Use `bin/strata-build-rpms zen` to repackage only Zen, without rebuilding
 Ghostty or UWSM.
 
-The 1.0 runtime RPMs are staged in `packages/`. For subsequent builds, test
-the build in a VM and replace each affected package in `packages/` with its new
-runtime RPM. Include the four desktop packages, the four casting packages,
-`strata-config`, `hyprland-utilities` and both rebuilt Zen RPMs. Keep the required
-unchanged Hyprland, portal, fonts, authentication and other dependency RPMs.
-Debug and source RPMs belong in build output rather than the public runtime set.
+GitHub builds changed targets, reuses verified unchanged RPMs from the previous
+release, assembles a complete runtime repository, verifies it
+and attaches it to a draft release. Publishing the draft deploys that repository
+to Pages. The manual Pages action requires a published tag too; it never uses
+committed RPMs. See [Releasing Strata](releasing.md).
 
-Before publication, regenerate and verify metadata:
+For local assembly testing, build all targets into a clean output directory:
 
 ```bash
-bin/strata-repo-refresh
-bin/strata-repo-verify
+STRATA_BUILD_OUTPUT="$PWD/build-output/local-release" bin/strata-build-rpms all
 ```
 
-Run these on Fedora 44 with `createrepo_c`, DNF and `rpm-build` available.
-The verifier rejects missing, duplicate or oversized RPMs and compares public
-versions against the source specs. Pages runs this gate before deployment.
-Publishing a stable GitHub release deploys its CI-built repository; manual
-Pages runs can still deploy the committed packages. Source pushes alone do not deploy.
-No Git tag, push, GitHub release or publication is part of release preparation.
-
-If the host lacks `createrepo_c`, run metadata generation and verification in
-a disposable Fedora 44 Podman container with `createrepo_c` and `rpm-build`.
-The public packages must be staged before regenerating metadata; building alone
-only updates `build-output/RPMS/`.
-
-For metadata checks without installing host tools:
+Then assemble and verify the result in Fedora 44:
 
 ```bash
 podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo \
   registry.fedoraproject.org/fedora:44 bash -euc '
     dnf install -y --setopt=install_weak_deps=False createrepo_c rpm-build
-    bin/strata-repo-refresh
-    bin/strata-repo-verify
+    bash .github/scripts/assemble-release.sh build-output/local-release/RPMS
   '
 ```
+
+Local assembly requires matching RPMs for all six specs. It generates
+ignored `packages/` and `repodata/` directories, plus release assets under
+`build-output/release/`. It does not publish anything or install packages
+on the host. The generated repository can also be checked with
+`bin/strata-repo-refresh` and `bin/strata-repo-verify` when the required
+Fedora tools are available.

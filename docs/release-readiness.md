@@ -1,5 +1,11 @@
 # Strata 1.0.0 release review
 
+This records the earlier local-build review. The repository now builds all
+RPMs from source in CI, including lock authentication; generated packages and
+metadata have been removed from Git. See [Releasing Strata](releasing.md)
+for the current publication process. The results below describe the earlier
+24-RPM set, before this migration.
+
 Reviewed 2026-10-19 against the current working tree. The release RPMs have been built and staged in `packages/`. Repository metadata verification and the fresh Fedora dependency transaction both pass. No host package installation, login-manager switch, commit, tag, or deployment was performed.
 
 ## Corrections made during review
@@ -61,13 +67,7 @@ bin/strata-build-rpms config desktop utilities
 
 Test the built runtime RPMs in a fresh Fedora 44 VM before publication. Check dependency resolution with weak dependencies disabled, installation with `--enable-greetd`, login, lock/unlock, menu-only Mouse settings, clipboard paste, capture, audio, theme/background selection and update detection. Also test an upgrade from an existing Strata installation. Greeter setup was checked for syntax, help and its root guard; it was not used to switch a real login manager during this review.
 
-For future builds, replace superseded runtime RPMs by package name and include all newly required subpackages. Keep one runtime RPM per package name in `packages/`; remove superseded versions rather than keeping both. Source/debug RPMs and unrelated old build artifacts stay outside the public runtime set. Check every RPM’s actual size after the build.
-
-Then run on Fedora 44 with `createrepo_c`, DNF and `rpm-build` installed:
-
-```bash
-bin/strata-repo-refresh
-bin/strata-repo-verify
-```
-
-Publish after verification and the VM installation/upgrade checks pass. The automated [release workflow](releasing.md) now builds fresh RPMs from a version tag and creates a draft release. Publishing that draft deploys its repository to Pages. Source pushes no longer deploy packages automatically. The local-build route remains available through a manual Pages run using committed packages and metadata.
+For subsequent releases, use the automated [release workflow](releasing.md).
+It builds fresh RPMs from a version tag and creates a draft release. Publishing
+that draft deploys its repository to Pages. Source pushes do not deploy
+packages, and manual Pages runs also require release assets.

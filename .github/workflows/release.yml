@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to build (for example v1.0.0)
+        description: Existing version tag to build (for example v1.0.1)
         required: true
         type: string
+      force_full:
+        description: Rebuild every target instead of reusing verified RPMs
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -24,7 +29,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       commit: ${{ steps.version.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           persist-credentials: false
@@ -39,9 +44,59 @@ jobs:
           [[ $(<runtime-version) == "$version" ]]
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Test release planning
+        run: |
+          node scripts/tests/release-plan.js
+          bash scripts/tests/release-base.sh
+
+  plan:
+    needs: validate
+    runs-on: ubuntu-24.04
+    outputs:
+      reuse: ${{ steps.plan.outputs.reuse }}
+      has_reuse: ${{ steps.plan.outputs.has_reuse }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Download previous verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          FORCE_FULL: ${{ inputs.force_full || false }}
+        run: bash .github/scripts/download-release-base.sh
+      - id: plan
+        name: Compare build inputs and verify reusable RPMs
+        env:
+          FORCE_FULL: ${{ inputs.force_full || false }}
+        run: node .github/scripts/release-plan.js plan build-output/reuse-base build-output/release-plan
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-plan
+          path: build-output/release-plan/plan.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7.0.2
+        if: steps.plan.outputs.has_reuse == 'true'
+        with:
+          name: reused-rpms
+          path: build-output/release-plan/reused/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
   build:
-    needs: validate
+    needs: [validate, plan]
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     strategy:
@@ -49,24 +104,39 @@ jobs:
       matrix:
         target: [config, desktop, hyprland, utilities, fonts]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.validate.outputs.commit }}
           persist-credentials: false
       - name: Install Podman
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
         run: sudo apt-get update && sudo apt-get install -y podman
       - name: Build Fedora 44 RPMs
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
         env:
           TARGET: ${{ matrix.target }}
           STRATA_BUILD_CPUS: '2'
         run: bin/strata-build-rpms "$TARGET"
       - name: Select runtime RPMs
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
         run: |
           mkdir release-rpms
           find build-output/RPMS -type f -name '*.rpm' \
             ! -name '*-debuginfo-*' ! -name '*-debugsource-*' \
             -exec cp -- {} release-rpms/ \;
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] == true
+        with:
+          name: reused-rpms
+          path: reused-rpms
+      - name: Use unchanged RPMs from previous release
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] == true
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir release-rpms
+          cp reused-rpms/"$TARGET"/*.rpm release-rpms/
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: rpms-${{ matrix.target }}
           path: release-rpms/*.rpm
@@ -75,18 +145,22 @@ jobs:
           retention-days: 7
 
   assemble:
-    needs: [validate, build]
+    needs: [validate, plan, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.validate.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           pattern: rpms-*
           path: incoming
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-plan
+          path: build-output/release-plan
       - name: Install Podman
         run: sudo apt-get update && sudo apt-get install -y podman
       - name: Assemble and verify repository
@@ -96,6 +170,14 @@ jobs:
               dnf install -y --setopt=install_weak_deps=False createrepo_c rpm-build
               bash .github/scripts/assemble-release.sh incoming
             '
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Record build inputs and package checksums for future reuse
+        run: |
+          node .github/scripts/release-plan.js record build-output/release-plan/plan.json \
+            incoming build-output/release/assets
       - name: Resolve fresh Fedora dependencies
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:ro,Z" -w /repo \
@@ -114,7 +196,7 @@ jobs:
                 exit 1
               fi
             '
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: release-assets
           path: build-output/release/assets/*
@@ -128,7 +210,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: release-assets
           path: assets

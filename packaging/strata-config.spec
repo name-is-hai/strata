@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -347,5 +347,9 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Mon Oct 19 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1:1.0.1-1
+- Release Strata 1.0.1 with source-built lock authentication
+- Publish generated RPM repositories as release assets instead of tracking binaries
+
 * Mon Oct 19 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1:1.0.0-1
 - Release Strata 1.0.0 with the unified Quickshell desktop and greetd integration

@@ -3,7 +3,7 @@
 Name:           hyprland-desktop
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Personal Hyprland desktop package set
 
@@ -375,6 +375,10 @@ separately to keep each downloadable RPM within the repository file-size limit.
 /opt/zen-browser/libxul.so
 
 %changelog
+* Mon Oct 19 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.0.1-1
+- Align desktop dependency packages with Strata 1.0.1
+- Build releases with verified reuse of unchanged targets and Node.js 24 actions
+
 * Mon Oct 19 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.0.0-1
 - Release the Strata 1.0.0 desktop package set for Fedora 44
 - Use greetd, Zen Browser, Chromium web apps and complete font dependencies

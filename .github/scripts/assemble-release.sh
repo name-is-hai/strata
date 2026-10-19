@@ -28,22 +28,20 @@ while IFS= read -r -d '' file; do
 done < <(find "$incoming" -type f -name '*.rpm' -print0)
 
 for name in "${!expected[@]}"; do
-  [[ -n ${selected[$name]:-} ]] || { echo "Missing fresh build: $name" >&2; exit 1; }
+  [[ -n ${selected[$name]:-} ]] || { echo "Missing release RPM: $name" >&2; exit 1; }
 done
 rpm -K --nosignature "${selected[@]}"
 
-# Retain legacy dependencies without source specs, such as strata-lock-auth.
-# Remove superseded runtime RPMs by header name, never a filename prefix.
-while IFS= read -r -d '' file; do
-  name=$(rpm -qp --qf '%{NAME}' "$file")
-  [[ -z ${selected[$name]:-} ]] || rm -- "$file"
-done < <(find packages -maxdepth 1 -type f -name '*.rpm' -print0)
+# Only newly built or verified previous-release RPMs enter this repository.
+rm -rf packages repodata
+mkdir packages
 cp -- "${selected[@]}" packages/
 rpm -K --nosignature packages/*.rpm
 bin/strata-repo-refresh
 bin/strata-repo-verify
 
 output=build-output/release
+rm -rf "$output"
 mkdir -p "$output/site" "$output/assets"
 cp -a packages repodata strata.repo VERSION LICENSE "$output/site/"
 mkdir -p "$output/site/bin"

@@ -6,6 +6,12 @@ SOURCES/
 SRPMS/
 results/
 build-output/
+/packages/
+/repodata/
+/incoming/
+/release-rpms/
+/release-download/
+/public-site/
 **/target/
 __pycache__/
 *.py[cod]

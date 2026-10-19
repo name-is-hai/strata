@@ -10,7 +10,6 @@ touch "$work/source/bin/strata" "$work/source/repodata/repomd.xml"
 for spec in "$repo"/packaging/*.spec; do
   rpmspec -q --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' "$spec"
 done > "$work/metadata.good"
-printf 'strata-lock-auth\t0:0.1-1.fc44\n' >> "$work/metadata.good"
 while IFS=$'\t' read -r name version; do touch "$work/source/packages/$name.rpm"; done < "$work/metadata.good"
 cp "$work/metadata.good" "$work/metadata"
 cat > "$work/bin/rpm" <<'MOCK'
@@ -36,6 +35,10 @@ rg -q 'source package versions are valid' "$work/output"
 sed -i 's/^strata-config\t.*/strata-config\t0:0.1.53-1.fc44/' "$work/metadata"
 run 1
 rg -q 'Wrong public version for strata-config' "$work/output"
+cp "$work/metadata.good" "$work/metadata"
+sed -i 's/^strata-lock-auth\t.*/strata-lock-auth\t0:0.1-1.fc44/' "$work/metadata"
+run 1
+rg -q 'Wrong public version for strata-lock-auth' "$work/output"
 cp "$work/metadata.good" "$work/metadata"
 touch "$work/source/packages/strata-config.duplicate.rpm"
 run 1
