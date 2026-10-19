@@ -1,0 +1,7 @@
+#!/bin/sh
+# Keep Zen's browser text independent from Strata's desktop text-size slider.
+# Do not set GDK_SCALE here: that controls monitor/device scaling and must
+# remain under the compositor's control. GDK_DPI_SCALE only resets GTK text
+# DPI to its standard value.
+export GDK_DPI_SCALE=1
+exec /opt/zen-browser/zen "$@"

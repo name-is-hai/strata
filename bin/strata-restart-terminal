@@ -10,6 +10,13 @@ if pgrep -x kitty >/dev/null; then
   killall -SIGUSR1 kitty >/dev/null
 fi
 
+# Ghostty normally runs through its user systemd unit.  Reloading that unit is
+# the supported way to apply a new theme to every existing Ghostty window.
+# Keep SIGUSR2 as a fallback for a manually started instance.
+if systemctl --user reload app-com.mitchellh.ghostty.service >/dev/null 2>&1; then
+  exit 0
+fi
+
 if pgrep -x ghostty >/dev/null; then
   killall -SIGUSR2 ghostty
 fi

@@ -1,0 +1,241 @@
+{
+  "//": "The built-in events. Each id is also the file name a sound theme provides (bell.ogg, device-added.wav, ...). When a theme lacks that file, the fallback names are tried in order, so freedesktop sound themes work too.",
+  "events": [
+    {
+      "id": "startup",
+      "label": "Startup",
+      "windows": "Windows Startup",
+      "glyph": "󰐥",
+      "default": true,
+      "trigger": "Signing in to the desktop",
+      "fallback": [
+        "desktop-login",
+        "service-login",
+        "system-ready"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "shutdown",
+      "label": "Shut down",
+      "windows": "Exit Windows",
+      "glyph": "󰤆",
+      "default": false,
+      "trigger": "Powering off or restarting",
+      "fallback": [
+        "desktop-logout",
+        "service-logout",
+        "system-shutdown"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "bell",
+      "label": "Default beep",
+      "windows": "Default Beep",
+      "glyph": "󰌌",
+      "default": true,
+      "trigger": "Backspace with nothing to delete, a terminal bell, any app ringing the system bell",
+      "fallback": [
+        "bell-window-system",
+        "bell-terminal"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "audio-volume-change",
+      "label": "Volume change",
+      "windows": "Default Beep",
+      "glyph": "󰕾",
+      "default": true,
+      "trigger": "The output volume changes",
+      "fallback": [
+        "bell"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "notification",
+      "label": "Notification",
+      "windows": "Notification",
+      "glyph": "󰂞",
+      "default": true,
+      "trigger": "A notification arrives, unless Do Not Disturb is on",
+      "fallback": [
+        "message-new-instant",
+        "message",
+        "dialog-information"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "reminder",
+      "label": "Reminder",
+      "windows": "Calendar Reminder",
+      "glyph": "󰀠",
+      "default": true,
+      "trigger": "A Strata reminder arrives",
+      "fallback": [
+        "alarm-clock-elapsed",
+        "notification",
+        "message-new-instant",
+        "message"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "authentication",
+      "label": "Password prompt",
+      "windows": "User Account Control",
+      "glyph": "󰌾",
+      "default": true,
+      "trigger": "The system asks for your password",
+      "fallback": [
+        "dialog-question",
+        "window-question",
+        "dialog-warning"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "error",
+      "label": "App crashed",
+      "windows": "Critical Stop",
+      "glyph": "󰅚",
+      "default": true,
+      "trigger": "A program crashes",
+      "fallback": [
+        "dialog-error",
+        "suspend-error"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "device-added",
+      "label": "Device connected",
+      "windows": "Device Connect",
+      "glyph": "󰕓",
+      "default": true,
+      "trigger": "A USB device is plugged in",
+      "fallback": [],
+      "requires": ""
+    },
+    {
+      "id": "device-removed",
+      "label": "Device disconnected",
+      "windows": "Device Disconnect",
+      "glyph": "󰕓",
+      "default": true,
+      "trigger": "A USB device is unplugged",
+      "fallback": [],
+      "requires": ""
+    },
+    {
+      "id": "bluetooth-connect",
+      "label": "Bluetooth connected",
+      "windows": "Device Connect",
+      "glyph": "󰂱",
+      "default": true,
+      "trigger": "A Bluetooth device connects",
+      "fallback": [
+        "device-added"
+      ],
+      "requires": "bluetooth"
+    },
+    {
+      "id": "bluetooth-disconnect",
+      "label": "Bluetooth disconnected",
+      "windows": "Device Disconnect",
+      "glyph": "󰂲",
+      "default": true,
+      "trigger": "A Bluetooth device disconnects",
+      "fallback": [
+        "device-removed"
+      ],
+      "requires": "bluetooth"
+    },
+    {
+      "id": "screen-capture",
+      "label": "Screenshot",
+      "windows": "",
+      "glyph": "󰄀",
+      "default": true,
+      "trigger": "A screenshot is saved",
+      "fallback": [
+        "camera-shutter"
+      ],
+      "requires": ""
+    },
+    {
+      "id": "trash-empty",
+      "label": "Empty trash",
+      "windows": "Empty Recycle Bin",
+      "glyph": "󰩹",
+      "default": true,
+      "trigger": "The trash is emptied",
+      "fallback": [],
+      "requires": ""
+    },
+    {
+      "id": "theme-change",
+      "label": "Theme change",
+      "windows": "Windows Change Theme",
+      "glyph": "󰏘",
+      "default": true,
+      "trigger": "You switch Strata themes",
+      "fallback": [],
+      "requires": ""
+    },
+    {
+      "id": "battery-low",
+      "label": "Low battery",
+      "windows": "Low Battery Alarm",
+      "glyph": "󰁻",
+      "default": true,
+      "trigger": "The battery falls to 10% while discharging",
+      "fallback": [
+        "battery-caution",
+        "dialog-warning"
+      ],
+      "requires": "battery"
+    },
+    {
+      "id": "battery-critical",
+      "label": "Critical battery",
+      "windows": "Critical Battery Alarm",
+      "glyph": "󰂃",
+      "default": true,
+      "trigger": "The battery falls to 5% while discharging",
+      "fallback": [
+        "battery-caution",
+        "battery-low",
+        "dialog-warning"
+      ],
+      "requires": "battery"
+    },
+    {
+      "id": "power-plug",
+      "label": "Charger connected",
+      "windows": "",
+      "glyph": "󰚥",
+      "default": true,
+      "trigger": "The charger is plugged in",
+      "fallback": [
+        "device-added"
+      ],
+      "requires": "battery"
+    },
+    {
+      "id": "power-unplug",
+      "label": "Charger disconnected",
+      "windows": "",
+      "glyph": "󰚦",
+      "default": true,
+      "trigger": "The charger is unplugged",
+      "fallback": [
+        "device-removed"
+      ],
+      "requires": "battery"
+    }
+  ]
+}

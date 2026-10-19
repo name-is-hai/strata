@@ -40,6 +40,10 @@ BorderSurface {
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.body
   property real iconSize: Style.font.icon
+  // Nerd Font glyphs do not all paint around the center of their text
+  // advance. Opt in for compact icon-only buttons that need their painted
+  // bounds centered inside their hover surface.
+  property bool opticalIcon: false
   property real iconRotation: 0
   property bool iconSpinning: false
   property real horizontalPadding: Style.spacing.controlPaddingX
@@ -159,10 +163,11 @@ BorderSurface {
     spacing: Style.spacing.controlGap
 
     Text {
+      id: iconGlyphSlot
       textFormat: Text.PlainText
       visible: root.iconText !== ""
       text: root.iconText
-      color: root.selected ? root._selectedColor : root.foreground
+      color: root.opticalIcon ? "transparent" : (root.selected ? root._selectedColor : root.foreground)
       font.family: root.fontFamily
       font.pixelSize: root.iconSize
       rotation: root.iconSpinning ? 0 : root.iconRotation
@@ -175,6 +180,15 @@ BorderSurface {
         duration: 900
         loops: Animation.Infinite
         running: root.iconSpinning && !Style.reduceMotion
+      }
+
+      OpticalGlyph {
+        anchors.fill: parent
+        visible: root.opticalIcon && root.iconText !== ""
+        text: root.iconText
+        color: root.selected ? root._selectedColor : root.foreground
+        fontFamily: root.fontFamily
+        fontSize: root.iconSize
       }
     }
 

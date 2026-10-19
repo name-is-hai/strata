@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Line-delimited Quickshell bridge to greetd's length-prefixed JSON socket.
+set -uo pipefail
+export LC_ALL=C
+umask 077
+
+emit_error() {
+  jq -cn --arg message "$1" '{type:"error",message:$message}'
+}
+
+if [[ ! -S ${GREETD_SOCK:-} ]]; then
+  emit_error 'greetd socket is unavailable'
+  exit 1
+fi
+
+coproc GREETD_BRIDGE { exec socat - "UNIX-CONNECT:$GREETD_SOCK"; }
+
+# greetd uses a native-endian 32-bit length, followed by UTF-8 JSON. Strata
+# currently builds for x86_64, so the four header bytes are little-endian.
+exchange() {
+  local payload=$1 length=${#1} header reply_length
+  (( length > 0 && length <= 65536 )) || return 1
+  printf -v header '\\%03o\\%03o\\%03o\\%03o' \
+    "$((length & 255))" "$(((length >> 8) & 255))" \
+    "$(((length >> 16) & 255))" "$(((length >> 24) & 255))"
+  printf '%b%s' "$header" "$payload" >&"${GREETD_BRIDGE[1]}" || return 1
+  reply_length=$(od -An -tu4 -N4 <&"${GREETD_BRIDGE[0]}") || return 1
+  reply_length=${reply_length//[[:space:]]/}
+  [[ $reply_length =~ ^[0-9]+$ ]] || return 1
+  (( reply_length > 0 && reply_length <= 65536 )) || return 1
+  IFS= read -r -N "$reply_length" REPLY_JSON <&"${GREETD_BRIDGE[0]}" || return 1
+  jq -e . >/dev/null 2>&1 <<<"$REPLY_JSON"
+}
+
+active=false
+pending_password_request=
+current_username=
+session_request='{"type":"start_session","cmd":["/usr/bin/systemd-cat","-t","strata-login-session","/usr/bin/uwsm","start","-e","-D","Hyprland","hyprland.desktop"],"env":[]}'
+
+while IFS= read -r line; do
+  event_type=$(jq -er '.type // empty' 2>/dev/null <<<"$line") || continue
+  case $event_type in
+    login)
+      current_username=$(jq -r '(.username // "") | gsub("^\\s+|\\s+$"; "")' <<<"$line") || continue
+      if [[ -z $current_username || ${#current_username} -gt 128 ]]; then
+        emit_error 'Enter a valid username'
+        continue
+      fi
+      if [[ $active == true ]]; then
+        exchange '{"type":"cancel_session"}' || true
+      fi
+      pending_password_request=$(jq -c '{type:"post_auth_message_response",response:(.password // "")}' <<<"$line") || continue
+      request=$(jq -c '{type:"create_session",username:(.username | gsub("^\\s+|\\s+$"; ""))}' <<<"$line") || continue
+      if ! exchange "$request"; then
+        emit_error 'greetd disconnected'
+        active=false
+        continue
+      fi
+      active=true
+      ;;
+    respond)
+      [[ $active == true ]] || continue
+      request=$(jq -c '{type:"post_auth_message_response",response:(.response // "")}' <<<"$line") || continue
+      pending_password_request=
+      if ! exchange "$request"; then
+        emit_error 'greetd disconnected'
+        active=false
+        continue
+      fi
+      ;;
+    cancel)
+      [[ $active == true ]] || continue
+      exchange '{"type":"cancel_session"}' || true
+      active=false
+      pending_password_request=
+      printf '%s\n' '{"type":"ready"}'
+      continue
+      ;;
+    *) continue ;;
+  esac
+
+  while [[ $(jq -r '.type // empty' <<<"$REPLY_JSON") == auth_message ]]; do
+    prompt_type=$(jq -r '.auth_message_type // "secret"' <<<"$REPLY_JSON")
+    if [[ $prompt_type == info || $prompt_type == error ]]; then
+      jq -c '{type:"notice",message:(.auth_message // ""),error:(.auth_message_type == "error")}' <<<"$REPLY_JSON"
+      request='{"type":"post_auth_message_response"}'
+    elif [[ -n $pending_password_request && $prompt_type == secret ]]; then
+      request=$pending_password_request
+      pending_password_request=
+    else
+      pending_password_request=
+      jq -c '{type:"prompt",message:(.auth_message // ""),secret:(.auth_message_type == "secret")}' <<<"$REPLY_JSON"
+      continue 2
+    fi
+    if ! exchange "$request"; then
+      emit_error 'greetd disconnected'
+      active=false
+      continue 2
+    fi
+  done
+
+  pending_password_request=
+  if [[ $(jq -r '.type // empty' <<<"$REPLY_JSON") == success ]]; then
+    if exchange "$session_request" && [[ $(jq -r '.type // empty' <<<"$REPLY_JSON") == success ]]; then
+      printf '%s\n' "$current_username" >"$HOME/strata-last-user" || true
+      if [[ -n ${STRATA_GREETER_STARTED_FILE:-} ]]; then
+        printf 'started\n' >"$STRATA_GREETER_STARTED_FILE"
+      fi
+      printf '%s\n' '{"type":"started"}'
+      exit 0
+    fi
+  fi
+  failure_reply=$REPLY_JSON
+  if [[ $active == true ]]; then
+    exchange '{"type":"cancel_session"}' || true
+  fi
+  active=false
+  jq -c '{type:"error",message:(.description // "Login failed")}' <<<"$failure_reply"
+done

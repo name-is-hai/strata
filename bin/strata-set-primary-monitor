@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only an explicit layout save changes the persistent choice. A hotplug/startup
+# callback can run before HDMI appears; persisting its temporary fallback would
+# replace the user's Main with the closed laptop panel.
+saved=$(cat /etc/strata/main-monitor 2>/dev/null || true)
+[[ ${1:-} == --save ]] && saved=
+name=$(hyprctl monitors -j 2>/dev/null |
+  jq -r --arg saved "$saved" '
+    [.[] | select(.disabled != true and .width > 0 and .height > 0)] |
+    (map(select(.name == $saved))[0] //
+     map(select((.x // 999) == 0 and (.y // 999) == 0))[0] // .[0]) |
+    .name // empty')
+[[ -n $name ]] || exit 0
+
+# The greeter starts before this user's compositor exists, so persist Main
+# when the user saves the layout, never when a display temporarily disappears.
+if [[ ${1:-} == --save ]]; then
+  pkexec /usr/bin/strata-main-monitor-install "$name" || true
+fi
+
+# XWayland can start just after Hyprland's start event. Give its RandR screen a
+# brief chance to appear, and quietly leave the compositor's choice unchanged
+# when this output is unavailable in XWayland.
+command -v xrandr >/dev/null 2>&1 || exit 0
+for _ in {1..10}; do
+  if xrandr --query 2>/dev/null | awk -v wanted="$name" '$1 == wanted && $2 == "connected" { found = 1 } END { exit !found }'; then
+    xrandr --output "$name" --primary
+    exit
+  fi
+  sleep 0.2
+done
+
+exit 0

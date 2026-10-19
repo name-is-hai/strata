@@ -634,11 +634,11 @@ BarWidget {
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
 
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        ScrollBar.vertical: PanelScrollBar { policy: ScrollBar.AsNeeded }
 
         Column {
           id: trayMenuColumn
-          width: trayMenuFlick.width
+          width: Math.max(0, trayMenuFlick.width - Style.space(16))
           spacing: 0
 
           Repeater {
@@ -810,8 +810,8 @@ BarWidget {
 
     TrayIcon {
       anchors.centerIn: parent
-      width: Style.space(12)
-      height: Style.space(12)
+      width: Math.min(Style.bar.iconSize, parent.width, parent.height)
+      height: width
       icon: trayItemRoot.modelData.icon
     }
 

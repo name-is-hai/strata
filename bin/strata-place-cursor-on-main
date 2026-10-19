@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Put the initial pointer on the display selected as Main. Run only at login.
+set -euo pipefail
+
+main=${1:-}
+if [[ -z $main ]]; then
+  main=$(cat /etc/strata/main-monitor 2>/dev/null || true)
+fi
+[[ $main =~ ^[A-Za-z0-9._-]+$ ]] || exit 0
+
+for _ in {1..20}; do
+  if monitors=$(hyprctl monitors -j 2>/dev/null); then
+    if coordinates=$(jq -er --arg main "$main" '
+      .[] | select(.name == $main and .disabled != true) |
+      [((.x + .width / (.scale // 1) / 2) | floor),
+       ((.y + .height / (.scale // 1) / 2) | floor)] | @tsv
+    ' <<< "$monitors"); then
+      read -r x y <<< "$coordinates"
+      hyprctl dispatch "hl.dsp.focus({ monitor = \"$main\" })" >/dev/null 2>&1 || true
+      hyprctl dispatch "hl.dsp.cursor.move({ x = $x, y = $y })" >/dev/null 2>&1 || true
+      exit 0
+    fi
+  fi
+  sleep 0.1
+done

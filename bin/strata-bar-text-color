@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# strata:summary=Choose a legible transparent bar text color
+# strata:summary=Choose a legible bar text color
 # strata:hidden=true
 
 set -e
@@ -11,6 +11,8 @@ text_color=${3:-}
 background_color=${4:-}
 background_path=""
 screen_size=""
+transparent=true
+surface_color=""
 
 shift 4 2>/dev/null || true
 while (($# > 0)); do
@@ -22,6 +24,18 @@ while (($# > 0)); do
   --screen)
     screen_size=${2:-}
     shift 2
+    ;;
+  --surface)
+    surface_color=${2:-}
+    shift 2
+    ;;
+  --opaque)
+    transparent=false
+    shift
+    ;;
+  --transparent)
+    transparent=true
+    shift
     ;;
   *)
     shift
@@ -70,9 +84,27 @@ contrast() {
 
 valid_hex "$text_color" || fallback
 valid_hex "$background_color" || fallback
+
+# Compare both theme candidates against the actual bar surface. If neither
+# is readable, use whichever of black or white has the stronger contrast.
+if [[ $transparent != true ]]; then
+  valid_hex "$surface_color" || fallback
+  chosen=$text_color
+  best=$(contrast "$chosen" "$surface_color")
+  for candidate in "$background_color" '#000000' '#ffffff'; do
+    score=$(contrast "$candidate" "$surface_color")
+    if awk -v best="$best" -v score="$score" 'BEGIN { exit !(best < 4.5 && score > best) }'; then
+      chosen=$candidate
+      best=$score
+    fi
+  done
+  printf '%s\n' "$chosen"
+  exit 0
+fi
+
 [[ $position =~ ^(top|bottom|left|right)$ ]] || fallback
 [[ $bar_size =~ ^[0-9]+$ ]] || fallback
-strata-cmd-present magick || fallback
+command -v magick >/dev/null 2>&1 || fallback
 
 if [[ -z $background_path ]]; then
   background_path=$(readlink -f "$HOME/.local/state/strata/current/background" 2>/dev/null || true)

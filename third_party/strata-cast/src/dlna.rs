@@ -1,0 +1,819 @@
+use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs, UdpSocket};
+use std::time::{Duration, Instant};
+
+use quick_xml::Reader;
+use quick_xml::events::Event;
+
+use crate::protocol::Device;
+use crate::util;
+
+pub const SSDP_ADDR: &str = "239.255.255.250";
+pub const SSDP_PORT: u16 = 1900;
+pub const MEDIARENDERER: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
+pub const PROBE_PORTS: [u16; 11] = [
+    9197, 7676, 8080, 1400, 3000, 8060, 55000, 49152, 49153, 2869, 1054,
+];
+pub const PROBE_PATHS: [&str; 8] = [
+    "/dmr",
+    "/dmr/",
+    "/description.xml",
+    "/MediaRenderer/desc.xml",
+    "/upnp/desc.xml",
+    "/dd.xml",
+    "/device.xml",
+    "/xml/device_description.xml",
+];
+
+/// SSDP replies come from any host on the LAN, so what one scan accepts is
+/// bounded: a few description URLs per replying host, a few dozen overall.
+const MAX_LOCATIONS_PER_HOST: usize = 4;
+const MAX_LOCATIONS: usize = 64;
+/// Description fetches and renderer probes that run at once.
+const MAX_PARALLEL_PROBES: usize = 8;
+/// Upper bound on the probing half of a scan, however many hosts answered.
+const PROBE_DEADLINE: Duration = Duration::from_secs(15);
+
+fn msearch(st: &str) -> Vec<u8> {
+    format!(
+        "M-SEARCH * HTTP/1.1\r\nHOST: {SSDP_ADDR}:{SSDP_PORT}\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: {st}\r\n\r\n"
+    )
+    .into_bytes()
+}
+
+fn new_socket(lan_ip: Ipv4Addr) -> std::io::Result<UdpSocket> {
+    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
+    socket.set_reuse_address(true)?;
+    socket.bind(&SocketAddr::new(IpAddr::V4(lan_ip), 0).into())?;
+    socket.set_multicast_if_v4(&lan_ip)?;
+    socket.set_multicast_ttl_v4(2)?;
+    socket.set_read_timeout(Some(Duration::from_secs(1)))?;
+    Ok(socket.into())
+}
+
+/// Only LAN senders: the description is fetched from the sender, and
+/// nothing off the LAN is ever contacted.
+fn lan_sender(ip: IpAddr) -> bool {
+    matches!(ip, IpAddr::V4(ip) if util::lan_ipv4(ip))
+}
+
+/// Largest SSDP reply read; real ones are a few hundred bytes.
+const MAX_SSDP_REPLY: usize = 4096;
+
+fn collect_locations(socket: &UdpSocket, window: Duration) -> HashSet<String> {
+    collect_locations_from(socket, window, lan_sender)
+}
+
+fn collect_locations_from(
+    socket: &UdpSocket,
+    window: Duration,
+    accept: impl Fn(IpAddr) -> bool,
+) -> HashSet<String> {
+    let deadline = Instant::now() + window;
+    let mut locations = HashSet::new();
+    let mut per_host: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    // One byte more than any reply we accept: a datagram that fills it was
+    // longer and the kernel cut it off, so it is dropped rather than parsed.
+    let mut buffer = [0_u8; MAX_SSDP_REPLY + 1];
+    while Instant::now() < deadline {
+        match socket.recv_from(&mut buffer) {
+            Ok((len, from)) => {
+                if len > MAX_SSDP_REPLY || !accept(from.ip()) {
+                    continue;
+                }
+                let text = String::from_utf8_lossy(&buffer[..len]);
+                let sender = from.ip().to_string();
+                for line in text.split("\r\n") {
+                    if line.to_ascii_lowercase().starts_with("location:")
+                        && let Some((_, value)) = line.split_once(':')
+                    {
+                        let value = value.trim().to_string();
+                        // A device describes itself: a Location pointing
+                        // anywhere but the replying host (localhost, a
+                        // router admin page) is dropped.
+                        if value.is_empty()
+                            || host_of(&value).as_deref() != Some(&sender)
+                            || locations.contains(&value)
+                        {
+                            continue;
+                        }
+                        let count = per_host.entry(sender.clone()).or_default();
+                        if *count < MAX_LOCATIONS_PER_HOST && locations.len() < MAX_LOCATIONS {
+                            *count += 1;
+                            locations.insert(value);
+                        }
+                    }
+                }
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(_) => break,
+        }
+    }
+    locations
+}
+
+pub fn ssdp_multicast(lan_ip: Ipv4Addr) -> HashSet<String> {
+    let mut locations = HashSet::new();
+    let Ok(socket) = new_socket(lan_ip) else {
+        return locations;
+    };
+    for _ in 0..3 {
+        for st in [MEDIARENDERER, "ssdp:all"] {
+            let _ = socket.send_to(&msearch(st), (SSDP_ADDR, SSDP_PORT));
+        }
+    }
+    locations.extend(collect_locations(&socket, Duration::from_secs(4)));
+    locations
+}
+
+/// Asks each candidate directly (for networks that drop multicast). One
+/// socket and one listening window serve every candidate, so the cost does
+/// not grow with the number of hosts.
+pub fn ssdp_unicast(ips: &[String], lan_ip: Ipv4Addr) -> HashSet<String> {
+    let mut locations = HashSet::new();
+    if ips.is_empty() {
+        return locations;
+    }
+    let Ok(socket) = new_socket(lan_ip) else {
+        return locations;
+    };
+    for ip in ips {
+        for st in [MEDIARENDERER, "ssdp:all"] {
+            let _ = socket.send_to(&msearch(st), (ip.as_str(), SSDP_PORT));
+        }
+    }
+    for location in collect_locations(&socket, Duration::from_secs(2)) {
+        if host_of(&location).is_some_and(|host| ips.contains(&host)) {
+            locations.insert(location);
+        }
+    }
+    locations
+}
+
+pub fn host_of(url: &str) -> Option<String> {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+}
+
+fn client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default()
+    })
+}
+
+/// Device descriptions are a few KiB; SOAP replies (`GetPositionInfo` carries
+/// the DIDL metadata) stay well under 64 KiB on every renderer seen so far.
+const MAX_DESCRIPTION_BYTES: usize = 1024 * 1024;
+const MAX_SOAP_BYTES: usize = 256 * 1024;
+
+async fn http_get_text(url: &str, timeout: Duration) -> Option<String> {
+    let response = client().get(url).timeout(timeout).send().await.ok()?;
+    let body = util::read_body_capped(response, MAX_DESCRIPTION_BYTES).await?;
+    Some(String::from_utf8_lossy(&body).into_owned())
+}
+
+pub async fn discover(
+    lan_ip: Option<Ipv4Addr>,
+    candidate_ips: &[String],
+    use_multicast: bool,
+) -> Vec<Device> {
+    let lan = lan_ip;
+    let candidates = candidate_ips.to_vec();
+    let locations = tokio::task::spawn_blocking(move || {
+        let mut all = HashSet::new();
+        if let Some(lan) = lan {
+            if use_multicast {
+                all.extend(ssdp_multicast(lan));
+            }
+            all.extend(ssdp_unicast(&candidates, lan));
+        }
+        all
+    })
+    .await
+    .unwrap_or_default();
+
+    let mut devices: std::collections::HashMap<String, Device> = std::collections::HashMap::new();
+    let limit = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_PARALLEL_PROBES));
+    let deadline = tokio::time::Instant::now() + PROBE_DEADLINE;
+    let mut set = tokio::task::JoinSet::new();
+    for location in locations {
+        let limit = std::sync::Arc::clone(&limit);
+        set.spawn(async move {
+            let _permit = limit.acquire_owned().await.ok()?;
+            device_from_location(&location).await
+        });
+    }
+    collect_devices(&mut set, deadline, &mut devices).await;
+
+    for ip in candidate_ips {
+        if devices.contains_key(ip) {
+            continue;
+        }
+        let limit = std::sync::Arc::clone(&limit);
+        let ip = ip.clone();
+        set.spawn(async move {
+            let _permit = limit.acquire_owned().await.ok()?;
+            probe_ip(&ip).await
+        });
+    }
+    collect_devices(&mut set, deadline, &mut devices).await;
+    devices.into_values().collect()
+}
+
+/// Gathers finished probes until the set is empty or the scan's deadline
+/// passes; whatever is still running then is dropped (and aborted with it).
+async fn collect_devices(
+    set: &mut tokio::task::JoinSet<Option<Device>>,
+    deadline: tokio::time::Instant,
+    devices: &mut std::collections::HashMap<String, Device>,
+) {
+    loop {
+        match tokio::time::timeout_at(deadline, set.join_next()).await {
+            Ok(Some(Ok(Some(device)))) => {
+                devices.entry(device.ip.clone()).or_insert(device);
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => return,
+            Err(_) => {
+                tracing::debug!("discovery deadline reached; {} probes dropped", set.len());
+                set.abort_all();
+                return;
+            }
+        }
+    }
+}
+
+async fn device_from_location(location: &str) -> Option<Device> {
+    let parsed = url::Url::parse(location).ok()?;
+    let host = parsed.host_str()?.to_string();
+    let xml = http_get_text(location, Duration::from_secs(4)).await?;
+    let description = parse_description(&xml, location);
+    let control = description.control?;
+    if !control_ok(&control, &host) {
+        return None;
+    }
+    let rendering = description.rendering.filter(|url| control_ok(url, &host));
+    let ip = util::resolve_ip(&host);
+    Some(Device {
+        name: description.friendly.unwrap_or_else(|| host.clone()),
+        host,
+        ip: ip.clone(),
+        port: parsed.port().unwrap_or(0),
+        protocol: "dlna".to_string(),
+        model: description.model.unwrap_or_default(),
+        id: format!("dlna:{ip}"),
+        control_url: Some(control),
+        rendering_url: rendering,
+        alternates: Vec::new(),
+    })
+}
+
+fn control_ok(control: &str, host: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(control) else {
+        return false;
+    };
+    matches!(parsed.scheme(), "http" | "https") && parsed.host_str() == Some(host)
+}
+
+pub async fn probe_ip(ip: &str) -> Option<Device> {
+    let target = ip.to_string();
+    let open_ports = tokio::task::spawn_blocking(move || scan_ports(&target))
+        .await
+        .unwrap_or_default();
+    for port in open_ports {
+        for path in PROBE_PATHS {
+            let location = format!("http://{ip}:{port}{path}");
+            let Some(xml) = http_get_text(&location, Duration::from_secs(2)).await else {
+                continue;
+            };
+            if !xml.contains("MediaRenderer") && !xml.contains("AVTransport") {
+                continue;
+            }
+            let description = parse_description(&xml, &location);
+            if let Some(control) = description.control
+                && control_ok(&control, ip)
+            {
+                return Some(Device {
+                    name: description.friendly.unwrap_or_else(|| ip.to_string()),
+                    host: ip.to_string(),
+                    ip: ip.to_string(),
+                    port,
+                    protocol: "dlna".to_string(),
+                    model: description.model.unwrap_or_default(),
+                    id: format!("dlna:{ip}"),
+                    control_url: Some(control),
+                    rendering_url: description.rendering.filter(|url| control_ok(url, ip)),
+                    alternates: Vec::new(),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn scan_ports(ip: &str) -> Vec<u16> {
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = PROBE_PORTS
+            .iter()
+            .map(|&port| {
+                scope.spawn(move || {
+                    let target = (ip, port).to_socket_addrs().ok()?.next()?;
+                    std::net::TcpStream::connect_timeout(&target, Duration::from_millis(600))
+                        .ok()
+                        .map(|_| port)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok().flatten())
+            .collect()
+    })
+}
+
+fn local_name(qname: &str) -> String {
+    qname.rsplit(':').next().unwrap_or(qname).to_string()
+}
+
+/// What we need from a renderer's `UPnP` device description.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Description {
+    pub friendly: Option<String>,
+    pub model: Option<String>,
+    /// Absolute `AVTransport` control URL.
+    pub control: Option<String>,
+    /// Absolute `RenderingControl` control URL (volume / mute), if advertised.
+    pub rendering: Option<String>,
+}
+
+#[allow(clippy::map_unwrap_or)]
+pub fn parse_description(xml: &str, location: &str) -> Description {
+    let mut reader = Reader::from_str(xml);
+    let mut buffer = Vec::new();
+    let mut url_base: Option<String> = None;
+    let mut friendly: Option<String> = None;
+    let mut model: Option<String> = None;
+    let mut control: Option<String> = None;
+    let mut rendering: Option<String> = None;
+    let mut in_service = false;
+    let mut service_type = String::new();
+    let mut service_control = String::new();
+    let mut current = String::new();
+    // quick-xml reports `&amp;` and `&#..;` as separate events between text
+    // chunks, so an element's text is accumulated and only used at its end.
+    let mut text = String::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(event)) => {
+                let name = local_name(event.name().as_ref());
+                if name == "service" {
+                    in_service = true;
+                    service_type.clear();
+                    service_control.clear();
+                }
+                current = name;
+                text.clear();
+            }
+            Ok(Event::Text(event)) => {
+                let raw = event.into_inner();
+                match quick_xml::escape::unescape(&raw) {
+                    Ok(chunk) => text.push_str(&chunk),
+                    Err(_) => text.push_str(&raw),
+                }
+            }
+            Ok(Event::CData(event)) => text.push_str(&event),
+            Ok(Event::GeneralRef(event)) => {
+                let resolved = match event.resolve_char_ref() {
+                    Ok(Some(character)) => Some(character.to_string()),
+                    _ => quick_xml::escape::resolve_predefined_entity(&event).map(str::to_string),
+                };
+                if let Some(resolved) = resolved {
+                    text.push_str(&resolved);
+                }
+            }
+            Ok(Event::End(event)) => {
+                let name = local_name(event.name().as_ref());
+                let value = text.trim().to_string();
+                if name == current && !value.is_empty() {
+                    match current.as_str() {
+                        "URLBase" => url_base = Some(value),
+                        "friendlyName" if !in_service && friendly.is_none() => {
+                            friendly = Some(value);
+                        }
+                        "modelName" if !in_service && model.is_none() => model = Some(value),
+                        "serviceType" if in_service => service_type = value,
+                        "controlURL" if in_service => service_control = value,
+                        _ => {}
+                    }
+                }
+                if name == "service" {
+                    if control.is_none()
+                        && service_type.contains("AVTransport")
+                        && !service_control.is_empty()
+                    {
+                        control = Some(service_control.clone());
+                    }
+                    if rendering.is_none()
+                        && service_type.contains("RenderingControl")
+                        && !service_control.is_empty()
+                    {
+                        rendering = Some(service_control.clone());
+                    }
+                    in_service = false;
+                }
+                current.clear();
+                text.clear();
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buffer.clear();
+    }
+    let base = url_base.unwrap_or_else(|| location.to_string());
+    let resolve = |raw: String| {
+        url::Url::parse(&base)
+            .ok()?
+            .join(raw.trim())
+            .ok()
+            .map(|url| url.to_string())
+    };
+    Description {
+        friendly,
+        model,
+        control: control.and_then(resolve),
+        rendering: rendering.and_then(resolve),
+    }
+}
+
+/// Invokes an `AVTransport` `action` at `control_url`.
+pub async fn soap(control_url: &str, action: &str, args: &str) -> (u16, String) {
+    soap_service(control_url, "AVTransport", action, args).await
+}
+
+/// Invokes `action` on a `UPnP` `service` (`AVTransport`, `RenderingControl`) at
+/// `control_url`. Returns the HTTP status and response body (0 / empty when the
+/// request itself failed).
+pub async fn soap_service(
+    control_url: &str,
+    service: &str,
+    action: &str,
+    args: &str,
+) -> (u16, String) {
+    let body = format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
+         <s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" \
+         s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>\
+         <u:{action} xmlns:u=\"urn:schemas-upnp-org:service:{service}:1\">\
+         <InstanceID>0</InstanceID>{args}</u:{action}></s:Body></s:Envelope>"
+    );
+    let response = client()
+        .post(control_url)
+        .header("Content-Type", "text/xml; charset=\"utf-8\"")
+        .header(
+            "SOAPACTION",
+            format!("\"urn:schemas-upnp-org:service:{service}:1#{action}\""),
+        )
+        .body(body)
+        .timeout(Duration::from_secs(8))
+        .send()
+        .await;
+    match response {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            // An oversized reply reads as empty, i.e. as a failed action.
+            let text = util::read_body_capped(response, MAX_SOAP_BYTES)
+                .await
+                .map(|body| String::from_utf8_lossy(&body).into_owned())
+                .unwrap_or_default();
+            (status, text)
+        }
+        Err(_) => (0, String::new()),
+    }
+}
+
+/// DIDL-Lite metadata for `url`. With `caption`, the subtitle file is named
+/// the ways TVs look for it: Samsung's `sec:CaptionInfoEx`/`sec:CaptionInfo`
+/// and `smi/caption` resource, and a plain `text/srt` resource for the rest.
+/// The video resource stays first, since renderers take the first they play.
+fn didl(url: &str, title: &str, mime: &str, caption: Option<&str>) -> String {
+    let class = if mime.starts_with("audio") {
+        "object.item.audioItem.musicTrack"
+    } else {
+        "object.item.videoItem"
+    };
+    let (namespace, subtitles) = caption.map_or((String::new(), String::new()), |caption| {
+        let caption = util::xml_escape(caption);
+        (
+            " xmlns:sec=\"http://www.sec.co.kr/\"".to_string(),
+            format!(
+                "<res protocolInfo=\"http-get:*:smi/caption:*\">{caption}</res>\
+                 <res protocolInfo=\"http-get:*:text/srt:*\">{caption}</res>\
+                 <sec:CaptionInfoEx sec:type=\"srt\">{caption}</sec:CaptionInfoEx>\
+                 <sec:CaptionInfo sec:type=\"srt\">{caption}</sec:CaptionInfo>"
+            ),
+        )
+    });
+    format!(
+        "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" \
+         xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+         xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\"{namespace}>\
+         <item id=\"0\" parentID=\"-1\" restricted=\"1\">\
+         <dc:title>{}</dc:title><upnp:class>{class}</upnp:class>\
+         <res protocolInfo=\"http-get:*:{mime}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;\
+         DLNA.ORG_FLAGS=01700000000000000000000000000000\">{}</res>\
+         {subtitles}</item></DIDL-Lite>",
+        util::xml_escape(title),
+        util::xml_escape(url)
+    )
+}
+
+/// Loads `url` on the renderer and starts it, naming `caption` (an SRT URL)
+/// as its subtitles when given.
+pub async fn play(
+    control_url: &str,
+    url: &str,
+    title: &str,
+    mime: &str,
+    caption: Option<&str>,
+) -> Result<(), String> {
+    let metadata = didl(url, title, mime, caption);
+    let args = format!(
+        "<CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
+        util::xml_escape(url),
+        util::xml_escape(&metadata)
+    );
+    let (mut status, mut body) = soap(control_url, "SetAVTransportURI", &args).await;
+    if status != 200 {
+        (status, body) = soap(control_url, "SetAVTransportURI", &args).await;
+    }
+    if status != 200 {
+        let description = first_tag(&body, "errorDescription").unwrap_or_default();
+        return Err(format!("SetAVTransportURI {status}: {description}"));
+    }
+    let _ = soap(control_url, "Play", "<Speed>1</Speed>").await;
+    Ok(())
+}
+
+pub async fn stop(control_url: &str) {
+    let _ = soap(control_url, "Stop", "").await;
+}
+
+pub async fn pause(control_url: &str) {
+    let _ = soap(control_url, "Pause", "").await;
+}
+
+pub async fn resume(control_url: &str) {
+    let _ = soap(control_url, "Play", "<Speed>1</Speed>").await;
+}
+
+pub async fn seek(control_url: &str, seconds: f64) -> bool {
+    let target = format_hms(seconds);
+    let args = format!("<Unit>REL_TIME</Unit><Target>{target}</Target>");
+    let (status, _) = soap(control_url, "Seek", &args).await;
+    status == 200
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn format_hms(seconds: f64) -> String {
+    let total = seconds.max(0.0);
+    let hours = (total / 3600.0).floor() as u64;
+    let minutes = ((total % 3600.0) / 60.0).floor() as u64;
+    let secs = (total % 60.0).floor() as u64;
+    format!("{hours:02}:{minutes:02}:{secs:02}")
+}
+
+pub async fn status(control_url: &str) -> String {
+    let (_, body) = soap(control_url, "GetTransportInfo", "").await;
+    first_tag(&body, "CurrentTransportState").unwrap_or_else(|| "UNKNOWN".to_string())
+}
+
+pub async fn position_info(control_url: &str) -> (Option<f64>, Option<f64>) {
+    let (_, body) = soap(control_url, "GetPositionInfo", "").await;
+    let duration = first_tag(&body, "TrackDuration").map(|value| util::hms(&value));
+    let position = first_tag(&body, "RelTime").map(|value| util::hms(&value));
+    (duration, position)
+}
+
+const MASTER_CHANNEL: &str = "<Channel>Master</Channel>";
+
+/// Receiver volume (0-100) via `RenderingControl`, if it answers.
+pub async fn get_volume(rendering_url: &str) -> Option<i32> {
+    let (status, body) = soap_service(
+        rendering_url,
+        "RenderingControl",
+        "GetVolume",
+        MASTER_CHANNEL,
+    )
+    .await;
+    if status != 200 {
+        return None;
+    }
+    first_tag(&body, "CurrentVolume")?
+        .trim()
+        .parse::<i32>()
+        .ok()
+        .map(|level| level.clamp(0, 100))
+}
+
+pub async fn get_mute(rendering_url: &str) -> Option<bool> {
+    let (status, body) =
+        soap_service(rendering_url, "RenderingControl", "GetMute", MASTER_CHANNEL).await;
+    if status != 200 {
+        return None;
+    }
+    let value = first_tag(&body, "CurrentMute")?;
+    Some(matches!(value.trim(), "1" | "true" | "True" | "TRUE"))
+}
+
+pub async fn set_volume(rendering_url: &str, level: i32) -> bool {
+    let args = format!(
+        "{MASTER_CHANNEL}<DesiredVolume>{}</DesiredVolume>",
+        level.clamp(0, 100)
+    );
+    soap_service(rendering_url, "RenderingControl", "SetVolume", &args)
+        .await
+        .0
+        == 200
+}
+
+pub async fn set_mute(rendering_url: &str, muted: bool) -> bool {
+    let args = format!(
+        "{MASTER_CHANNEL}<DesiredMute>{}</DesiredMute>",
+        u8::from(muted)
+    );
+    soap_service(rendering_url, "RenderingControl", "SetMute", &args)
+        .await
+        .0
+        == 200
+}
+
+fn first_tag(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = xml.find(&open)? + open.len();
+    let end = xml[start..].find(&close)? + start;
+    Some(xml[start..end].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn didl_names_the_subtitle_for_samsung_and_generic_renderers() {
+        let url = "http://192.168.50.10:60020/tok/stream.ts?start=10&sub=2";
+        let caption = "http://192.168.50.10:60020/tok/sub/2.srt?start=10";
+        let metadata = didl(url, "A & B", "video/mp2t", Some(caption));
+        assert!(metadata.contains("xmlns:sec=\"http://www.sec.co.kr/\""));
+        let video = metadata.find("video/mp2t").expect("video res");
+        let subtitle = metadata.find("smi/caption").expect("caption res");
+        assert!(video < subtitle, "the video resource stays first");
+        assert!(metadata.contains(
+            "<res protocolInfo=\"http-get:*:smi/caption:*\">http://192.168.50.10:60020/tok/sub/2.srt?start=10</res>"
+        ));
+        assert!(metadata.contains(
+            "<res protocolInfo=\"http-get:*:text/srt:*\">http://192.168.50.10:60020/tok/sub/2.srt?start=10</res>"
+        ));
+        assert!(metadata.contains(
+            "<sec:CaptionInfoEx sec:type=\"srt\">http://192.168.50.10:60020/tok/sub/2.srt?start=10</sec:CaptionInfoEx>"
+        ));
+        assert!(metadata.contains("stream.ts?start=10&amp;sub=2</res>"));
+        assert!(metadata.contains("<dc:title>A &amp; B</dc:title>"));
+        let plain = didl(url, "t", "video/mp2t", None);
+        assert!(!plain.contains("caption") && !plain.contains("sec:") && !plain.contains("srt"));
+    }
+
+    #[test]
+    fn ssdp_replies_from_off_the_lan_are_dropped() {
+        let listener = UdpSocket::bind("127.0.0.1:0").expect("bind");
+        listener
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .expect("timeout");
+        let sender = UdpSocket::bind("127.0.0.1:0").expect("bind sender");
+        sender
+            .send_to(
+                b"HTTP/1.1 200 OK\r\nLOCATION: http://127.0.0.1:1900/desc.xml\r\n\r\n",
+                listener.local_addr().expect("addr"),
+            )
+            .expect("send");
+        assert!(collect_locations(&listener, Duration::from_millis(400)).is_empty());
+        assert!(lan_sender("192.168.50.20".parse().expect("ip")));
+        for ip in ["100.64.0.1", "8.8.8.8", "127.0.0.1", "fe80::1"] {
+            assert!(!lan_sender(ip.parse().expect("ip")), "{ip}");
+        }
+    }
+
+    #[test]
+    fn ssdp_replies_are_capped_per_host() {
+        let listener = UdpSocket::bind("127.0.0.1:0").expect("bind");
+        listener
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .expect("timeout");
+        let sender = UdpSocket::bind("127.0.0.1:0").expect("bind sender");
+        let target = listener.local_addr().expect("addr");
+        for port in 0..50 {
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nLOCATION: http://127.0.0.1:{}/desc.xml\r\n\r\n",
+                1000 + port
+            );
+            sender.send_to(reply.as_bytes(), target).expect("send");
+        }
+        // Pointing somewhere other than the replying host is never accepted.
+        sender
+            .send_to(
+                b"HTTP/1.1 200 OK\r\nLOCATION: http://10.1.1.1/desc.xml\r\n\r\n",
+                target,
+            )
+            .expect("send");
+        // Loopback stands in for a LAN host here; the LAN filter is below.
+        let locations = collect_locations_from(&listener, Duration::from_millis(500), |_| true);
+        assert_eq!(locations.len(), MAX_LOCATIONS_PER_HOST);
+        assert!(
+            locations
+                .iter()
+                .all(|url| url.starts_with("http://127.0.0.1:"))
+        );
+    }
+
+    #[test]
+    fn description_parsing() {
+        let xml = r#"<?xml version="1.0"?>
+        <root xmlns="urn:schemas-upnp-org:device-1-0">
+          <URLBase>http://192.168.1.50:9197/</URLBase>
+          <device>
+            <friendlyName>Den TV</friendlyName>
+            <modelName>OLED55</modelName>
+            <serviceList>
+              <service>
+                <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                <controlURL>/upnp/control/AVTransport1</controlURL>
+              </service>
+              <service>
+                <serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+                <controlURL>/upnp/control/RenderingControl1</controlURL>
+              </service>
+            </serviceList>
+          </device>
+        </root>"#;
+        let description = parse_description(xml, "http://192.168.1.50:9197/dd.xml");
+        assert_eq!(description.friendly.as_deref(), Some("Den TV"));
+        assert_eq!(description.model.as_deref(), Some("OLED55"));
+        assert_eq!(
+            description.control.as_deref(),
+            Some("http://192.168.1.50:9197/upnp/control/AVTransport1")
+        );
+        assert_eq!(
+            description.rendering.as_deref(),
+            Some("http://192.168.1.50:9197/upnp/control/RenderingControl1")
+        );
+    }
+
+    #[test]
+    fn relative_control_resolution() {
+        let xml = r"<device><serviceList><service>
+            <serviceType>AVTransport</serviceType>
+            <controlURL>ctl/AVTransport</controlURL>
+        </service></serviceList></device>";
+        let description = parse_description(xml, "http://10.0.0.5:8080/dmr/desc.xml");
+        assert_eq!(
+            description.control.as_deref(),
+            Some("http://10.0.0.5:8080/dmr/ctl/AVTransport")
+        );
+        assert_eq!(description.rendering, None);
+    }
+
+    #[test]
+    fn entities_in_names_and_urls() {
+        let xml = r"<root><device>
+            <friendlyName>Tom &amp; Jerry&#39;s TV</friendlyName>
+            <modelName>Model &lt;X&gt;</modelName>
+            <serviceList><service>
+              <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+              <controlURL>/ctl?a=1&amp;b=2</controlURL>
+            </service></serviceList>
+        </device></root>";
+        let description = parse_description(xml, "http://10.0.0.5:8080/desc.xml");
+        assert_eq!(description.friendly.as_deref(), Some("Tom & Jerry's TV"));
+        assert_eq!(description.model.as_deref(), Some("Model <X>"));
+        assert_eq!(
+            description.control.as_deref(),
+            Some("http://10.0.0.5:8080/ctl?a=1&b=2")
+        );
+    }
+
+    #[test]
+    fn control_ssrf_guard() {
+        assert!(control_ok("http://10.0.0.5:8080/ctl", "10.0.0.5"));
+        assert!(!control_ok("http://evil.example/ctl", "10.0.0.5"));
+        assert!(!control_ok("file:///etc/passwd", "10.0.0.5"));
+    }
+}

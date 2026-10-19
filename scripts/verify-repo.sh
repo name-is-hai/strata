@@ -14,6 +14,7 @@ dnf -q --refresh --disablerepo='*' \
   --enablerepo=strata-test \
   repoquery --qf '%{name}-%{version}-%{release}.%{arch}' \
   strata-config hyprland-desktop hyprland-desktop-core hyprland-desktop-services \
+  zen-browser strata-casting strata-waycast strata-doubletake strata-cast \
   >/dev/null
 
 echo "Strata repository metadata and required packages are valid."

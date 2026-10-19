@@ -1,11 +1,13 @@
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
 import qs.Commons
 import qs.Ui
+import "Placement.js" as Placement
 
 Item {
   id: root
@@ -19,6 +21,10 @@ Item {
   property string displayedBackground: ""
   property string incomingBackground: ""
   property string oldBackground: ""
+  // Theme transitions use temporary image copies; position settings belong
+  // to their original wallpaper paths, never to the snapshot filenames.
+  property string oldPlacementPath: ""
+  property string incomingPlacementPath: ""
   // A theme switch names its next background before it has staged the rest of
   // the theme, so the incoming frame can decode while that work runs. A large
   // WebP takes ~130ms to decode at any sourceSize, which the reveal would
@@ -42,6 +48,58 @@ Item {
   property string pendingColorsRaw: ""
   property string pendingShellRaw: ""
   property real revealProgress: 1
+
+  property var placements: ({})
+  property var displayPanels: []
+
+  function registerDisplayPanel(panel) { displayPanels = displayPanels.concat([panel]) }
+  function unregisterDisplayPanel(panel) {
+    displayPanels = displayPanels.filter(function(candidate) { return candidate !== panel })
+  }
+  function backgroundReady(path) {
+    if (!path || !displayPanels.length) return false
+    for (var i = 0; i < displayPanels.length; i++)
+      if (!displayPanels[i].backgroundReady(path)) return false
+    return true
+  }
+
+  function focusedScreen() {
+    var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++) if (screens[i].name === name) return screens[i]
+    return screens.length ? screens[0] : null
+  }
+
+  function savedPlacement(monitor, path) {
+    var entries = placements[monitor] || {}
+    return Placement.normalize(entries[path])
+  }
+  function placementFor(monitor, path) {
+    return controls.opened && controls.monitorName === monitor && controls.imagePath === path
+      ? controls.draft : savedPlacement(monitor, path)
+  }
+  function commitPlacement(entry) {
+    var next = Object.assign({}, placements)
+    var monitor = Object.assign({}, next[entry.monitor] || {})
+    monitor[entry.path] = Placement.normalize(entry)
+    next[entry.monitor] = monitor
+    placements = next
+  }
+  function loadPlacements(raw) {
+    try {
+      var data = JSON.parse(raw)
+      if (data.version === 1 && data.placements && typeof data.placements === "object") placements = data.placements
+    } catch (error) { console.warn("background: invalid position configuration") }
+  }
+  FileView {
+    path: (Quickshell.env("XDG_CONFIG_HOME") || root.home + "/.config") + "/strata/backgrounds.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadPlacements(text())
+    onFileChanged: reload()
+    onLoadFailed: root.placements = ({})
+  }
+  BackgroundControls { id: controls; service: root }
 
   function isVideo(path) {
     return Util.isVideoPath(path)
@@ -71,6 +129,8 @@ Item {
     requestNativeSize(path)
     requestNativeSize(fromPath || displayedBackground)
     requestNativeSize(finalPath)
+    oldPlacementPath = displayedBackground
+    incomingPlacementPath = finalPath
     currentBackground = finalPath
     backgroundVersion += 1
     revealStartedVersion = -1
@@ -83,6 +143,8 @@ Item {
     if (instant || !displayedBackground || isVideo(path) || isVideo(displayedBackground)) {
       oldBackground = ""
       incomingBackground = ""
+      oldPlacementPath = ""
+      incomingPlacementPath = ""
       preparedBackground = ""
       displayedBackground = finalPath
       revealProgress = 1
@@ -141,7 +203,10 @@ Item {
   }
 
   function requestNativeSize(path) {
-    if (!path || isVideo(path) || nativeSizes[path] !== undefined || sizeQueue.indexOf(path) !== -1) return
+    if (!path || isVideo(path) || nativeSizes[path] !== undefined) return
+    var known = Object.assign({}, nativeSizes)
+    known[path] = { width: 0, height: 0, pending: true }
+    nativeSizes = known
     sizeQueue = sizeQueue.concat([path])
     probeNextSize()
   }
@@ -149,7 +214,7 @@ Item {
   function probeNextSize() {
     if (sizeProbe.running || sizeQueue.length === 0) return
     sizeProbe.path = sizeQueue[0]
-    sizeProbe.command = ["magick", "identify", "-ping", "-format", "%w %h", sizeProbe.path]
+    sizeProbe.command = ["magick", "identify", "-ping", "-format", "%w %h", sizeProbe.path + "[0]"]
     sizeProbe.running = true
   }
 
@@ -165,13 +230,9 @@ Item {
   }
 
   function openSelector() {
-    if (!bgSwitchProc.running) bgSwitchProc.running = true
-  }
-
-  Process {
-    id: bgSwitchProc
-    command: ["bash", "-c", "background=$(strata-theme-bg-switcher); [[ -n $background ]] && strata-theme-bg-set \"$background\""]
-    onExited: root.refreshBackground()
+    var payload = JSON.stringify({ mode: "themes" })
+    if (!root.shell || !root.shell.summon("strata.theme-picker", payload))
+      Util.execArgv(["strata-shell", "shell", "summon", "strata.theme-picker", payload])
   }
 
   Process {
@@ -202,6 +263,17 @@ Item {
   ShellIpc {
     target: "background"
 
+    function adjust(): void {
+      var screen = root.focusedScreen()
+      if (screen && controls.canAdjust) controls.adjust(screen)
+    }
+    function menu(): void {
+      root.openSelector()
+    }
+
+    function closeControls(): void { controls.close() }
+    function ready(path: string): string { return root.backgroundReady(path) ? "ready" : "waiting" }
+
     function refresh(): void {
       root.refreshBackground()
     }
@@ -225,6 +297,7 @@ Item {
     function prepare(path: string): void {
       root.prepareBackground(path)
     }
+
   }
 
   // A prepared frame that no transition claims, say from a theme switch that
@@ -277,9 +350,14 @@ Item {
         id: remapGuard
         window: panel
       }
-      color: "transparent"
+      color: root.isVideo(root.displayedBackground) ? "transparent" : Color.background
 
       property bool maskReady: false
+      Component.onCompleted: root.registerDisplayPanel(panel)
+      Component.onDestruction: root.unregisterDisplayPanel(panel)
+      function backgroundReady(path) {
+        return !remapGuard.remapping && sized && root.displayedBackground === path && base.ready
+      }
 
       // Decode the wallpaper at the size this screen can show, not the size
       // it was shipped at. With PreserveAspectCrop Qt takes sourceSize as the
@@ -297,17 +375,17 @@ Item {
       function decodeSize(path) {
         if (!sized || !path) return Qt.size(0, 0)
         var native = root.nativeSizes[path]
-        if (native === undefined) return Qt.size(0, 0)
+        if (native === undefined) return Qt.size(decodeWidth, decodeHeight)
         if (native.width > 0 && (native.width < decodeWidth || native.height < decodeHeight)) return Qt.size(native.width, native.height)
         return Qt.size(decodeWidth, decodeHeight)
       }
 
       function maybeStartReveal() {
         if (!root.incomingBackground || root.revealProgress !== 0 || maskReady) return
-        if (incomingFrame.status !== Image.Ready) return
+        if (!incomingFrame.ready) return
         Qt.callLater(function() {
           if (!root.incomingBackground || root.revealProgress !== 0 || maskReady) return
-          if (incomingFrame.status !== Image.Ready) return
+          if (!incomingFrame.ready) return
           root.startReveal(panel)
         })
       }
@@ -319,16 +397,19 @@ Item {
 
       // OWE owns video backgrounds. This layer draws stills, and stays empty
       // behind a video so OWE's own layer shows through.
-      BackgroundMedia {
+      WallpaperFrame {
         id: base
         anchors.fill: parent
         path: root.displayedBackground
-        constrainDecode: true
+        nativeSize: root.nativeSizes[path] || null
+        placement: root.placementFor(panel.screen.name, path)
         decodeSize: panel.decodeSize(root.displayedBackground)
         onReadyChanged: {
           if (ready && root.finishingTransition) {
             root.incomingBackground = ""
             root.oldBackground = ""
+            root.oldPlacementPath = ""
+            root.incomingPlacementPath = ""
             root.preparedBackground = ""
             root.finishingTransition = false
             root.pruneNativeSizes()
@@ -336,26 +417,21 @@ Item {
         }
       }
 
-      Image {
+      WallpaperFrame {
         id: oldFrame
         anchors.fill: parent
-        readonly property size decode: panel.decodeSize(root.oldBackground)
-        source: decode.width > 0 ? root.imageUrl(root.oldBackground) : ""
-        sourceSize.width: decode.width
-        sourceSize.height: decode.height
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        cache: false
-        smooth: true
-        mipmap: true
+        path: root.oldBackground
+        nativeSize: root.nativeSizes[path] || null
+        placement: root.placementFor(panel.screen.name, root.oldPlacementPath || path)
+        decodeSize: panel.decodeSize(path)
         visible: root.oldBackground !== "" && root.revealProgress < 1
-        onStatusChanged: panel.maybeStartReveal()
+        onReadyChanged: panel.maybeStartReveal()
       }
 
       Item {
         id: incomingLayer
         anchors.fill: parent
-        visible: root.incomingBackground !== "" && incomingFrame.status === Image.Ready && (root.revealProgress >= 1 || panel.maskReady)
+        visible: root.incomingBackground !== "" && incomingFrame.ready && (root.revealProgress >= 1 || panel.maskReady)
         layer.enabled: root.incomingBackground !== "" && root.revealProgress < 1
         layer.smooth: true
         layer.effect: MultiEffect {
@@ -365,22 +441,14 @@ Item {
           maskSpreadAtMin: 0.02
         }
 
-        Image {
+        WallpaperFrame {
           id: incomingFrame
           anchors.fill: parent
-          // The same URL and size as a prepared frame keeps its decoded
-          // image, so a transition to it can reveal at once.
-          readonly property string framePath: root.incomingBackground || root.preparedBackground
-          readonly property size decode: panel.decodeSize(framePath)
-          source: decode.width > 0 ? root.imageUrl(framePath) : ""
-          sourceSize.width: decode.width
-          sourceSize.height: decode.height
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          cache: false
-          smooth: true
-          mipmap: true
-          onStatusChanged: panel.maybeStartReveal()
+          path: root.incomingBackground || root.preparedBackground
+          nativeSize: root.nativeSizes[path] || null
+          placement: root.placementFor(panel.screen.name, root.incomingPlacementPath || path)
+          decodeSize: panel.decodeSize(path)
+          onReadyChanged: panel.maybeStartReveal()
         }
       }
 
@@ -424,7 +492,10 @@ Item {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onDoubleClicked: function(mouse) {
-          root.openSelector()
+          if (mouse.button === Qt.RightButton) {
+            if (controls.canAdjust) controls.adjust(panel.screen)
+          }
+          else root.openSelector()
           mouse.accepted = true
         }
       }

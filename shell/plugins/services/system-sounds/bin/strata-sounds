@@ -1,0 +1,619 @@
+#!/bin/bash
+
+# strata-sounds: Windows-style system sounds for Strata, kept in sound themes
+# that work the way Strata's desktop themes do.
+#
+# A sound theme is a folder of files named after events: bell.ogg,
+# device-added.wav, notification.flac and so on. To find the sound for an
+# event, these folders are checked in order:
+#
+#   1. ~/.local/state/strata/current/theme/sounds/  sounds shipped by the desktop theme
+#   2. ~/.config/strata/sounds/<theme>/            your own files for <theme>
+#   3. <plugin>/sounds/<theme>/                     the bundled theme
+#   4. ~/.local/share/sounds/<theme>/, /usr/share/sounds/<theme>/   XDG sound themes
+#   5. the same again for any Inherits= theme, then for the Glass base theme
+#
+# So a file you drop into ~/.config/strata/sounds/glass/ replaces that one
+# sound in Glass, and a new folder there is a new theme. The desktop theme's
+# sounds, the chosen theme (with its overlay and parents) and Glass are three
+# tiers, tried in that order. Within a tier, a file named exactly after the
+# event beats one of its fallback names from events.json, which is how
+# freedesktop themes (service-login.oga for startup) fill in.
+
+set -o pipefail
+
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+PLUGIN_DIR=$(cd -- "$(dirname -- "$SELF")/.." && pwd)
+CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
+CONFIG_FILE=$CONFIG_HOME/strata/sounds.json
+USER_THEMES=$CONFIG_HOME/strata/sounds
+PLUGINS_DIR=$CONFIG_HOME/strata/plugins
+BUNDLED_THEMES=$PLUGIN_DIR/sounds
+DESKTOP_THEME_DIR=$HOME/.local/state/strata/current/theme
+DESKTOP_THEME_NAME_FILE=$HOME/.local/state/strata/current/theme.name
+EVENTS_FILE=$PLUGIN_DIR/events.json
+RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp}/strata-sounds
+BASE_THEME=glass
+DEFAULT_VOLUME=80
+EXTENSIONS=(ogg oga opus flac wav mp3)
+ASSUME_YES=false
+
+die() {
+  echo "strata-sounds: $*" >&2
+  exit 1
+}
+
+# Anything that changes files outside sounds.json asks first. --yes answers
+# for scripts; without a terminal and without --yes, nothing happens.
+confirm() {
+  local reply
+  [[ $ASSUME_YES == true ]] && return 0
+  [[ -t 0 ]] || die "$1 Run again with --yes to go ahead."
+  read -r -p "$1 [y/N] " reply
+  [[ $reply =~ ^[Yy] ]]
+}
+
+usage() {
+  cat <<'EOF'
+Usage: strata-sounds <command> [args]
+
+  play <event> [fallback...]   Play an event's sound, if sounds and that event are on
+  preview <event>              Play an event's sound even if it is switched off
+  list                         List sound themes; the current one is marked
+  current                      Print the current sound theme
+  set <theme>                  Switch to another sound theme
+  events                       Show every event, whether it is on, and the file it plays
+  on | off | toggle            Switch all system sounds on or off
+  on | off | toggle <event>    Switch one event on or off
+  volume [0-100]               Show or set the system sounds volume
+  theme-sounds [on|off]        Use the sounds a desktop theme ships in its sounds/ folder
+  edit [theme]                 Open the folder for your own sounds for a theme
+  install <git-url>            Clone a sound theme into ~/.config/strata/sounds and use it
+  state                        Print everything the Audio panel shows, as JSON
+  startup                      Play the startup sound, once per login
+
+  --yes                        Don't ask before changing files outside sounds.json
+EOF
+}
+
+# Event and theme names become file names, so keep them to one path component.
+valid_name() {
+  [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+xdg_sound_roots() {
+  local dir
+  printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/sounds"
+  local IFS=:
+  for dir in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+    printf '%s\n' "$dir/sounds"
+  done
+}
+
+# ------------------------------------------------------------------ config
+
+# Reads sounds.json (and, given an event, that event's switch and fallback
+# names) into CFG_* globals in a single jq call. A missing or broken config
+# means the defaults.
+load_config() {
+  local event=${1:-} raw='{}' line program
+  [[ -s $CONFIG_FILE ]] && raw=$(<"$CONFIG_FILE")
+
+  program='
+    (($catalogue[0].events // []) | map(select(.id == $id)) | first) as $e
+    | [ (if has("enabled") then .enabled == true else true end),
+        ((.theme // "") | if . == "" then $base else . end),
+        ((.volume // $volume) | tonumber? // $volume | if . < 0 then 0 elif . > 100 then 100 else floor end),
+        (if has("useThemeSounds") then .useThemeSounds == true else true end),
+        (if (.events // {}) | has($id) then .events[$id] == true elif $e then $e.default == true else true end),
+        (($e.fallback // []) | join(" ")) ]
+    | @tsv'
+
+  line=$(jq -r --arg id "$event" --arg base "$BASE_THEME" --argjson volume "$DEFAULT_VOLUME" \
+    --slurpfile catalogue "$EVENTS_FILE" "$program" <<<"$raw" 2>/dev/null)
+  if [[ -z $line ]]; then
+    [[ $raw != '{}' ]] && echo "strata-sounds: ignoring $CONFIG_FILE, it is not valid JSON" >&2
+    raw='{}'
+    line=$(jq -r --arg id "$event" --arg base "$BASE_THEME" --argjson volume "$DEFAULT_VOLUME" \
+      --slurpfile catalogue "$EVENTS_FILE" "$program" <<<"$raw")
+  fi
+
+  CONFIG_JSON=$raw
+  IFS=$'\t' read -r CFG_ENABLED CFG_THEME CFG_VOLUME CFG_THEME_SOUNDS EVENT_ON EVENT_FALLBACK <<<"$line"
+  valid_name "$CFG_THEME" || CFG_THEME=$BASE_THEME
+}
+
+# Applies a jq filter to sounds.json. Writes go through a temp file in the same
+# directory, so a reader never sees half a file.
+write_config() {
+  local raw='{}' tmp
+  mkdir -p "$(dirname -- "$CONFIG_FILE")"
+  [[ -s $CONFIG_FILE ]] && raw=$(<"$CONFIG_FILE")
+  jq -e 'type == "object"' <<<"$raw" >/dev/null 2>&1 || die "$CONFIG_FILE is not valid JSON; fix or delete it"
+  tmp=$(mktemp "$CONFIG_FILE.XXXXXX") || exit 1
+  if jq "$@" <<<"$raw" >"$tmp"; then
+    mv -f -- "$tmp" "$CONFIG_FILE"
+  else
+    rm -f -- "$tmp"
+    exit 1
+  fi
+}
+
+# ------------------------------------------------------------------ themes
+
+theme_candidate_dirs() {
+  local theme=$1 root
+  printf '%s\n' "$USER_THEMES/$theme" "$BUNDLED_THEMES/$theme"
+  while IFS= read -r root; do
+    printf '%s\n' "$root/$theme"
+  done < <(xdg_sound_roots)
+}
+
+# First value of KEY in the first index.theme found for THEME.
+theme_meta() {
+  local theme=$1 key=$2 dir
+  while IFS= read -r dir; do
+    if [[ -f $dir/index.theme ]]; then
+      sed -n "s/^$key[[:space:]]*=[[:space:]]*//p" "$dir/index.theme" | head -n 1
+      return
+    fi
+  done < <(theme_candidate_dirs "$theme")
+}
+
+# Every folder that can hold sounds for THEME, most specific first, including
+# its Inherits= parents.
+theme_dirs() {
+  local theme=$1 depth=${2:-0} dir parent
+  valid_name "$theme" || return 0
+  (( depth > 4 )) && return 0
+  while IFS= read -r dir; do
+    [[ -d $dir ]] && printf '%s\n' "$dir"
+  done < <(theme_candidate_dirs "$theme")
+  for parent in $(theme_meta "$theme" Inherits | tr ',;' '  '); do
+    theme_dirs "$parent" $((depth + 1))
+  done
+}
+
+# LAYERS holds "tier<TAB>folder" lines: 1 for the desktop theme's sounds, 2
+# for the chosen theme, 3 for the base theme. A folder is listed once, in the
+# first tier that reaches it.
+compute_layers() {
+  mapfile -t LAYERS < <(
+    {
+      if [[ $CFG_THEME_SOUNDS == true && -d $DESKTOP_THEME_DIR/sounds ]]; then
+        printf '1\t%s\n' "$DESKTOP_THEME_DIR/sounds"
+      fi
+      theme_dirs "$CFG_THEME" | sed 's/^/2\t/'
+      theme_dirs "$BASE_THEME" | sed 's/^/3\t/'
+    } | awk -F '\t' '!seen[$2]++'
+  )
+}
+
+# Fallback names in the XDG sound-theme manner: drop the last -part until
+# nothing is left, so a custom "monitor-added" can be served by "monitor".
+xdg_parents() {
+  local name=$1
+  while [[ $name == *-* ]]; do
+    name=${name%-*}
+    printf '%s\n' "$name"
+  done
+}
+
+# resolve <event> [fallback names...] prints the file to play for the event.
+resolve() {
+  local names=("$@") tier line layer name sub ext extra
+  mapfile -t extra < <(xdg_parents "$1")
+  names+=("${extra[@]}")
+  for tier in 1 2 3; do
+    for name in "${names[@]}"; do
+      valid_name "$name" || continue
+      for line in "${LAYERS[@]}"; do
+        [[ ${line%%$'\t'*} == "$tier" ]] || continue
+        layer=${line#*$'\t'}
+        for sub in "" stereo/; do
+          for ext in "${EXTENSIONS[@]}"; do
+            if [[ -f $layer/$sub$name.$ext ]]; then
+              printf '%s\n' "$layer/$sub$name.$ext"
+              return 0
+            fi
+          done
+        done
+      done
+    done
+  done
+  return 1
+}
+
+has_audio() {
+  local dir=$1 ext
+  for ext in "${EXTENSIONS[@]}"; do
+    compgen -G "$dir/*.$ext" >/dev/null && return 0
+    compgen -G "$dir/stereo/*.$ext" >/dev/null && return 0
+  done
+  return 1
+}
+
+# Every sound theme on the system, one id per line. Your folders and the
+# bundled themes always count; an XDG folder counts when it has an index.theme
+# (/usr/share/sounds also holds plain sample folders such as alsa/).
+theme_ids() {
+  local dir root
+  {
+    for dir in "$USER_THEMES"/*/ "$BUNDLED_THEMES"/*/; do
+      [[ -d $dir ]] && basename -- "$dir"
+    done
+    while IFS= read -r root; do
+      for dir in "$root"/*/; do
+        [[ -f $dir/index.theme ]] && basename -- "$dir"
+      done
+    done < <(xdg_sound_roots)
+  } | while IFS= read -r dir; do valid_name "$dir" && printf '%s\n' "$dir"; done | sort -u
+}
+
+# Not `theme_ids | grep -q`: grep -q quits at the first match, and under
+# pipefail the writer's SIGPIPE then reads as "no such theme".
+theme_exists() {
+  local ids
+  ids=$'\n'$(theme_ids)$'\n'
+  [[ $ids == *$'\n'"$1"$'\n'* ]]
+}
+
+theme_label() {
+  local theme=$1 name
+  # freedesktop's index.theme calls itself "Default", which reads as a promise
+  # it cannot keep next to the real default.
+  if [[ $theme != freedesktop ]]; then
+    name=$(theme_meta "$theme" Name)
+  fi
+  if [[ -n $name ]]; then
+    printf '%s\n' "$name"
+  else
+    sed -E 's/[-_]+/ /g; s/(^| )([a-z])/\1\u\2/g' <<<"$theme"
+  fi
+}
+
+theme_source() {
+  local theme=$1 root
+  [[ -d $BUNDLED_THEMES/$theme ]] && { echo bundled; return; }
+  while IFS= read -r root; do
+    [[ -f $root/$theme/index.theme ]] && { echo system; return; }
+  done < <(xdg_sound_roots)
+  echo user
+}
+
+desktop_theme_id() {
+  [[ -s $DESKTOP_THEME_NAME_FILE ]] && head -n 1 "$DESKTOP_THEME_NAME_FILE"
+}
+
+# Where a resolved file came from: desktop, user, bundled or system, plus the
+# theme folder's name.
+origin_of() {
+  local file=$1 rel
+  case $file in
+    "$DESKTOP_THEME_DIR"/sounds/*) printf 'desktop\t%s\n' "$(desktop_theme_id)" ;;
+    "$USER_THEMES"/*) rel=${file#"$USER_THEMES"/}; printf 'user\t%s\n' "${rel%%/*}" ;;
+    "$BUNDLED_THEMES"/*) rel=${file#"$BUNDLED_THEMES"/}; printf 'bundled\t%s\n' "${rel%%/*}" ;;
+    "") printf '\t\n' ;;
+    *) rel=$(basename -- "$(dirname -- "${file%/stereo/*}/x")"); printf 'system\t%s\n' "$rel" ;;
+  esac
+}
+
+# ------------------------------------------------------------------ playing
+
+cubic_gain() {
+  awk -v v="$1" 'BEGIN { printf "%.4f", (v / 100) ^ 3 }'
+}
+
+# Volume follows the cubic curve the volume sliders use, so 50% here sounds
+# like 50% on the output slider. The stream is named "System Sounds" for
+# pavucontrol and wpctl; the Audio panel recognises its node.name and keeps it
+# out of the per-app list, where it would come and go with every sound.
+play_file() {
+  local file=$1 label=$2 gain
+  gain=$(cubic_gain "$CFG_VOLUME")
+  if command -v pw-play >/dev/null 2>&1; then
+    exec pw-play --media-role=Notification --volume="$gain" \
+      -P "{ application.name = \"System Sounds\" application.icon-name = \"preferences-desktop-sound\" media.name = \"${label//\"/}\" node.name = \"strata-system-sounds\" }" \
+      -- "$file"
+  elif command -v paplay >/dev/null 2>&1; then
+    exec paplay --volume="$(awk -v g="$gain" 'BEGIN { printf "%d", g * 65536 }')" \
+      --property=application.name="System Sounds" --property=media.role=event -- "$file"
+  fi
+  die "neither pw-play nor paplay is installed"
+}
+
+cmd_play() {
+  local mode=$1 event=$2 file
+  shift 2
+  [[ -n $event ]] || die "usage: strata-sounds $mode <event>"
+  valid_name "$event" || die "not an event name: $event"
+  load_config "$event"
+  if [[ $mode == play ]]; then
+    [[ $CFG_ENABLED == true && $EVENT_ON == true ]] || exit 0
+  fi
+  compute_layers
+  # shellcheck disable=SC2086 # the fallback list is space-separated on purpose
+  if ! file=$(resolve "$event" $EVENT_FALLBACK "$@"); then
+    [[ $mode == preview ]] && die "no sound for '$event' in the $(theme_label "$CFG_THEME") theme"
+    exit 0
+  fi
+  play_file "$file" "$event"
+}
+
+# A notification may name its own file in the sound-file hint.
+cmd_play_file() {
+  local file=$1
+  [[ -f $file && -r $file ]] || exit 0
+  load_config
+  [[ $CFG_ENABLED == true ]] || exit 0
+  play_file "$file" "$(basename -- "$file")"
+}
+
+# Hyprland starts once per login; a shell restart inside that login must not
+# replay the startup sound. Both the post-boot hook and the shell service call
+# this, and whichever comes second finds the marker.
+cmd_startup() {
+  local session=${HYPRLAND_INSTANCE_SIGNATURE:-}
+  [[ -n $session ]] || session=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+  mkdir -p "$RUNTIME_DIR"
+  exec 9>"$RUNTIME_DIR/startup.lock"
+  flock -n 9 || exit 0
+  [[ $(cat "$RUNTIME_DIR/startup" 2>/dev/null) == "$session" ]] && exit 0
+  printf '%s\n' "$session" >"$RUNTIME_DIR/startup"
+  exec 9>&-
+  cmd_play play startup
+}
+
+# ------------------------------------------------------------------ settings
+
+normalize_theme() {
+  tr '[:upper:] ' '[:lower:]-' <<<"$1" | sed -E 's/-+/-/g'
+}
+
+cmd_list() {
+  local id mark
+  load_config
+  while IFS= read -r id; do
+    mark="  "
+    [[ $id == "$CFG_THEME" ]] && mark="* "
+    printf '%s%-14s %s\n' "$mark" "$id" "$(theme_label "$id")"
+  done < <(theme_ids)
+}
+
+cmd_current() {
+  load_config
+  theme_label "$CFG_THEME"
+}
+
+cmd_set() {
+  local theme
+  [[ -n $1 ]] || die "usage: strata-sounds set <theme>"
+  theme=$(normalize_theme "$1")
+  valid_name "$theme" && theme_exists "$theme" || die "no sound theme named '$1' (see: strata-sounds list)"
+  write_config --arg t "$theme" '.theme = $t'
+  theme_label "$theme"
+}
+
+event_known() {
+  jq -e --arg id "$1" 'any(.events[]; .id == $id)' "$EVENTS_FILE" >/dev/null
+}
+
+cmd_switch() {
+  local action=$1 event=$2 value
+  load_config "$event"
+  if [[ -z $event ]]; then
+    case $action in
+      on) value=true ;;
+      off) value=false ;;
+      toggle) [[ $CFG_ENABLED == true ]] && value=false || value=true ;;
+    esac
+    write_config --argjson v "$value" '.enabled = $v'
+    echo "System sounds $([[ $value == true ]] && echo on || echo off)"
+    return
+  fi
+  valid_name "$event" || die "not an event name: $event"
+  event_known "$event" || [[ -n $(custom_events | grep -xF -- "$event") ]] ||
+    echo "strata-sounds: '$event' is not a built-in event; switching it anyway" >&2
+  case $action in
+    on) value=true ;;
+    off) value=false ;;
+    toggle) [[ $EVENT_ON == true ]] && value=false || value=true ;;
+  esac
+  write_config --arg id "$event" --argjson v "$value" '.events = ((.events // {}) + {($id): $v})'
+  echo "$event $([[ $value == true ]] && echo on || echo off)"
+}
+
+# Whether a desktop theme's own sounds/ folder takes part.
+cmd_theme_sounds() {
+  local value
+  load_config
+  case ${1:-} in
+    "") echo "$([[ $CFG_THEME_SOUNDS == true ]] && echo on || echo off)"; return ;;
+    on) value=true ;;
+    off) value=false ;;
+    toggle) [[ $CFG_THEME_SOUNDS == true ]] && value=false || value=true ;;
+    *) die "usage: strata-sounds theme-sounds [on|off|toggle]" ;;
+  esac
+  write_config --argjson v "$value" '.useThemeSounds = $v'
+  echo "Desktop theme sounds $([[ $value == true ]] && echo on || echo off)"
+}
+
+cmd_volume() {
+  local value=$1
+  if [[ -z $value ]]; then
+    load_config
+    echo "$CFG_VOLUME"
+    return
+  fi
+  [[ $value =~ ^[0-9]+$ ]] || die "volume is a whole number from 0 to 100"
+  (( value > 100 )) && value=100
+  write_config --argjson v "$value" '.volume = $v'
+  echo "$value"
+}
+
+# Sound names that are not built in but that the config plays: targets of
+# Hyprland event mappings and notification rules.
+custom_events() {
+  load_config
+  jq -r '[(.hyprland // {} | to_entries[] | .value), (.notifications // [] | .[] | .sound)]
+         | map(select(type == "string" and . != "none")) | unique | .[]' <<<"$CONFIG_JSON" 2>/dev/null |
+    while IFS= read -r name; do
+      valid_name "$name" && ! event_known "$name" && printf '%s\n' "$name"
+    done
+}
+
+cmd_events() {
+  local id label on file
+  load_config
+  compute_layers
+  while IFS=$'\t' read -r id label on fallback; do
+    # shellcheck disable=SC2086
+    file=$(resolve "$id" $fallback) || file="(no sound)"
+    printf '%-4s %-22s %-24s %s\n' "$on" "$id" "$label" "${file/#$HOME/\~}"
+  done < <(jq -r --argjson cfg "$CONFIG_JSON" '.events[] | .id as $id
+      | [.id, .label,
+         (if ($cfg.events // {}) | has($id) then ($cfg.events[$id] == true) else .default end | if . then "on" else "off" end),
+         (.fallback | join(" "))] | @tsv' "$EVENTS_FILE")
+}
+
+cmd_state() {
+  local id themes="" events="" file origin fallback desktop has_battery=false has_bluetooth=false
+  load_config
+  compute_layers
+
+  while IFS= read -r id; do
+    themes+=$(printf '%s\t%s\t%s\t%s\t%s' "$id" "$(theme_label "$id")" "$(theme_source "$id")" \
+      "$([[ -d $USER_THEMES/$id && ( -d $BUNDLED_THEMES/$id || $(theme_source "$id") == system ) ]] && has_audio "$USER_THEMES/$id" && echo true || echo false)" \
+      "$(theme_meta "$id" Comment)")$'\n'
+  done < <(theme_ids)
+
+  while IFS=$'\t' read -r id fallback; do
+    # shellcheck disable=SC2086
+    file=$(resolve "$id" $fallback) || file=""
+    origin=$(origin_of "$file")
+    events+=$(printf '%s\t%s\t%s' "$id" "$file" "$origin")$'\n'
+  done < <(
+    jq -r '.events[] | [.id, (.fallback | join(" "))] | @tsv' "$EVENTS_FILE"
+    custom_events | sed 's/$/\t/'
+  )
+
+  desktop=$(desktop_theme_id)
+  grep -qsx Battery /sys/class/power_supply/*/type && has_battery=true
+  compgen -G "/sys/class/bluetooth/hci*" >/dev/null && has_bluetooth=true
+
+  jq -n \
+    --argjson cfg "$CONFIG_JSON" \
+    --slurpfile catalogue "$EVENTS_FILE" \
+    --arg themes "$themes" \
+    --arg resolved "$events" \
+    --arg enabled "$CFG_ENABLED" --arg theme "$CFG_THEME" --argjson volume "$CFG_VOLUME" \
+    --arg useThemeSounds "$CFG_THEME_SOUNDS" \
+    --arg desktop "$desktop" --arg desktopLabel "$(theme_label "${desktop:-none}")" \
+    --arg desktopHasSounds "$([[ -d $DESKTOP_THEME_DIR/sounds ]] && has_audio "$DESKTOP_THEME_DIR/sounds" && echo true || echo false)" \
+    --arg hasBattery "$has_battery" --arg hasBluetooth "$has_bluetooth" \
+    --arg configPath "$CONFIG_FILE" --arg userThemes "$USER_THEMES" '
+    def rows($text): $text | split("\n") | map(select(length > 0) | split("\t"));
+    (rows($resolved) | map({ key: .[0], value: { file: .[1], kind: .[2], from: .[3] } }) | from_entries) as $files
+    | ($catalogue[0].events | map(.id)) as $builtin
+    | {
+        enabled: ($enabled == "true"),
+        theme: $theme,
+        volume: $volume,
+        useThemeSounds: ($useThemeSounds == "true"),
+        configPath: $configPath,
+        userThemesPath: $userThemes,
+        hasBattery: ($hasBattery == "true"),
+        hasBluetooth: ($hasBluetooth == "true"),
+        desktopTheme: { id: $desktop, label: $desktopLabel, hasSounds: ($desktopHasSounds == "true") },
+        themes: rows($themes) | map({ id: .[0], label: .[1], source: .[2], overlaid: (.[3] == "true"), comment: (.[4] // "") }),
+        events: (
+          ($catalogue[0].events | map(. + { custom: false }))
+          + ($files | keys_unsorted | map(select(. as $k | $builtin | index($k) | not))
+             | map({ id: ., label: (. | gsub("[-_]+"; " ") | (.[:1] | ascii_upcase) + .[1:]),
+                     windows: "", glyph: "󰎈", default: true, trigger: "Custom sound from sounds.json",
+                     fallback: [], requires: "", custom: true }))
+        ) | map(. as $e
+            | $e + {
+                on: (if ($cfg.events // {}) | has($e.id) then $cfg.events[$e.id] == true else $e.default end),
+                available: (if $e.requires == "battery" then ($hasBattery == "true")
+                            elif $e.requires == "bluetooth" then ($hasBluetooth == "true") else true end),
+                file: ($files[$e.id].file // ""),
+                origin: { kind: ($files[$e.id].kind // ""), theme: ($files[$e.id].from // "") }
+              })
+      }'
+}
+
+cmd_edit() {
+  local theme dir new=false
+  load_config
+  theme=$(normalize_theme "${1:-$CFG_THEME}")
+  valid_name "$theme" || die "not a theme name: $1"
+  dir=$USER_THEMES/$theme
+  [[ -d $dir ]] || new=true
+  mkdir -p "$dir"
+  if [[ $new == true ]]; then
+    {
+      echo "# Your $(theme_label "$theme") sounds"
+      echo
+      echo "Drop audio files here named after the event they replace. Anything you"
+      echo "leave out keeps coming from the theme. ogg, oga, opus, flac, wav and mp3 all work."
+      echo
+      jq -r '.events[] | "- `\(.id).ogg`: \(.label). \(.trigger)."' "$EVENTS_FILE"
+      echo
+      echo "A new theme folder can borrow everything it lacks from another theme with"
+      echo "an index.theme next to the sounds:"
+      echo
+      echo '    [Sound Theme]'
+      echo '    Name=My Sounds'
+      echo '    Inherits=classic'
+    } >"$dir/README.md"
+  fi
+  if command -v xdg-open >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-}${DISPLAY:-} ]]; then
+    setsid -f xdg-open "$dir" >/dev/null 2>&1
+  fi
+  echo "$dir"
+}
+
+cmd_install() {
+  local url=$1 name dest
+  [[ -n $url ]] || die "usage: strata-sounds install <git-url>"
+  name=$(basename -- "${url%%[?#]*}" .git | sed -E 's/^strata-//; s/-(sound-theme|sounds|sound)$//' | tr '[:upper:]' '[:lower:]')
+  valid_name "$name" || die "cannot work out a theme name from $url"
+  dest=$USER_THEMES/$name
+  [[ -e $dest ]] && die "$dest already exists; remove it first to reinstall"
+  mkdir -p "$USER_THEMES"
+  git clone --depth 1 -- "$url" "$dest" || die "clone failed"
+  if ! has_audio "$dest"; then
+    rm -rf -- "$dest"
+    die "$url has no sound files at its top level or in stereo/"
+  fi
+  write_config --arg t "$name" '.theme = $t'
+  echo "Installed and switched to $(theme_label "$name")"
+}
+
+args=()
+for arg in "$@"; do
+  case $arg in
+    --yes | -y) ASSUME_YES=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+set -- "${args[@]}"
+
+case ${1:-} in
+  play | preview) cmd_play "$@" ;;
+  play-file) cmd_play_file "$2" ;;
+  list) cmd_list ;;
+  current) cmd_current ;;
+  set) cmd_set "$2" ;;
+  events) cmd_events ;;
+  on | off | toggle) cmd_switch "$1" "${2:-}" ;;
+  volume) cmd_volume "${2:-}" ;;
+  theme-sounds) cmd_theme_sounds "${2:-}" ;;
+  edit) cmd_edit "${2:-}" ;;
+  install) cmd_install "$2" ;;
+  state) cmd_state ;;
+  startup) cmd_startup ;;
+  -h | --help | help | "") usage ;;
+  *) usage >&2; exit 1 ;;
+esac

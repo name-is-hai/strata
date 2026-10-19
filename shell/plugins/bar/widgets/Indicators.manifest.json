@@ -4,7 +4,7 @@
   "name": "Indicators",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Manual state indicators",
+  "description": "Privacy activity and system state indicators",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Indicators",
-    "description": "Manual state indicators",
+    "description": "Privacy activity and system state indicators",
     "category": "Status",
     "allowMultiple": true,
     "schema": [
@@ -27,9 +27,19 @@
         "emptyText": "No indicators",
         "options": [
           {
+            "value": "Camera",
+            "label": "Camera",
+            "description": "Camera access and privacy monitoring status"
+          },
+          {
+            "value": "Microphone",
+            "label": "Microphone",
+            "description": "Microphone access, mute toggle and input volume"
+          },
+          {
             "value": "ScreenRecording",
-            "label": "Screen recording",
-            "description": "GPU screen recorder status"
+            "label": "Screen sharing and recording",
+            "description": "Screen access by apps and recording controls"
           },
           {
             "value": "NightLight",
@@ -37,14 +47,14 @@
             "description": "Blue-light filter"
           },
           {
-            "value": "Dnd",
-            "label": "Do not disturb",
-            "description": "Notification silencing"
-          },
-          {
             "value": "StayAwake",
             "label": "Stay awake",
-            "description": "Idle lock override"
+            "description": "Prevent automatic sleep while keeping manual suspend available"
+          },
+          {
+            "value": "Hotspot",
+            "label": "Hotspot",
+            "description": "Hotspot status and connected-device count"
           }
         ]
       },
@@ -52,7 +62,7 @@
         "key": "alwaysShow",
         "type": "boolean",
         "label": "Always Show",
-        "description": "Show inactive indicators without waiting for hover.",
+        "description": "Show idle manual controls without waiting for hover. Privacy icons only appear during access.",
         "defaultValue": false
       }
     ]

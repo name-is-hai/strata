@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Read or toggle a firmware charge limit through UPower's authorized D-Bus API.
+set -euo pipefail
+
+case ${1:-status} in
+  status|enable|disable) action=${1:-status} ;;
+  *) echo 'Usage: strata-battery-threshold [status|enable|disable]' >&2; exit 2 ;;
+esac
+
+command -v upower >/dev/null || exit 0
+command -v gdbus >/dev/null || exit 0
+
+battery=''
+while IFS= read -r device; do
+  [[ $device == *battery* ]] || continue
+  if LC_ALL=C upower -i "$device" 2>/dev/null | grep -Eq '^ *power supply: *yes'; then
+    battery=$device
+    break
+  fi
+done < <(upower -e 2>/dev/null)
+[[ -n $battery ]] || exit 0
+
+if [[ $action == status ]]; then
+  result=$(gdbus call --system --dest org.freedesktop.UPower \
+    --object-path "$battery" --method org.freedesktop.DBus.Properties.Get \
+    org.freedesktop.UPower.Device ChargeThresholdEnabled 2>/dev/null) || exit 0
+  case $result in
+    *true*) printf 'supported\ttrue\nenabled\ttrue\n' ;;
+    *false*) printf 'supported\ttrue\nenabled\tfalse\n' ;;
+  esac
+else
+  value=false
+  [[ $action == enable ]] && value=true
+  gdbus call --system --dest org.freedesktop.UPower --object-path "$battery" \
+    --method org.freedesktop.UPower.Device.EnableChargeThreshold "$value" >/dev/null
+fi

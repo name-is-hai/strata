@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.shortcut-guide",
+  "name": "Strata Shortcut Guide",
+  "version": "1.0.0",
+  "author": "Strata / cyprusad",
+  "license": "MIT",
+  "homepage": "https://github.com/cyprusad/omakeez",
+  "description": "Hold Super to discover your shortcuts; enable or disable from the menu.",
+  "kinds": [
+    "service",
+    "panel"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "panel": "Panel.qml"
+  },
+  "keepLoaded": true
+}

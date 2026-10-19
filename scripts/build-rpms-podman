@@ -13,15 +13,17 @@ ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fed
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/build-rpms-podman [config|desktop|hyprland|utilities|fonts|all]
+Usage: scripts/build-rpms-podman [config|casting|desktop|hyprland|utilities|fonts|all]...
 
 Build selected Strata RPM source packages on this host through rootless Podman.
 All compilers and build dependencies remain in the disposable container.
+Pass multiple targets to reuse the same build container and DNF dependencies.
 
   config      strata-config
-  desktop     desktop meta-packages plus Ghostty and UWSM
+  casting     wireless display and media casting backends
+  desktop     desktop meta-packages plus Zen Browser, Ghostty, and UWSM
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
-  utilities   hypridle, hyprlock, hyprsunset, and hyprpicker
+  utilities   Hyprland utilities, including Hyprcursor theme-tool dependencies
   fonts       jetbrains-mono-nerd-fonts
   all         every target above
 
@@ -35,12 +37,14 @@ STRATA_FEDORA_UPDATES_BASEURL only when a Fedora mirror is unavailable.
 USAGE
 }
 
-target=${1:-0}
-case "$target" in
-  config|desktop|hyprland|utilities|fonts|all) ;;
-  -h|--help) usage; exit 0 ;;
-  *) usage >&2; exit 2 ;;
-esac
+[[ ${1:-} == -h || ${1:-} == --help ]] && { usage; exit 0; }
+(( $# > 0 )) || { usage >&2; exit 2; }
+for target in "$@"; do
+  case "$target" in
+    config|casting|desktop|hyprland|utilities|fonts|all) ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
 
 command -v podman >/dev/null 2>&1 || {
   echo "Podman is required. Install the podman package first." >&2
@@ -88,12 +92,12 @@ podman_args=(run --rm --pull=newer --user 0 --cpus "$build_cpus")
 [[ -t 1 ]] && podman_args+=(--tty)
 
 podman "${podman_args[@]}" \
-  -e STRATA_TARGET="$target" \
+  -e STRATA_TARGETS="$*" \
   -e STRATA_FEDORA_RELEASE_BASEURL="$fedora_release_baseurl" \
   -e STRATA_FEDORA_UPDATES_BASEURL="$fedora_updates_baseurl" \
   -v "$repo_root:/src:ro,Z" \
   -v "$output_dir:/out:Z" \
-  -v "$dnf_cache_volume:/var/cache/dnf:Z" \
+  -v "$dnf_cache_volume:/var/cache/libdnf5:Z" \
   -v "$ghostty_cache_volume:/var/cache/strata:Z" \
   -w /src \
   "$image" \
@@ -116,24 +120,44 @@ podman "${podman_args[@]}" \
       rpm-build rpmdevtools dnf-plugins-core createrepo_c
     cp -a /src/packaging/. "$topdir/SOURCES/"
 
+    # Only copy sources into RPM archives. Local builds and imported themes
+    # can carry large caches or nested Git histories that are not package data.
+    copy_source_tree() {
+      tar -C /src --exclude=.git --exclude=__pycache__ --exclude="*.py[cod]" \
+        --exclude=target --exclude=third_party/strata-snip/build \
+        --exclude=third_party/strata-snip/stage -cf - "$@" |
+        tar -C "$source_root" -xf -
+    }
+
     make_config_source() {
       version=$(rpmspec -q --qf "%{VERSION}" /src/packaging/strata-config.spec)
       source_root="/tmp/strata-config-${version}"
       rm -rf "$source_root"
       mkdir -p "$source_root"
-      for path in LICENSE bin config default docs packaging runtime-config runtime-default runtime-version shell systemd; do
-        cp -a "/src/$path" "$source_root/"
-      done
+      copy_source_tree LICENSE bin config default docs native packaging \
+        runtime-config runtime-version scripts shell systemd third_party
       # Themes are optional: a minimal Strata checkout can intentionally omit
       # all bundled artwork and terminal-theme templates.
-      [[ -e /src/themes ]] && cp -a /src/themes "$source_root/"
+      [[ -e /src/themes ]] && copy_source_tree themes
       tar -C /tmp -czf "$topdir/SOURCES/strata-config-${version}.tar.gz" "strata-config-${version}"
+    }
+
+    make_casting_source() {
+      version=$(rpmspec -q --srpm --qf "%{VERSION}" /src/packaging/strata-casting.spec)
+      source_root="/tmp/strata-casting-${version}"
+      mkdir -p "$source_root/third_party" "$source_root/packaging"
+      copy_source_tree LICENSE third_party/waycast third_party/strata-cast \
+        third_party/doubletake packaging/casting
+      tar -C /tmp -czf "$topdir/SOURCES/strata-casting-${version}.tar.gz" "strata-casting-${version}"
+      spectool -g -R -d "_topdir $topdir" /src/packaging/strata-casting.spec
     }
 
     build_spec() {
       spec=$1
       if [[ $spec == strata-config.spec ]]; then
         make_config_source
+      elif [[ $spec == strata-casting.spec ]]; then
+        make_casting_source
       else
         # -R derives the directory from the RPM _sourcedir. Do not combine it
         # with -C: spectool rejects two competing download directories.
@@ -143,26 +167,28 @@ podman "${podman_args[@]}" \
       rpmbuild -ba "/src/packaging/$spec" --define "_topdir $topdir"
     }
 
-    case "$STRATA_TARGET" in
-      config) build_spec strata-config.spec ;;
-      desktop) build_spec hyprland-desktop.spec ;;
-      hyprland) build_spec hyprland-minimal.spec ;;
-      utilities) build_spec hyprland-utilities.spec ;;
-      fonts) build_spec jetbrains-mono-nerd-fonts.spec ;;
-      all)
-        build_spec hyprland-minimal.spec
-        build_spec hyprland-utilities.spec
-        build_spec jetbrains-mono-nerd-fonts.spec
-        build_spec hyprland-desktop.spec
-        build_spec strata-config.spec
-        ;;
-    esac
-
-    # Targets are intentionally built independently. Merge their artifacts so
-    # a later `config` build does not erase the earlier `desktop` RPMs.
     mkdir -p /out/RPMS /out/SRPMS
-    cp -a "$topdir/RPMS/." /out/RPMS/
-    cp -a "$topdir/SRPMS/." /out/SRPMS/
+    for target in $STRATA_TARGETS; do
+      case "$target" in
+        config) build_spec strata-config.spec ;;
+        casting) build_spec strata-casting.spec ;;
+        desktop) build_spec hyprland-desktop.spec ;;
+        hyprland) build_spec hyprland-minimal.spec ;;
+        utilities) build_spec hyprland-utilities.spec ;;
+        fonts) build_spec jetbrains-mono-nerd-fonts.spec ;;
+        all)
+          build_spec strata-casting.spec
+          build_spec hyprland-minimal.spec
+          build_spec hyprland-utilities.spec
+          build_spec jetbrains-mono-nerd-fonts.spec
+          build_spec hyprland-desktop.spec
+          build_spec strata-config.spec
+          ;;
+      esac
+      # Keep completed packages even if a later target fails.
+      cp -a "$topdir/RPMS/." /out/RPMS/
+      cp -a "$topdir/SRPMS/." /out/SRPMS/
+    done
   '
 
 echo "Built RPMs are in: $output_dir/RPMS"

@@ -1,0 +1,1584 @@
+[
+  {
+    "shape": "progress",
+    "aliases": [
+      "00000000000000020006000e7e9ffc3f",
+      "08e8e1c95fe2fc01f976f1e063a24ccd",
+      "3ecb610c1bf2410f44200f48c40d3599",
+      "9116a3ea924ed2162ecab71ba103b17f",
+      "half-busy",
+      "left_ptr_watch",
+      "progress"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      24
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 32,
+    "duration_ms": 512
+  },
+  {
+    "shape": "ns-resize",
+    "aliases": [
+      "00008160000006810000408080010102",
+      "2870a09082c103050810ffdffffe0204",
+      "c07385c7190e701020ff7ffffd08103c",
+      "double_arrow",
+      "ns-resize",
+      "sb_v_double_arrow",
+      "size_ver",
+      "v_double_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      44
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "text",
+    "aliases": [
+      "00601b0000c030000018060000308d00",
+      "ibeam",
+      "text",
+      "xterm"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "crossed-circle",
+    "aliases": [
+      "00c4610000d2e20000a3a50000439100",
+      "03b6e0fcb3499374a867c041f52298f0",
+      "310ebafe88f67c80876888b78f09609f",
+      "circle",
+      "crossed-circle",
+      "crossed_circle"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "00ea0400004c4100001f8e0000628d00",
+    "aliases": [
+      "00ea0400004c4100001f8e0000628d00",
+      "pencil"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      23,
+      75
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "ew-resize",
+    "aliases": [
+      "028006030e0e7ebffc7f7070c0600140",
+      "800000020061340200cc660000580d80",
+      "ew-resize",
+      "h_double_arrow",
+      "sb_h_double_arrow",
+      "size_hor"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      45,
+      49
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "not-allowed",
+    "aliases": [
+      "03b6e0fcb3499374a867d041f52298f0",
+      "1001208387f90000800003000700f6ff",
+      "dnd-no-drop",
+      "forbidden",
+      "no-drop",
+      "not-allowed"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      24
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "wait",
+    "aliases": [
+      "0426c94ea35c87780ff01dc239897213",
+      "clock",
+      "wait",
+      "watch"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 32,
+    "duration_ms": 512
+  },
+  {
+    "shape": "col-resize",
+    "aliases": [
+      "043a9f68147c53184671403ffa811cc5",
+      "14fef782d02440884392942c11205230",
+      "col-resize",
+      "split_h"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      45,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "vertical-text",
+    "aliases": [
+      "048008013003cff3c00c801001200000",
+      "vertical-text"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "dnd-link",
+    "aliases": [
+      "0876e1c15ff2fc01f906f1c363074c0f",
+      "3085a0e285430894940527032f8b26df",
+      "640fb0e74195791501fd1ed57b41487f",
+      "a2a266d0498c3104214a47bd64ab0fc8",
+      "alias",
+      "dnd-link",
+      "link"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      24
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "dnd-copy",
+    "aliases": [
+      "08ffe1cb5fe6fc01f906f1c063814ccf",
+      "1081e37283d90000800003c07f3ef6bf",
+      "6407b0e94181790501fd1e167b474872",
+      "9d7388ef4fcbc1d0ebcf4583ea7555fd",
+      "b66166c04f8c3109214a4fbd64a50fc8",
+      "copy",
+      "dnd-copy"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      24
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "context-menu",
+    "aliases": [
+      "08ffe1e65f80fcfdf9fff11263e74c48",
+      "context-menu"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      23
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "grabbing",
+    "aliases": [
+      "0e133a0778f8f0a2f5b3088dc174c952",
+      "208530c400c041818281048008011002",
+      "4498f0e0c1937ffe01fd06f973665830",
+      "4cb8584a4793df7081ff86f1716e5a10",
+      "9081237383d90e509aa00f00170e968f",
+      "91532847acc1981c302e17af617818a7",
+      "closedhand",
+      "dnd-move",
+      "dragging",
+      "fcf21c00b30f7e3f83fe0dfd12e71cff",
+      "fleur",
+      "grabbing",
+      "move",
+      "pointer-move",
+      "pointer_move"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      49,
+      50
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "nwse-resize",
+    "aliases": [
+      "38c5dff7c7b8962045400281044508d2",
+      "bd_double_arrow",
+      "bottom_right_corner",
+      "c7088f0f3e6c8088236ef8e1e3e70000",
+      "lr_angle",
+      "nw-resize",
+      "nwse-resize",
+      "se-resize",
+      "size_fdiag",
+      "top_left_corner",
+      "ul_angle"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      43
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "right-arrow",
+    "aliases": [
+      "4081077e9ffc7ff97e70604000000000",
+      "right-arrow",
+      "sb_right_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      74,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "nesw-resize",
+    "aliases": [
+      "50585d75b494802d0151028115016902",
+      "bottom_left_corner",
+      "fcf1c3c7cd4491d801f1e1c78f100000",
+      "fd_double_arrow",
+      "ll_angle",
+      "ne-resize",
+      "nesw-resize",
+      "size_bdiag",
+      "sw-resize",
+      "top_right_corner",
+      "ur_angle"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      50,
+      43
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "grab",
+    "aliases": [
+      "5aca4d189052212118709018842178c0",
+      "grab",
+      "hand1",
+      "openhand"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      50,
+      52
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "help",
+    "aliases": [
+      "5c6cd98b3f3ebcb1f9c7f1c204630408",
+      "d9ce0ab605698f320427677b458ad60b",
+      "dnd-ask",
+      "help",
+      "left_ptr_help"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      4,
+      24
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "pointer",
+    "aliases": [
+      "9d800788f1b08800ae810202380a0822",
+      "e29285e634086352946a0e7090d73106",
+      "hand",
+      "hand2",
+      "pointer",
+      "pointer2",
+      "pointing_hand"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      37,
+      9
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "X_cursor",
+    "aliases": [
+      "X_cursor"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "all-scroll",
+    "aliases": [
+      "all-scroll",
+      "size_all"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "left_ptr",
+    "aliases": [
+      "arrow",
+      "default",
+      "dnd-none",
+      "left_ptr",
+      "size-bdiag",
+      "size-fdiag",
+      "size-hor",
+      "size-ver",
+      "top_left_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      25,
+      14
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "s-resize",
+    "aliases": [
+      "bottom_side",
+      "bottom_tee",
+      "s-resize"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      61
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "cell",
+    "aliases": [
+      "cell",
+      "cross"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "up-arrow",
+    "aliases": [
+      "center_ptr",
+      "sb_up_arrow",
+      "up-arrow",
+      "up_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      15
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "color-picker",
+    "aliases": [
+      "color-picker"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      14,
+      78
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "crosshair",
+    "aliases": [
+      "cross_reverse",
+      "crosshair",
+      "diamond_cross"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      45
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "dot",
+    "aliases": [
+      "dot",
+      "dot_box_mask",
+      "dotbox",
+      "draped_box",
+      "icon",
+      "target"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      45
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "down-arrow",
+    "aliases": [
+      "down-arrow",
+      "down_arrow",
+      "e03881300220000010406080c0018102",
+      "sb_down_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      74
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "draft",
+    "aliases": [
+      "draft"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      24,
+      71
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "draft_large",
+    "aliases": [
+      "draft_large",
+      "draft_small",
+      "right_ptr"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      70,
+      14
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "e-resize",
+    "aliases": [
+      "e-resize",
+      "right_side",
+      "right_tee"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      61,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "zoom-in",
+    "aliases": [
+      "f41c0e382c94c0958e07017e42b00462",
+      "zoom-in",
+      "zoom_in"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      39,
+      39
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "zoom-out",
+    "aliases": [
+      "f41c0e382c97c0938e07017e42800402",
+      "zoom-out",
+      "zoom_out"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      39,
+      39
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "kill",
+    "aliases": [
+      "kill",
+      "pirate"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "left-arrow",
+    "aliases": [
+      "left-arrow",
+      "sb_left_arrow"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      15,
+      46
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "w-resize",
+    "aliases": [
+      "left_side",
+      "left_tee",
+      "w-resize"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      34,
+      47
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "n-resize",
+    "aliases": [
+      "n-resize",
+      "top_side",
+      "top_tee"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      34
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "plus",
+    "aliases": [
+      "plus"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      49
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "question_arrow",
+    "aliases": [
+      "question_arrow",
+      "whats_this"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      47,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "row-resize",
+    "aliases": [
+      "row-resize",
+      "split_v"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      46,
+      45
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "tcross",
+    "aliases": [
+      "tcross"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "wayland-cursor",
+    "aliases": [
+      "wayland-cursor"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      47,
+      47
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  },
+  {
+    "shape": "x-cursor",
+    "aliases": [
+      "x-cursor"
+    ],
+    "size": 96,
+    "width": 96,
+    "height": 96,
+    "hotspot": [
+      48,
+      48
+    ],
+    "render_sizes": [
+      24,
+      28,
+      32,
+      36,
+      40,
+      44,
+      48,
+      50,
+      56,
+      60,
+      64,
+      72,
+      80,
+      88,
+      96
+    ],
+    "frames": 1,
+    "duration_ms": 166
+  }
+]

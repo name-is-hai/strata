@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# strata:summary=Read, apply, or save mouse settings
+# strata:args=[get|apply <json>|save <json>]
+set -euo pipefail
+
+# Touchpads inherit input:sensitivity unless explicitly overridden. Discover
+# their names instead of embedding a laptop model in the shipped config.
+touchpad_names() {
+  local event properties name
+  local names
+  names=$(
+    for event in /sys/class/input/event*; do
+      [[ -e $event ]] || continue
+      properties=$(udevadm info --query=property --path="$event" 2>/dev/null) || continue
+      grep -qx 'ID_INPUT_TOUCHPAD=1' <<<"$properties" || continue
+      name=$(cat "$event/device/name")
+      printf '%s\n' "$name" | tr '[:upper:] ,' '[:lower:]--'
+    done | jq -Rs 'split("\n") | map(select(length > 0)) | unique'
+  )
+  hyprctl -j devices | jq -ce --argjson names "$names" '
+    [$names[], (.mice[].name as $name | $names[] as $base |
+      select($name == $base or ($name | startswith($base + "-"))) | $name)] | unique'
+}
+
+# Lua state tracks the independently configured touchpad values; before the
+# first change, preserve the existing inherited sensitivity/profile.
+touchpad_values() {
+  hyprctl repl 'print(string.format("%.6f", _G.strata_touchpad_sensitivity or hl.get_config("input:sensitivity"))); print(_G.strata_touchpad_accel_profile or hl.get_config("input:accel_profile"))' |
+    jq -Rse 'split("\n") | {touchpad_sensitivity:(.[0] | tonumber), touchpad_accel_profile:.[1]} |
+      select(.touchpad_sensitivity >= -1 and .touchpad_sensitivity <= 1) |
+      select(.touchpad_accel_profile == "" or .touchpad_accel_profile == "flat" or .touchpad_accel_profile == "adaptive")'
+}
+
+case "${1:-get}" in
+  get)
+    pointer_values=$(touchpad_values)
+    hyprctl -j --batch 'getoption input:sensitivity; getoption input:scroll_factor; getoption input:natural_scroll; getoption input:left_handed; getoption input:accel_profile; getoption input:touchpad:scroll_factor; getoption input:touchpad:natural_scroll; getoption input:touchpad:tap_to_click; getoption input:touchpad:tap_and_drag; getoption input:touchpad:disable_while_typing' |
+      jq -se --argjson pointer "$pointer_values" 'reduce .[] as $option ({};
+        .[$option.option | sub("^input:"; "") | gsub(":"; "_")] =
+        (if $option | has("float") then $option.float
+         elif $option | has("bool") then $option.bool else $option.str end)) |
+        if .accel_profile == "[[EMPTY]]" then .accel_profile = "" else . end | . + $pointer'
+    ;;
+  apply|save)
+    values=$(jq -ce 'select(type == "object") |
+      select((.sensitivity | type) == "number" and .sensitivity >= -1 and .sensitivity <= 1) |
+      select((.scroll_factor | type) == "number" and .scroll_factor >= 0.1 and .scroll_factor <= 5) |
+      select((.natural_scroll | type) == "boolean" and (.left_handed | type) == "boolean") |
+      select(.accel_profile == "" or .accel_profile == "flat" or .accel_profile == "adaptive") |
+      select((.touchpad_scroll_factor | type) == "number" and .touchpad_scroll_factor >= 0.1 and .touchpad_scroll_factor <= 5) |
+      select(all(.touchpad_natural_scroll,.touchpad_tap_to_click,.touchpad_tap_and_drag,.touchpad_disable_while_typing; type == "boolean")) |
+      select((.touchpad_sensitivity | type) == "number" and .touchpad_sensitivity >= -1 and .touchpad_sensitivity <= 1) |
+      select(.touchpad_accel_profile == "" or .touchpad_accel_profile == "flat" or .touchpad_accel_profile == "adaptive") |
+      {sensitivity,scroll_factor,natural_scroll,left_handed,accel_profile,touchpad_sensitivity,touchpad_accel_profile,
+       touchpad: {scroll_factor:.touchpad_scroll_factor,natural_scroll:.touchpad_natural_scroll,
+        tap_to_click:.touchpad_tap_to_click,tap_and_drag:.touchpad_tap_and_drag,disable_while_typing:.touchpad_disable_while_typing}}' <<<"${2:-}") || {
+      echo 'Invalid mouse settings' >&2; exit 2;
+    }
+    fields=$(jq -r 'def lua: if type == "object" then "{ " + (to_entries | map("\(.key) = \(.value | lua)") | join(", ")) + " }" else tojson end; del(.touchpad_sensitivity,.touchpad_accel_profile) | to_entries | map("\(.key) = \(.value | lua)") | join(", ")' <<<"$values")
+    names=$(touchpad_names)
+    touchpad_lua=$(jq -r --argjson names "$names" '
+      "_G.strata_touchpad_sensitivity = " + (.touchpad_sensitivity | tostring) + "\n" +
+      "_G.strata_touchpad_accel_profile = " + (.touchpad_accel_profile | tojson) + "\n" +
+      ([$names[] | "hl.device({ name = " + tojson + ", sensitivity = _G.strata_touchpad_sensitivity, accel_profile = _G.strata_touchpad_accel_profile })"] | join("\n"))' <<<"$values")
+    lua="$touchpad_lua
+hl.config({ input = { $fields } })"
+    hyprctl eval "$lua" >/dev/null
+    if [[ $1 == save ]]; then
+      destination=${XDG_CONFIG_HOME:-$HOME/.config}/hypr/mouse.lua
+      mkdir -p "$(dirname "$destination")"
+      temporary=$(mktemp "${destination}.XXXXXX")
+      trap 'rm -f -- "$temporary"' EXIT
+      printf '%s\n%s\n' '-- Mouse settings saved by Strata. Personal Hyprland overrides still take precedence.' "$lua" >"$temporary"
+      mv "$temporary" "$destination"
+    fi
+    ;;
+  sync-touchpads)
+    # Called when the device list changes. Do nothing until independent
+    # touchpad settings have actually been configured in this session.
+    active=$(hyprctl repl 'print(_G.strata_touchpad_sensitivity ~= nil)')
+    [[ $active == true ]] || exit 0
+    names=$(touchpad_names)
+    lua=$(jq -r '.[] | "hl.device({ name = " + tojson + ", sensitivity = _G.strata_touchpad_sensitivity, accel_profile = _G.strata_touchpad_accel_profile })"' <<<"$names")
+    [[ -z $lua ]] || hyprctl eval "$lua" >/dev/null
+    ;;
+  *) echo 'Usage: strata-mouse-settings [get|apply <json>|save <json>]' >&2; exit 2 ;;
+esac

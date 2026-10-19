@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# strata:summary=Check for newer packages published in the Strata DNF repository
+# strata:args=[--refresh] [--notify]
+set -euo pipefail
+umask 077
+refresh=false
+notify=false
+for argument in "$@"; do
+  case "$argument" in
+    --refresh) refresh=true ;;
+    --notify) notify=true ;;
+    *) echo 'Usage: strata-update-check [--refresh] [--notify]' >&2; exit 2 ;;
+  esac
+done
+
+cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/strata
+state='{"available":false,"updates":[],"error":"","notified":""}'
+if ! mkdir -p -- "$cache_dir"; then
+  jq -nc '{available:false,updates:[],error:"Could not create the update cache"}'
+  exit 1
+fi
+cache=$cache_dir/update-status.json
+error_file=$(mktemp "$cache_dir/.update-error.XXXXXX")
+temporary=""
+trap 'rm -f -- "$error_file" ${temporary:+"$temporary"}' EXIT
+save_state() {
+  temporary=$(mktemp "$cache_dir/.update-status.XXXXXX")
+  printf '%s\n' "$state" > "$temporary"
+  mv -f -- "$temporary" "$cache"
+  temporary=""
+}
+fail_check() {
+  state=$(jq -c --arg error "$1" '.error=$error' <<<"$state")
+  save_state
+  printf '%s\n' "$state"
+  exit 1
+}
+exec 9>"$cache_dir/update-status.lock"
+if ! flock -w 70 9; then
+  jq -nc '{available:false,updates:[],error:"Another update check is still running"}'
+  exit 1
+fi
+if [[ -f $cache ]]; then
+  if previous=$(jq -ce '
+    select(type=="object" and (.available|type)=="boolean" and (.updates|type)=="array")
+    | .error=(.error // "") | .notified=(.notified // "")
+  ' "$cache" 2>/dev/null); then state=$previous; fi
+fi
+if ! installed=$(timeout --kill-after=1s 5s rpm -q --qf '%{VERSION}-%{RELEASE}' strata-config 2>"$error_file"); then
+  fail_check "Strata is not installed as an RPM package"
+fi
+now=$(date +%s)
+checked=$(jq -r 'if (.checkedAt|type)=="number" then .checkedAt|floor else 0 end' <<<"$state")
+previous_version=$(jq -r '.installedVersion // ""' <<<"$state")
+previous_error=$(jq -r '.error // ""' <<<"$state")
+age=$((now - checked))
+if $refresh || [[ -n $previous_error || $previous_version != "$installed" ]] || (( age < 0 || age >= 21600 )); then
+  if ! raw=$(timeout --kill-after=2s 60s dnf -q --refresh --repo=strata \
+      --setopt=strata.skip_if_unavailable=False repoquery --upgrades --latest-limit=1 \
+      --queryformat $'%{name}\t%{evr}\t%{arch}\n' 2>"$error_file"); then
+    detail=$(tail -c 600 "$error_file")
+    fail_check "${detail:-Could not reach the Strata package repository}"
+  fi
+  if ! updates=$(jq -Rsc '
+      split("\n") | map(select(length>0) | split("\t") |
+      if length==3 and (.[0]|test("^[A-Za-z0-9][A-Za-z0-9+_.-]*$"))
+        and (.[1]|test("^[A-Za-z0-9][A-Za-z0-9+_.:~^-]*$"))
+        and (.[2]|test("^[A-Za-z0-9_]+$"))
+      then {name:.[0],version:.[1],arch:.[2]}
+      else error("Unexpected package metadata") end) | sort_by(.name,.arch,.version)
+    ' <<<"$raw" 2>/dev/null); then
+    fail_check 'Unexpected package metadata in the update query'
+  fi
+  state=$(jq -nc --argjson updates "$updates" --arg installed "$installed" \
+    --argjson checked "$now" --arg notified "$(jq -r '.notified // ""' <<<"$state")" \
+    '{available:($updates|length>0),updates:$updates,installedVersion:$installed,checkedAt:$checked,error:"",notified:$notified}')
+fi
+fingerprint=$(jq -cS '.updates' <<<"$state")
+if $notify && [[ $(jq -r '.available' <<<"$state") == true && $(jq -r '.notified' <<<"$state") != "$fingerprint" ]]; then
+  version=$(jq -r '[.updates[]|select(.name=="strata-config")|.version][0] // ""' <<<"$state")
+  detail="$(jq '.updates|length' <<<"$state") Strata package updates are ready."
+  [[ -z $version ]] || detail="Strata $version is ready."
+  if timeout --kill-after=1s 10s strata-notification-send --app-name 'Strata updates' \
+      'Strata update available' "$detail Click to review and install." \
+      --exec strata-launch-floating-terminal-with-presentation strata-update >/dev/null 2>&1; then
+    state=$(jq -c --arg fingerprint "$fingerprint" '.notified=$fingerprint' <<<"$state")
+  fi
+fi
+save_state
+printf '%s\n' "$state"

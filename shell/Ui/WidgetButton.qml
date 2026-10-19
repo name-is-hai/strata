@@ -7,8 +7,12 @@ Item {
   property var bar: null
   property string text: ""
   property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  property real fontSize: Style.font.body
-  property color foreground: bar ? bar.barForeground : Color.foreground
+  // Fit visible digits to the shared bar label height. A fixed reference
+  // avoids font-size changes or outline-helper work on every clock tick.
+  readonly property real labelFontSize: labelSizing.pixelSize
+  property real fontSize: labelFontSize
+  property color foreground: bar && typeof bar.foregroundForItem === "function"
+    ? bar.foregroundForItem(root) : (bar ? bar.barForeground : Color.foreground)
   property color activeColor: bar ? bar.urgent : Color.urgent
   property bool active: false
   property real horizontalMargin: 8.5
@@ -58,8 +62,8 @@ Item {
 
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
-  readonly property real scaledHorizontalMargin: Style.spaceReal(horizontalMargin)
-  readonly property real scaledVerticalPadding: Style.spaceReal(verticalPadding)
+  readonly property real scaledHorizontalMargin: Style.spaceReal(horizontalMargin) * Style.bar.contentScale
+  readonly property real scaledVerticalPadding: Style.spaceReal(verticalPadding) * Style.bar.contentScale
   readonly property bool tooltipHovered: visible && interactive && !concealed && mouseArea.containsMouse
   // Width of the painted label, for bar chrome that wants to line up with the
   // text rather than with the slot it sits in. Zero on icon-only buttons.
@@ -67,8 +71,8 @@ Item {
 
   visible: hasVisualContent || keepSpace
   opacity: !hasVisualContent || concealed ? 0 : (dimmed ? 0.45 : 1)
-  implicitWidth: fixedWidth > 0 ? fixedWidth : (vertical ? barSize : Math.max(12, label.implicitWidth + scaledHorizontalMargin * 2))
-  implicitHeight: fixedHeight > 0 ? fixedHeight : (vertical ? Math.max(12, label.implicitHeight + scaledVerticalPadding * 2) : barSize)
+  implicitWidth: fixedWidth > 0 ? fixedWidth : (vertical ? barSize : Math.max(Style.bar.contentPx(12), label.implicitWidth + scaledHorizontalMargin * 2))
+  implicitHeight: fixedHeight > 0 ? fixedHeight : (vertical ? Math.max(Style.bar.contentPx(12), label.implicitHeight + scaledVerticalPadding * 2) : barSize)
 
   Behavior on opacity {
     NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic }
@@ -84,7 +88,7 @@ Item {
     // labels line up with the icons beside them.
     anchors.verticalCenterOffset: !root.centerFigures || root.vertical || root.text.indexOf("\n") !== -1
       ? 0
-      : (labelMetrics.descent - labelMetrics.ascent + labelMetrics.tightBoundingRect("0").height) / 2
+      : label.height / 2 - label.baselineOffset - figureInk.y - figureInk.height / 2
     text: root.text
     color: root.active && root.useActiveColor ? root.activeColor : root.foreground
     font.family: root.fontFamily
@@ -100,10 +104,13 @@ Item {
     }
   }
 
-  FontMetrics {
-    id: labelMetrics
-    font: label.font
+  BarLabelMetrics {
+    id: labelSizing
+    fontFamily: root.fontFamily
+    targetHeight: Math.min(Style.bar.labelSize, root.barSize)
+    fontSize: root.fontSize
   }
+  readonly property rect figureInk: labelSizing.figureInk
 
   MouseArea {
     id: mouseArea

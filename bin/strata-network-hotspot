@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PROFILE=StrataHotspot
+helper=/usr/bin/strata-hotspot-ap
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/strata"
+blocked_file="$state_dir/hotspot-blocked"
+allowed_file="$state_dir/hotspot-allowed"
+allow_only_file="$state_dir/hotspot-allow-only"
+# Names are stable across NetworkManager versions; its textual TYPE value is
+# not (some builds report "wifi", others "802-11-wireless").
+active() { nmcli -g NAME connection show --active 2>/dev/null | grep -Fxq "$PROFILE"; }
+mac_valid() { [[ ${1:-} =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]]; }
+ensure_state_files() {
+  install -d -m 700 "$state_dir"
+  touch "$blocked_file" "$allowed_file"
+  chmod 600 "$blocked_file" "$allowed_file"
+}
+ap0_usable() {
+  local state
+  state=$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | awk -F: '$1 == "ap0" { print $2; exit }')
+  [[ -n $state && $state != unavailable && $state != unmanaged ]]
+}
+remove_ap0() {
+  nmcli connection down id "$PROFILE" >/dev/null 2>&1 || true
+  nmcli connection delete id "$PROFILE" >/dev/null 2>&1 || true
+  pkexec "$helper" del >/dev/null 2>&1 || true
+}
+station_band() {
+  local freq
+  freq=$(iw dev "$1" link 2>/dev/null | awk '$1 == "freq:" { print $2; exit }')
+  [[ $freq =~ ^[0-9]+$ ]] || return 1
+  if (( freq >= 4900 && freq < 5900 )); then printf '5\n'
+  elif (( freq >= 2300 && freq < 2500 )); then printf '2.4\n'
+  else return 1; fi
+}
+station_channel() { iw dev "$1" info 2>/dev/null | awk '$1 == "channel" { print $2; exit }'; }
+list_clients() {
+  declare -A ip_by_mac
+  local ip mac signal name lease
+  while read -r ip _ _ mac _; do
+    mac=${mac,,}; mac_valid "$mac" && ip_by_mac["$mac"]=$ip
+  done < <(ip -4 neigh show dev ap0 2>/dev/null || true)
+  while read -r mac signal; do
+    mac=${mac,,}; mac_valid "$mac" || continue
+    ip=${ip_by_mac[$mac]:-Unknown IP}
+    name=""
+    if [[ $ip != "Unknown IP" ]]; then
+      name=$(getent hosts "$ip" 2>/dev/null | awk 'NR == 1 { print $2; exit }' || true)
+    fi
+    # NetworkManager's shared connection stores DHCP client hostnames here.
+    # Different releases use either per-interface or shared lease filenames.
+    if [[ -z $name ]]; then
+      for lease in /var/lib/NetworkManager/dnsmasq*.leases /var/lib/misc/dnsmasq.leases; do
+        [[ -r $lease ]] || continue
+        name=$(awk -v client_mac="$mac" 'tolower($2) == tolower(client_mac) { print $4; exit }' "$lease" 2>/dev/null || true)
+        [[ -n $name && $name != "*" ]] && break
+        name=""
+      done
+    fi
+    printf 'client=%s|%s|%s|%s\n' "$mac" "$ip" "${signal:-?}" "$name"
+  done < <(iw dev ap0 station dump 2>/dev/null | awk '
+    /^Station / { mac=$2 }
+    /signal:/ && mac != "" { print mac, $2; mac="" }
+  ')
+}
+saved_macs_csv() {
+  local file=$1
+  [[ -r $file ]] || return 0
+  awk 'tolower($0) ~ /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/ { print tolower($0) }' "$file" | paste -sd, -
+}
+case ${1:-} in
+ status)
+  if active; then
+    ssid=$(nmcli -g 802-11-wireless.ssid connection show "$PROFILE" 2>/dev/null || true)
+    printf 'active\t1\niface\tap0\nssid\t%s\n' "$ssid"
+  else
+    printf 'active\t0\n'
+  fi
+  [[ -e $allow_only_file ]] && printf 'allow_only\t1\n' || printf 'allow_only\t0\n'
+  ;;
+ clients) active && list_clients ;;
+ blocked)
+  [[ -r $blocked_file ]] && sed 's/^/blocked=/' "$blocked_file"
+  ;;
+ allowed)
+  [[ -r $allowed_file ]] && sed 's/^/allowed=/' "$allowed_file"
+  ;;
+ start)
+  [[ $# == 5 ]] || { echo 'Usage: start <iface> <ssid> <password> <auto|5|2.4>' >&2; exit 2; }
+  station=$2 ssid=$3 password=$4 requested_band=$5
+  [[ -n $ssid && ${#ssid} -le 32 ]] || { echo 'SSID must be 1–32 characters.' >&2; exit 2; }
+  [[ ${#password} -ge 8 && ${#password} -le 63 ]] || { echo 'Password must be 8–63 characters.' >&2; exit 2; }
+  [[ $requested_band == auto || $requested_band == 5 || $requested_band == 2.4 ]] || { echo 'Choose Auto, 5 GHz, or 2.4 GHz.' >&2; exit 2; }
+  actual_band=$(station_band "$station" || true)
+  channel=$(station_channel "$station" || true)
+  if [[ -n $actual_band && $requested_band != auto && $requested_band != "$actual_band" ]]; then
+    echo "Your connected Wi-Fi is using ${actual_band} GHz. A single radio must keep the hotspot on that same band; connect this computer to a ${requested_band} GHz network first." >&2
+    exit 1
+  fi
+  target_band=$actual_band
+  [[ -z $target_band ]] && target_band=$requested_band
+  [[ $target_band == auto ]] && target_band=5
+  nm_band=a; [[ $target_band == 2.4 ]] && nm_band=bg
+  allowed_csv=$(saved_macs_csv "$allowed_file")
+  blocked_csv=$(saved_macs_csv "$blocked_file")
+  allow_only=0; [[ -e $allow_only_file ]] && allow_only=1
+  # The AP and its saved access rules are set up in one authenticated helper
+  # request, rather than prompting once for every stored device.
+  pkexec "$helper" add "$station" "$allowed_csv" "$blocked_csv" "$allow_only"
+  sleep 1
+  if ! ap0_usable; then
+    remove_ap0
+    echo 'NetworkManager cannot use a second access-point interface on this Wi-Fi adapter. Connect by Ethernet or use a second Wi-Fi adapter to share Wi-Fi without disconnecting it.' >&2
+    exit 1
+  fi
+  nmcli connection delete id "$PROFILE" >/dev/null 2>&1 || true
+  args=(type wifi ifname ap0 con-name "$PROFILE" autoconnect no ssid "$ssid" mode ap
+    802-11-wireless.band "$nm_band" 802-11-wireless-security.key-mgmt wpa-psk
+    802-11-wireless-security.proto rsn ipv4.method shared ipv6.method ignore)
+  [[ $channel =~ ^[0-9]+$ ]] && args+=(802-11-wireless.channel "$channel")
+  if ! nmcli connection add "${args[@]}" >/dev/null \
+    || ! printf 'set 802-11-wireless-security.psk %s\nsave\nquit\n' "$password" | nmcli connection edit "$PROFILE" >/dev/null \
+    || ! nmcli connection up id "$PROFILE" ifname ap0; then
+    remove_ap0
+    echo 'Could not start the hotspot. The virtual access point was removed and your normal Wi-Fi was left unchanged.' >&2
+    exit 1
+  fi
+  ;;
+ stop) remove_ap0 ;;
+ kick)
+  mac_valid "${2:-}" || { echo 'Invalid client MAC address.' >&2; exit 2; }
+  pkexec "$helper" kick "${2,,}"
+  ;;
+ block)
+  mac_valid "${2:-}" || { echo 'Invalid client MAC address.' >&2; exit 2; }
+  ensure_state_files
+  mac=${2,,}; grep -Fqx "$mac" "$blocked_file" || printf '%s\n' "$mac" >> "$blocked_file"
+  if active; then pkexec "$helper" block "$mac"; fi
+  ;;
+ unblock)
+  mac_valid "${2:-}" || { echo 'Invalid client MAC address.' >&2; exit 2; }
+  ensure_state_files
+  mac=${2,,}; sed -i "\\|^${mac}$|d" "$blocked_file"
+  if active; then pkexec "$helper" unblock "$mac"; fi
+  ;;
+ allow)
+  mac_valid "${2:-}" || { echo 'Invalid client MAC address.' >&2; exit 2; }
+  ensure_state_files
+  mac=${2,,}; grep -Fqx "$mac" "$allowed_file" || printf '%s\n' "$mac" >> "$allowed_file"
+  if active; then pkexec "$helper" allow "$mac"; fi
+  ;;
+ disallow)
+  mac_valid "${2:-}" || { echo 'Invalid client MAC address.' >&2; exit 2; }
+  ensure_state_files
+  mac=${2,,}; sed -i "\\|^${mac}$|d" "$allowed_file"
+  if active; then pkexec "$helper" disallow "$mac"; fi
+  ;;
+ allow-only)
+  [[ ${2:-} == on || ${2:-} == off ]] || { echo 'Usage: allow-only <on|off>' >&2; exit 2; }
+  ensure_state_files
+  if [[ $2 == on ]]; then
+    touch "$allow_only_file"
+    if active; then pkexec "$helper" allow-only-on; fi
+  else
+    rm -f "$allow_only_file"
+    if active; then pkexec "$helper" allow-only-off; fi
+  fi
+  ;;
+ *) echo 'Usage: strata-network-hotspot {status|clients|blocked|allowed|start|stop|kick|block|unblock|allow|disallow|allow-only}' >&2; exit 2 ;;
+esac

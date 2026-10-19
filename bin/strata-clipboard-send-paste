@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# strata:summary=Send the clipboard paste shortcut for the focused app
+# strata:group=clipboard
+# strata:hidden=true
+
+# Terminals use Ctrl+Shift+V. Shift+Insert is not a clipboard shortcut in
+# Ghostty: it pastes the independent primary selection instead.
+app_id=$(hyprctl -j activewindow 2>/dev/null | jq -r '.class // ""')
+case "${app_id,,}" in
+  com.mitchellh.ghostty|ghostty|foot|footclient|alacritty|kitty|wezterm|org.wezfurlong.wezterm|org.gnome.terminal|gnome-terminal*|org.gnome.console|kgx|konsole|org.kde.konsole|com.raggesilver.blackbox|terminator|tilix|com.gexperts.tilix|xfce4-terminal)
+    exec wtype -M ctrl -M shift -k v -m shift -m ctrl
+    ;;
+  *)
+    exec wtype -M ctrl -k v -m ctrl
+    ;;
+esac

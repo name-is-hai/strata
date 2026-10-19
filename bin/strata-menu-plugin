@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# strata:summary=Install a shell plugin through the Strata menu
+# strata:args=install
+set -euo pipefail
+work=$(mktemp -d)
+review_token=
+job_pid=
+picker_pid=
+cleanup() {
+  if [[ -n $job_pid ]]; then
+    kill -- "-$job_pid" 2>/dev/null || true
+    wait "$job_pid" 2>/dev/null || true
+  fi
+  [[ -z $picker_pid ]] || kill "$picker_pid" 2>/dev/null || true
+  if [[ -z $review_token && -s $work/review ]]; then
+    review_token=$(jq -r '.token // empty' "$work/review" 2>/dev/null) || review_token=
+  fi
+  [[ -z $review_token ]] || strata-plugin discard "$review_token" >/dev/null 2>&1 || true
+  rm -rf -- "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+return_to_plugins() { strata-shell shell summon strata.menu '{"menu":"setup.plugin"}' >/dev/null; }
+message() {
+  strata-menu-select "$1" 'Back' -- --description "$2" --width 620 --maxheight 620 >/dev/null || true
+}
+case ${1:---help} in
+  install)
+    source=$(strata-menu-input 'Git repository URL or local plugin folder') || exit 0
+    # Keep a cancellable menu visible while a repository is downloaded and checked.
+    setsid strata-plugin inspect "$source" > "$work/review" 2> "$work/errors" &
+    job_pid=$!
+    strata-menu-select 'Checking plugin source…' $'󰅖\tCancel' -- --width 620 > "$work/cancel" &
+    picker_pid=$!
+    while kill -0 "$job_pid" 2>/dev/null; do
+      if ! kill -0 "$picker_pid" 2>/dev/null; then exit 0; fi
+      sleep 0.05
+    done
+    result=0; wait "$job_pid" || result=$?
+    job_pid=
+    if ! kill -0 "$picker_pid" 2>/dev/null; then exit 0; fi
+    strata-menu close >/dev/null || true
+    wait "$picker_pid" || true
+    picker_pid=
+    if (( result != 0 )); then
+      message 'Could not check plugin' "$(cat "$work/errors")"
+      return_to_plugins
+      exit 0
+    fi
+    review_token=$(jq -r .token "$work/review")
+    name=$(jq -r .name "$work/review")
+    version=$(jq -r .version "$work/review")
+    status=$(jq -r .status "$work/review")
+    compatibility='The plugin files passed validation. Compatibility with Strata has not been tested.'
+    [[ $status != adaptation ]] || compatibility='This plugin references Omarchy and may need changes to work in Strata.'
+    description=$(printf 'Version %s\n\n%s\n\nIt will be installed turned off. You can enable it later in Settings → Plugins.' "$version" "$compatibility")
+    choice=$(strata-menu-select "Install $name?" $'󰄬\tInstall' $'󰅖\tCancel' \
+      -- --description "$description" --width 620) || { return_to_plugins; exit 0; }
+    case $choice in
+      Install)
+        if strata-plugin install "$review_token" > "$work/result" 2> "$work/errors"; then
+          review_token=
+          message 'Plugin installed' 'Enable it whenever you are ready in Settings → Plugins.'
+        else message 'Could not install plugin' "$(cat "$work/errors")"; fi
+        ;;
+      Cancel) ;;
+    esac
+    return_to_plugins
+
+    ;;
+  -h|--help|help) printf 'Usage: strata-menu-plugin install\n' ;;
+  *) printf 'Unknown plugin menu action.\n' >&2; exit 1 ;;
+esac

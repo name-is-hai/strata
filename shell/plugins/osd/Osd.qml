@@ -10,6 +10,19 @@ Item {
   id: root
 
   property bool opened: false
+  property bool osdEnabled: true
+  onOsdEnabledChanged: if (!osdEnabled) { hideTimer.stop(); root.close() }
+
+  FileView {
+    path: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/strata/osd.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try { root.osdEnabled = JSON.parse(text()).enabled !== false } catch (error) {}
+    }
+    onLoadFailed: root.osdEnabled = true
+  }
   property string icon: ""
   property string message: ""
   property string iconKey: ""
@@ -32,7 +45,7 @@ Item {
   // it; the progress bar's hard edge keeps the full gap.
   readonly property int messageGap: Math.round(root.gap * 2 / 3)
   readonly property int barWidth: Style.space(142)
-  readonly property int maxMessageWidth: root.mediaOsd ? Style.space(325) : Style.space(190)
+  readonly property int maxMessageWidth: root.mediaOsd || root.iconKey === "keyboard" ? Style.space(325) : Style.space(190)
 
   // Nerd Font glyphs draw well outside their monospace cell, so the icon
   // column is measured by ink rather than by advance width. Progress OSDs pin
@@ -55,6 +68,7 @@ Item {
   }
 
   function show(iconName, rawMessage, rawValue, rawMax, rawProgressText, rawDuration) {
+    if (!osdEnabled) return
     var next = OsdModel.stateForShow(iconName, rawMessage, rawValue, rawMax, rawProgressText, rawDuration)
     // Update before opening so a fresh OSD starts at its new value; only
     // subsequent updates while it remains open animate the progress bar.
@@ -125,6 +139,9 @@ Item {
 
   OverlayWindow {
     id: panel
+    // The OSD opens often; keep its overlay geometry stable so it does not
+    // animate in from the top-left when the surface is remapped.
+    parkWhenHidden: false
     shown: root.opened
     shownKeyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.namespace: "strata-osd"

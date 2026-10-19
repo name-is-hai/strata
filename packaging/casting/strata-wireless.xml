@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>Strata Wireless Display</short>
+  <description>Wi-Fi Direct interfaces validated by the Strata wireless display networking helper. Session ports are added at runtime and removed on disconnect.</description>
+</zone>

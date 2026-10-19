@@ -1,0 +1,246 @@
+-- Strata Shortcut Guide's deliberately small Hyprland input observer.
+--
+-- SECURITY MODEL
+-- Strata loads this observer through its packaged input defaults. The menu
+-- toggle controls whether its generated allowlist enables observation. It
+-- does not open /dev/input, sockets, subprocesses, or network connections.
+-- Hyprland calls the callback below with a numeric key code and press/release
+-- state. The bridge keeps only an in-memory modifier mask and looks up that
+-- numeric tuple in Strata Shortcut Guide's generated, local allowlist.
+--
+-- The only events sent back to Quickshell are:
+--   * guide lifecycle names (for example, SUPER down/up),
+--   * a modifier mask made from SUPER/SHIFT/CTRL/ALT, and
+--   * an opaque SHA-256 binding ID when a configured binding matches.
+-- It never sends typed characters, raw key sequences, dispatcher arguments,
+-- window titles, application names, passwords, or unmatched key codes. It
+-- does not write any data. A missing or malformed generated catalog disables
+-- the bridge rather than broadening what it observes or emits.
+local STATE_NAME = "__strata_shortcut_guide_bridge_state"
+local ORDERED_MODIFIERS = { "SUPER", "SHIFT", "CTRL", "ALT" }
+
+local state_home = os.getenv("XDG_STATE_HOME")
+if not state_home or state_home == "" then
+  state_home = (os.getenv("HOME") or "") .. "/.local/state"
+end
+
+-- The generated catalog is untrusted input from this file's perspective. Keep
+-- its accepted shape intentionally narrow before using any key codes as table
+-- keys in the callback.
+local function valid_codes(codes)
+  if type(codes) ~= "table" or #codes == 0 then return false end
+  for _, code in ipairs(codes) do
+    if type(code) ~= "number" or code < 1 then return false end
+  end
+  return true
+end
+
+-- Return a fresh set for each modifier. It is important that no held-key state
+-- is shared with an earlier bridge evaluation or another plugin instance.
+local function empty_modifiers()
+  return { SUPER = {}, SHIFT = {}, CTRL = {}, ALT = {} }
+end
+
+-- `bridge-catalog.lua` is generated from Hyprland's binding list. It contains
+-- only opaque IDs and match tuples; command/dispatcher arguments are excluded
+-- by the generator. `pcall` lets a partially-written catalog fail closed while
+-- the service is regenerating it.
+local function load_catalog()
+  local loaded, catalog = pcall(dofile, state_home .. "/strata/shortcut-guide/bridge-catalog.lua")
+  if not loaded or type(catalog) ~= "table" or catalog.schemaVersion ~= 1
+    or type(catalog.matches) ~= "table" or catalog.enabled == false then return nil, nil end
+
+  local modifier_codes = catalog.modifierCodes
+  if type(modifier_codes) ~= "table" then return nil, nil end
+
+  local modifiers = empty_modifiers()
+  for _, name in ipairs(ORDERED_MODIFIERS) do
+    local codes = modifier_codes[name]
+    if not valid_codes(codes) then return nil, nil end
+    for _, code in ipairs(codes) do modifiers[name][code] = true end
+  end
+  return catalog, modifiers
+end
+
+-- Hyprland can reload this file without restarting its Lua VM. Reusing the
+-- named state avoids registering a second keyboard callback. On reload, reset
+-- all transient key state and replace the catalog snapshot atomically.
+local function cancel_guide(state)
+  if not state.enabled or state.blocked or not state.guideRoot then return end
+  state.blocked = true
+  if state.emitting then return end
+  state.emitting = true
+  pcall(function() hl.dispatch(hl.dsp.event("strata-shortcuts:v1:guide:cancel")) end)
+  state.emitting = false
+end
+
+-- Pass through every event and leave the real move/resize bindings intact.
+-- Hyprland's Lua API has no raw pointer event, so use non-consuming observers.
+local function observe_pointer(state)
+  state.pointerBindings = {}
+  for code = 272, 279 do
+    for _, release in ipairs({false, true}) do
+      local button, is_release = code, release
+      state.pointerBindings[#state.pointerBindings + 1] = hl.bind("mouse:" .. code, function()
+        if not state.enabled then return end
+        state.buttons[button] = not is_release or nil
+        if not is_release then cancel_guide(state) end
+      end, {non_consuming = true, ignore_mods = true, transparent = true,
+        submap_universal = true, release = release})
+    end
+  end
+  for _, direction in ipairs({"mouse_down", "mouse_up", "mouse_left", "mouse_right"}) do
+    state.pointerBindings[#state.pointerBindings + 1] = hl.bind(direction, function()
+      cancel_guide(state)
+    end, {non_consuming = true, ignore_mods = true, transparent = true, submap_universal = true})
+  end
+end
+
+local existing = rawget(_G, STATE_NAME)
+if type(existing) == "table" and existing.behaviorVersion == 2 then
+  local catalog, modifiers = load_catalog()
+  existing.enabled = catalog ~= nil
+  existing.catalog = catalog
+  existing.modifiers = modifiers or empty_modifiers()
+  existing.held = { SUPER = {}, SHIFT = {}, CTRL = {}, ALT = {} }
+  existing.submap = ""
+  existing.guideRoot = nil
+  existing.blocked = false
+  existing.buttons = {}
+  observe_pointer(existing)
+  return
+end
+-- Disable callbacks from an older bridge implementation during a live upgrade.
+if type(existing) == "table" then existing.enabled = false end
+
+-- A missing or malformed catalog leaves the bridge inert. The service will
+-- request a Hyprland reload after publishing a valid catalog; never retry file
+-- access from the keyboard callback.
+local initial_catalog, initial_modifiers = load_catalog()
+if not initial_catalog then return end
+
+-- All state below is process-local and disappears when Hyprland exits. There
+-- is intentionally no history, counter, timestamp, or raw input buffer.
+local bridge = {
+  behaviorVersion = 2,
+  enabled = true,
+  catalog = initial_catalog,
+  modifiers = initial_modifiers,
+  held = { SUPER = {}, SHIFT = {}, CTRL = {}, ALT = {} },
+  submap = "",
+  guideRoot = nil,
+  emitting = false,
+  blocked = false,
+  buttons = {},
+}
+_G[STATE_NAME] = bridge
+observe_pointer(bridge)
+
+-- Do not emit arbitrary strings even if a malformed catalog supplied one.
+local function valid_id(value)
+  return type(value) == "string"
+    and #value == 71
+    and value:match("^sha256:[0-9a-f]+$") ~= nil
+end
+
+-- `hl.dispatch(event)` re-enters Hyprland's event machinery. The guard avoids
+-- recursively handling an event generated by this bridge itself.
+local function emit(payload)
+  if not bridge.enabled or bridge.emitting then return end
+  bridge.emitting = true
+  pcall(function() hl.dispatch(hl.dsp.event(payload)) end)
+  bridge.emitting = false
+end
+
+-- Physical left/right modifier keys are tracked separately, then collapsed to
+-- one logical modifier. Releasing one Shift while the other stays held must
+-- not close the guide.
+local function is_held(name)
+  for _, value in pairs(bridge.held[name]) do
+    if value then return true end
+  end
+  return false
+end
+
+-- This fixed order is part of the private, narrow protocol understood by the
+-- service. It is a set of modifier names, not a record of arbitrary keys.
+local function modifier_mask()
+  local names = {}
+  for _, name in ipairs(ORDERED_MODIFIERS) do
+    if is_held(name) then names[#names + 1] = name end
+  end
+  return table.concat(names, "_")
+end
+
+local function event_value(event, key, fallback)
+  if type(event) ~= "table" then return fallback end
+  local value = event[key]
+  if value == nil then return fallback end
+  return value
+end
+
+-- Hyprland delivers every keyboard transition here, which is why this code is
+-- deliberately short and allocation-light. `timestamp` is ignored. Apart from
+-- the four configured modifier codes, an event is reduced to a numeric lookup
+-- key; unmatched codes immediately disappear. No event is persisted or sent.
+hl.on("input.keyboard.key", function(keycode, timestamp, event_state)
+  if not bridge.enabled then return end
+  local code, state
+  if type(keycode) == "table" then
+    code = tonumber(event_value(keycode, "keycode", event_value(keycode, "code", 0)))
+    state = tonumber(event_value(keycode, "state", -1))
+  else
+    code = tonumber(keycode)
+    state = tonumber(event_state)
+  end
+  if not code or (state ~= 0 and state ~= 1) then return end
+
+  -- Modifier transitions choose the first-held guide root and update the
+  -- current modifier set. Only the four catalog-provided modifier code sets
+  -- participate; every other key proceeds to the opaque match lookup below.
+  for _, name in ipairs(ORDERED_MODIFIERS) do
+    if bridge.modifiers[name][code] then
+      local was_held = is_held(name)
+      local was_empty = modifier_mask() == ""
+      if state == 1 then
+        if bridge.held[name][code] then return end
+        bridge.held[name][code] = true
+        if was_empty then
+          bridge.guideRoot = name
+          bridge.blocked = next(bridge.buttons) ~= nil
+          if not bridge.blocked then emit("strata-shortcuts:v1:guide:down:" .. name) end
+        end
+      else
+        if not bridge.held[name][code] then return end
+        bridge.held[name][code] = nil
+        if name == bridge.guideRoot and was_held and not is_held(name) then
+          bridge.guideRoot = nil
+          emit("strata-shortcuts:v1:guide:up")
+          return
+        end
+      end
+      if bridge.guideRoot and not was_empty and not bridge.blocked then
+        emit("strata-shortcuts:v1:mods:" .. modifier_mask())
+      end
+      return
+    end
+  end
+
+  -- A binding can be reported only when this exact modifier/code/phase/submap
+  -- tuple appears in the generated allowlist. The actual key code stays local;
+  -- Quickshell sees only its opaque ID and cannot reconstruct typed content.
+  if state == 1 then cancel_guide(bridge) end
+  local phase = state == 1 and "press" or "release"
+  local key = modifier_mask() .. "|" .. tostring(code) .. "|" .. phase .. "|" .. bridge.submap
+  local id = bridge.catalog.matches[key]
+  if valid_id(id) then emit("strata-shortcuts:v1:match:" .. id .. ":" .. phase) end
+end)
+
+-- Submap changes are configuration context, not user activity history. Keep
+-- only the currently active name in memory so matching uses Hyprland's exact
+-- binding scope. Nothing is emitted for a submap change on its own.
+hl.on("keybinds.submap", function(event)
+  if not bridge.enabled then return end
+  if type(event) == "table" then event = event.name or event.submap end
+  if type(event) == "string" then bridge.submap = event end
+end)

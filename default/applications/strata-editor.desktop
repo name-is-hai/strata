@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Strata Text Editor
+Comment=Open text and code in the selected Strata editor
+Exec=strata-launch-editor %F
+TryExec=strata-launch-editor
+Icon=nvim
+Terminal=false
+Type=Application
+Categories=Utility;TextEditor;
+MimeType=text/plain;text/markdown;text/x-python;text/x-c;text/x-c++;text/x-shellscript;text/x-lua;application/json;application/xml;application/toml;application/yaml;application/javascript;application/x-shellscript;
+NoDisplay=true

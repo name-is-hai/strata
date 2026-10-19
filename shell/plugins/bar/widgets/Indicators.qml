@@ -8,7 +8,7 @@ BarWidget {
   id: root
   moduleName: "strata.indicators"
 
-  readonly property var defaultIndicatorEntries: [ "ScreenRecording", "NightLight", "Dnd", "StayAwake" ]
+  readonly property var defaultIndicatorEntries: [ "Camera", "Microphone", "ScreenRecording", "NightLight", "StayAwake", "Hotspot" ]
   readonly property var indicatorEntries: indicatorEntriesFromSettings(settings)
   // The owning ModuleSlot is the exact hit area for this widget.
   property bool slotHovered: false
@@ -21,8 +21,9 @@ BarWidget {
   readonly property int activeCount: activeIndicatorIds.length
   readonly property bool expandBackwards: slotRegion === "right"
   readonly property int visibleSlotCount: revealInactiveIndicators
-    ? indicatorEntries.length : Math.max(1, activeCount)
+    ? activeCount + inactiveIndicatorIds.length : Math.max(inactiveIndicatorIds.length > 0 ? 1 : 0, activeCount)
 
+  visible: visibleSlotCount > 0
   clip: true
   onIndicatorEntriesChanged: {
     var next = {}
@@ -77,6 +78,8 @@ BarWidget {
     var ids = []
     for (var i = 0; i < indicatorEntries.length; i++) {
       var id = entryId(indicatorEntries[i])
+      // Privacy statuses describe actual access, rather than idle controls.
+      if (!active && (id === "Camera" || id === "Microphone" || id === "ScreenRecording")) continue
       if ((indicatorActiveStates[id] === true) === active) ids.push(id)
     }
     return ids
@@ -101,9 +104,8 @@ BarWidget {
     return activeIndex >= 0 ? activeIndex : activeIndicatorIds.length + inactiveIndex
   }
 
-  // Collapsed: one slot per active status. Expanded: one slot per configured
-  // status. A single empty slot provides a discoverable hover target when
-  // nothing is active.
+  // Hover reveals idle manual controls; privacy statuses only occupy a slot
+  // while active. A manual control provides an idle hover target.
   implicitWidth: vertical ? barSize : visibleSlotCount * Style.bar.statusSlot
   implicitHeight: vertical ? visibleSlotCount * Style.bar.statusSlot : barSize
 
@@ -150,7 +152,8 @@ BarWidget {
     height: implicitHeight
     x: root.vertical ? 0 : root.indicatorRank(indicatorId) * width
     y: root.vertical ? root.indicatorRank(indicatorId) * height : 0
-    visible: root.revealInactiveIndicators || root.indicatorActiveStates[indicatorId] === true
+    visible: root.indicatorActiveStates[indicatorId] === true
+      || (root.revealInactiveIndicators && root.inactiveIndicatorIds.indexOf(indicatorId) >= 0)
     onEntryChanged: {
       injectProps()
       syncActiveState()

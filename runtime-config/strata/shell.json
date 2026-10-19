@@ -13,7 +13,13 @@
           "id": "strata.menu"
         },
         {
+          "id": "strata.system-update"
+        },
+        {
           "id": "strata.workspaces"
+        },
+        {
+          "id": "strata.stage-control"
         }
       ],
       "center": [
@@ -22,12 +28,12 @@
         },
         {
           "id": "strata.clock",
-          "format": "dddd HH:mm",
-          "formatAlt": "d MMMM 'W'ww yyyy",
-          "verticalFormat": "HH\n\u2014\nmm"
+          "format": "d MMM yyyy HH:mm:ss",
+          "formatAlt": "d MMM yyyy HH:mm:ss",
+          "verticalFormat": "HH\n—\nmm"
         },
         {
-          "id": "strata.keyboard-layout"
+          "id": "strata.language-input"
         }
       ],
       "right": [
@@ -35,16 +41,32 @@
           "id": "strata.tray"
         },
         {
-          "id": "strata.bluetooth"
+          "id": "strata.notifications",
+          "badge": "Highlight",
+          "alwaysShow": false,
+          "allowDefaultActionOnCardClick": true
         },
         {
-          "id": "strata.network"
+          "id": "strata.bluetooth",
+          "settingsCommand": "blueman-manager"
+        },
+        {
+          "id": "strata.network",
+          "settingsCommand": "nm-connection-editor"
+        },
+        {
+          "id": "strata.media"
         },
         {
           "id": "strata.audio"
         },
         {
-          "id": "strata.monitor"
+          "id": "strata.cast",
+          "discoveryEnabled": false,
+          "lastTab": "screen"
+        },
+        {
+          "id": "strata.mouse"
         },
         {
           "id": "strata.power"
@@ -52,5 +74,8 @@
       ]
     }
   },
-  "plugins": []
+  "plugins": [],
+  "disabledPlugins": [
+    "strata.microphone"
+  ]
 }

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Strata Snip
+Comment=Capture and annotate a screenshot
+Exec=strata-snip
+Icon=camera-photo
+Terminal=false
+Categories=Graphics;
+StartupNotify=false

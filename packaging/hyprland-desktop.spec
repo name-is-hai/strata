@@ -1,17 +1,21 @@
 Name:           hyprland-desktop
-Version:        1.0
-Release:        20%{?dist}
+Version:        4.0.0~alpha
+Release:        1%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT AND Unicode-DFS-2016
 %global uwsm_version 0.27.0
 %global ghostty_version 1.3.1
+%global zen_version 1.23b
 %global strata_ghostty_cache /var/cache/strata/ghostty-%{ghostty_version}
 %global debug_package %{nil}
 
 Source0:        hyprland-desktop-LICENSE
 Source1:        https://github.com/Vladimir-csp/uwsm/archive/refs/tags/v%{uwsm_version}.tar.gz#/uwsm-%{uwsm_version}.tar.gz
 Source2:        https://release.files.ghostty.org/%{ghostty_version}/ghostty-%{ghostty_version}.tar.gz
+Source3:        https://github.com/zen-browser/desktop/releases/download/%{zen_version}/zen.linux-x86_64.tar.xz#/zen-browser-%{zen_version}-linux-x86_64.tar.xz
+Source4:        zen-browser
+Source5:        zen-browser.desktop
 
 BuildRequires:  gettext
 BuildRequires:  gtk4-devel
@@ -21,6 +25,7 @@ BuildRequires:  meson
 BuildRequires:  ninja-build
 BuildRequires:  oniguruma-devel
 BuildRequires:  pandoc
+BuildRequires:  patchelf
 BuildRequires:  pkgconfig
 BuildRequires:  python3-devel
 BuildRequires:  python3-pyxdg
@@ -31,6 +36,7 @@ BuildRequires:  zig = 0.15.2
 Requires:       %{name}-core = %{version}-%{release}
 Requires:       %{name}-services = %{version}-%{release}
 Requires:       %{name}-apps = %{version}-%{release}
+Requires:       zen-browser >= %{zen_version}
 
 %description
 The recommended package set for this personal Fedora Hyprland desktop. The
@@ -46,7 +52,10 @@ Requires:       hyprland-guiutils = 0.56.2-2.fc44
 Requires:       uwsm >= 0.27.0
 Requires:       ghostty >= 1.3.1
 Requires:       jetbrains-mono-nerd-fonts >= 3.5.1
-Requires:       sddm
+Requires:       google-noto-sans-cjk-fonts
+Requires:       google-noto-emoji-color-fonts
+Requires:       greetd
+Requires:       greetd-selinux
 Requires:       quickshell >= 0.3.1
 Requires:       xdg-utils
 # A usable Strata login and the small base tools used by its scripts.
@@ -122,6 +131,9 @@ the Strata Hyprland session.
 %package apps
 Summary:        Fedora applications for the Strata desktop
 
+# Standalone web apps; Zen remains the default browser.
+Requires:       chromium
+
 # File management, archives, previews, and storage administration.
 Requires:       nautilus
 Requires:       file-roller
@@ -149,6 +161,7 @@ Flatpak, and system utility applications for the Strata desktop.
 cp -p %{SOURCE0} LICENSE
 tar -xzf %{SOURCE1}
 tar -xzf %{SOURCE2}
+tar -xJf %{SOURCE3}
 
 %build
 pushd uwsm-%{uwsm_version}
@@ -181,6 +194,21 @@ pushd ghostty-%{ghostty_version}
 export ZIG_GLOBAL_CACHE_DIR=%{strata_ghostty_cache}
 DESTDIR=%{buildroot} zig build --prefix %{_prefix} --system "$ZIG_GLOBAL_CACHE_DIR/p" -Doptimize=ReleaseFast -Dcpu=baseline
 popd
+
+# Zen's official Linux release is a prebuilt, self-contained application.
+# Keep its internal directory layout intact: the updater and launcher expect
+# relative paths beside the main executable.
+install -d %{buildroot}/opt
+cp -a zen %{buildroot}/opt/zen-browser
+# The upstream archive has a literal "$" RUNPATH on this one library. It is
+# invalid on Fedora and makes check-rpaths abort the RPM build.
+patchelf --remove-rpath %{buildroot}/opt/zen-browser/libonnxruntime.so
+install -Dpm0755 %{SOURCE4} %{buildroot}%{_bindir}/zen-browser
+install -Dpm0644 %{SOURCE5} %{buildroot}%{_datadir}/applications/zen-browser.desktop
+for size in 16 32 48 64 128; do
+  install -Dpm0644 zen/browser/chrome/icons/default/default${size}.png \
+    %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/zen-browser.png
+done
 
 %check
 pushd uwsm-%{uwsm_version}
@@ -258,6 +286,7 @@ official release source using Zig only inside Strata's build container.
 %{_datadir}/nautilus-python/extensions/ghostty.py
 %{_datadir}/nvim/site/*/ghostty.vim
 %{_datadir}/vim/vimfiles/*/ghostty.vim
+
 %{_datadir}/zsh/site-functions/_ghostty
 %{_datadir}/terminfo/*/*
 /usr/lib/libghostty-vt.so.0*
@@ -279,7 +308,40 @@ Headers and pkg-config metadata for applications using libghostty-vt.
 /usr/lib/libghostty-vt.so
 %{_datadir}/pkgconfig/libghostty-vt.pc
 
+%package -n zen-browser
+Version:        %{zen_version}
+Release:        2%{?dist}
+Summary:        Zen Browser from the official Linux release
+License:        MPL-2.0
+URL:            https://zen-browser.app/
+Requires:       alsa-lib
+Requires:       gtk3
+Requires:       libXtst
+Requires:       mesa-libgbm
+Requires:       nss
+
+%description -n zen-browser
+Zen Browser is installed from the official x86_64 Linux release archive. It
+uses the host Fontconfig and GTK environment, so fonts installed for the
+current Fedora system are available to the browser.
+
+%files -n zen-browser
+%{_bindir}/zen-browser
+%{_datadir}/applications/zen-browser.desktop
+%{_datadir}/icons/hicolor/*/apps/zen-browser.png
+/opt/zen-browser
+
 %changelog
+* Sat Oct 17 2026 Strata Maintainers <maintainers@strata.dev> - 4.0.0~alpha-1
+- Align desktop package versions with the Strata alpha release
+
+* Sun Oct 11 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-22
+- Require Noto CJK and color emoji fonts for Unicode fallback in desktop apps
+- Keep Zen browser text independent from the desktop text-size setting
+
+* Sat Oct 10 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-21
+- Package Zen Browser from its official x86_64 Linux release archive
+
 * Sat Oct 10 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0-20
 - Include Zsh and the base archive, sync, and USB utilities in the desktop core
 

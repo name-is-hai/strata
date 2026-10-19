@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.theme-picker",
+  "name": "Swatch",
+  "version": "0.4.0",
+  "author": "Jordan McKible",
+  "license": "MIT",
+  "homepage": "https://github.com/jmckible/omarchy-swatch",
+  "description": "Strata theme picker based on Swatch: wallpaper and live shell previews, favorites and hidden backgrounds; no Python runtime",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Swatch.qml"
+  }
+}

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# strata:summary=Review and install updates published in the Strata RPM repository
+# strata:args=[--check]
+set -euo pipefail
+[[ $# == 0 || ( $# == 1 && $1 == --check ) ]] || { echo 'Usage: strata-update [--check]' >&2; exit 2; }
+if ! status=$(strata-update-check --refresh); then
+  jq -r '.error // "Could not check for Strata updates"' <<<"$status" >&2
+  exit 1
+fi
+printf 'Installed Strata: %s\n' "$(jq -r '.installedVersion' <<<"$status")"
+if [[ $(jq -r '.available' <<<"$status") != true ]]; then
+  echo 'Strata is up to date.'
+  exit 0
+fi
+jq -r '.updates[] | "\(.name): \(.version)"' <<<"$status"
+[[ ${1:-} == --check ]] && exit 0
+mapfile -t packages < <(jq -r '.updates[].name' <<<"$status" | sort -u)
+# DNF displays the transaction and asks for confirmation in the user's terminal.
+sudo dnf upgrade --refresh "${packages[@]}"
+strata-update-check --refresh >/dev/null || true
+strata-restart-shell

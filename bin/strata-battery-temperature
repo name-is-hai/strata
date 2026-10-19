@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Based on omarchy-battery (MIT): read the Linux battery temperature sensor.
+set -u
+for battery in "${STRATA_POWER_SUPPLY_PATH:-/sys/class/power_supply}"/*; do
+  [[ -r $battery/type ]] || continue
+  [[ $(<"$battery/type") == Battery ]] || continue
+  [[ -r $battery/temp ]] || continue
+  IFS= read -r raw <"$battery/temp" || continue
+  [[ $raw =~ ^-?[0-9]+$ ]] || continue
+  awk -v raw="$raw" 'BEGIN { printf "%.1f\n", raw / 10 }'
+  exit 0
+done

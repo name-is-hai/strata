@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+
+# Strata idle settings. Lid and timed-sleep behavior is adapted from
+# lgse/sandman (MIT); see shell/plugins/services/idle/LICENSE.sandman.
+set -euo pipefail
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/strata/idle-settings.json"
+SHELL_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/strata/shell.json"
+HYPRIDLE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hypridle.conf"
+MAX_SECONDS=604800
+
+die() { echo "strata-idle-settings: $*" >&2; exit 1; }
+
+read_json() {
+  local path=$1 fallback=$2
+  if [[ -e $path ]]; then
+    jq -ec 'if type == "object" then . else error("expected JSON object") end' "$path" || die "invalid JSON in $path"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+atomic_json() {
+  local path=$1 content=$2 temp mode=600
+  mkdir -p "${path%/*}"
+  [[ ! -e $path ]] || mode=$(stat -c %a "$path")
+  temp=$(mktemp "${path%/*}/.${path##*/}.XXXXXX")
+  chmod "$mode" "$temp"
+  jq . <<<"$content" >"$temp" || { rm -f "$temp"; return 1; }
+  mv -f "$temp" "$path"
+}
+
+valid_profile() {
+  [[ $1 == power-saver || $1 == balanced || $1 == performance ]]
+}
+
+valid_source() { [[ $1 == ac || $1 == battery ]]; }
+
+active_source() {
+  if [[ $(busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null || true) == 'b true' ]]; then
+    printf 'battery\n'
+  else
+    printf 'ac\n'
+  fi
+}
+
+active_profile() {
+  local profile
+  profile=$(busctl --json=short get-property net.hadess.PowerProfiles /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile 2>/dev/null | jq -r '.data // empty' 2>/dev/null) || true
+  if valid_profile "$profile"; then printf '%s\n' "$profile"
+  else printf 'balanced\n'; fi
+}
+
+saved_config() {
+  local saved shell lock
+  saved=$(read_json "$CONFIG_FILE" '{}')
+  shell=$(read_json "$SHELL_FILE" '{}')
+  lock=$(jq -r '.idle.lock // 300' <<<"$shell")
+  jq -cn --argjson saved "$saved" --argjson shellLock "$lock" '
+    def timer($value; $fallback):
+      if ($value|type) == "number" and $value >= 0 and $value <= 604800 and $value == ($value|floor)
+      then $value else $fallback end;
+    def timers($source):
+      {display: timer($source.display; 660),
+       lock: timer((if $source|has("lock") then $source.lock else $shellLock end); 300),
+       sleep: timer($source.sleep; 1800)};
+    def lid($value):
+      if ["system","nothing","display","sleep","hibernate"] | index($value)
+      then $value else "system" end;
+    def source($source):
+      {lid: lid($source.lid // $saved.lid),
+       powerButton: (if ["system","nothing","menu","lock","sleep","hibernate","shutdown"] | index($source.powerButton)
+                     then $source.powerButton else "system" end)};
+    {version: 3,
+     profiles: {
+       "power-saver": timers($saved.profiles["power-saver"] // $saved),
+       balanced: timers($saved.profiles.balanced // $saved),
+       performance: timers($saved.profiles.performance // $saved)
+     },
+     hibernate: timer($saved.hibernate; 0),
+     sources: {ac: source($saved.sources.ac // {}), battery: source($saved.sources.battery // {})}}'
+}
+
+current() {
+  local profile=$1 source=${2:-$(active_source)} saved
+  valid_profile "$profile" || die "invalid power profile: $profile"
+  valid_source "$source" || die "invalid power source: $source"
+  saved=$(saved_config)
+  jq -cn --argjson saved "$saved" --arg profile "$profile" --arg source "$source" '
+    $saved.profiles[$profile] + $saved.sources[$source] +
+    {hibernate:$saved.hibernate, profile:$profile, powerSource:$source, sources:$saved.sources}'
+}
+
+migrate_hypridle() {
+  [[ -f $HYPRIDLE_FILE ]] || return 0
+  local temp old_pids
+  temp=$(mktemp "${HYPRIDLE_FILE%/*}/.hypridle.XXXXXX")
+  awk '
+    /^listener[[:space:]]*\{/ { in_listener=1; block=$0 ORS; next }
+    in_listener {
+      block=block $0 ORS
+      if ($0 ~ /^}[[:space:]]*$/) {
+        legacy=(block ~ /timeout[[:space:]]*=[[:space:]]*600[[:space:]]/ && block ~ /on-timeout[[:space:]]*=[[:space:]]*strata-system-lock/) ||
+               (block ~ /timeout[[:space:]]*=[[:space:]]*660[[:space:]]/ && block ~ /on-timeout[[:space:]]*=[[:space:]]*hyprctl dispatch dpms off/) ||
+               (block ~ /timeout[[:space:]]*=[[:space:]]*1800[[:space:]]/ && block ~ /on-timeout[[:space:]]*=[[:space:]]*systemctl suspend/)
+        if (!legacy) printf "%s", block
+        in_listener=0; block=""
+      }
+      next
+    }
+    { print }
+    END { if (in_listener) printf "%s", block }
+  ' "$HYPRIDLE_FILE" >"$temp"
+  if cmp -s "$HYPRIDLE_FILE" "$temp"; then rm -f "$temp"; return 0; fi
+  chmod --reference="$HYPRIDLE_FILE" "$temp"
+  mv -f "$temp" "$HYPRIDLE_FILE"
+  [[ ${STRATA_IDLE_SKIP_DAEMON_RESTART:-0} != 1 ]] || return 0
+  old_pids=$(pgrep -x hypridle || true)
+  if systemctl --user restart hypridle.service >/dev/null 2>&1; then
+    for pid in $old_pids; do kill "$pid" 2>/dev/null || true; done
+  fi
+}
+
+diagnose_hibernate() {
+  local issue="" capability
+  if ! grep -qw disk /sys/power/state 2>/dev/null; then
+    issue='The kernel does not support hibernation.'
+  fi
+  if ! awk 'NR>1 && $1 !~ /^\/dev\/zram/ {found=1} END {exit !found}' /proc/swaps 2>/dev/null; then
+    issue+=" Disk-backed swap is required; zram cannot hold a hibernation image."
+  fi
+  capability=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanSuspendThenHibernate 2>/dev/null || true)
+  if [[ $capability != *'"yes"'* ]]; then
+    issue+=" logind reports suspend-then-hibernate is unavailable."
+  fi
+  jq -cn --arg summary "${issue# }" '{available:($summary == ""),summary:$summary}'
+}
+
+sleep_action() {
+  local action=suspend path
+  if [[ ${1:-} == --hibernate-after ]]; then
+    action=suspend-then-hibernate
+    for path in /sys/class/drm/card*/device/removable; do
+      [[ -f $path ]] || continue
+      if [[ $(<"$path") == removable ]]; then action=suspend; break; fi
+    done
+  fi
+  systemctl "$action"
+}
+
+case "${1:-}" in
+  get) current "${2:-$(active_profile)}" "${3:-$(active_source)}" ;;
+  status)
+    profile=${2:-$(active_profile)}
+    config=$(current "$profile" "${3:-$(active_source)}")
+    lid_present=false
+    hibernate_available=false
+    suspend_hibernate_available=false
+    [[ $(busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower LidIsPresent 2>/dev/null || true) == 'b true' ]] && lid_present=true
+    [[ $(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanHibernate 2>/dev/null || true) == *'"yes"'* ]] && hibernate_available=true
+    [[ $(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanSuspendThenHibernate 2>/dev/null || true) == *'"yes"'* ]] && suspend_hibernate_available=true
+    jq -cn --argjson settings "$config" --argjson lidPresent "$lid_present" \
+      --argjson hibernateAvailable "$hibernate_available" \
+      --argjson suspendThenHibernateAvailable "$suspend_hibernate_available" \
+      '{settings:$settings,profile:$settings.profile,lidPresent:$lidPresent,hibernateAvailable:$hibernateAvailable,suspendThenHibernateAvailable:$suspendThenHibernateAvailable}'
+    ;;
+  init)
+    migrate_hypridle
+    config=$(saved_config)
+    atomic_json "$CONFIG_FILE" "$config"
+    current "$(active_profile)"
+    ;;
+  set)
+    if valid_profile "${2:-}"; then
+      profile=$2; field=${3:-}; value=${4:-}; source=${5:-$(active_source)}
+    else
+      profile=$(active_profile); field=${2:-}; value=${3:-}; source=${4:-$(active_source)}
+    fi
+    valid_source "$source" || die "invalid power source: $source"
+    case "$field" in
+      display|lock|sleep|hibernate)
+        [[ $value =~ ^[0-9]+$ ]] || die "timeout must be a whole number of seconds"
+        value=$((10#$value))
+        (( value <= MAX_SECONDS )) || die "timeout must be 0–$MAX_SECONDS seconds"
+        ;;
+      lid)
+        [[ $value == system || $value == nothing || $value == display || $value == sleep || $value == hibernate ]] || die "invalid lid action"
+        ;;
+      powerButton)
+        [[ $value == system || $value == nothing || $value == menu || $value == lock || $value == sleep || $value == hibernate || $value == shutdown ]] || die "invalid power button action"
+        ;;
+      *) die "unknown setting: $field" ;;
+    esac
+    config=$(saved_config)
+    if [[ $field == lid || $field == powerButton ]]; then
+      config=$(jq -c --arg source "$source" --arg field "$field" --arg value "$value" '.sources[$source][$field]=$value' <<<"$config")
+    elif [[ $field == hibernate ]]; then
+      config=$(jq -c --argjson value "$value" '.hibernate=$value' <<<"$config")
+    else
+      config=$(jq -c --arg profile "$profile" --arg field "$field" --argjson value "$value" '.profiles[$profile][$field]=$value' <<<"$config")
+    fi
+    atomic_json "$CONFIG_FILE" "$config"
+    current "$profile" "$source"
+    ;;
+  diagnose-hibernate) diagnose_hibernate ;;
+  sleep) sleep_action "${2:-}" ;;
+  *) die 'Usage: strata-idle-settings get|status [PROFILE] [ac|battery]|init|set [PROFILE] FIELD VALUE [ac|battery]|diagnose-hibernate|sleep [--hibernate-after]' ;;
+esac

@@ -4,7 +4,7 @@
   "name": "Bluetooth",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Bluetooth device list with connect/disconnect",
+  "description": "Bluetooth device list with a configurable settings launcher",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,20 @@
   },
   "barWidget": {
     "displayName": "Bluetooth",
-    "description": "Bluetooth device list with connect/disconnect",
+    "description": "Bluetooth device list with a configurable settings launcher",
     "category": "Network",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaults": {
+      "settingsCommand": "blueman-manager"
+    },
+    "schema": [
+      {
+        "key": "settingsCommand",
+        "type": "string",
+        "label": "Bluetooth settings app",
+        "defaultValue": "blueman-manager",
+        "description": "Command run by the gear button, such as blueman-manager. Leave empty to hide the gear."
+      }
+    ]
   }
 }

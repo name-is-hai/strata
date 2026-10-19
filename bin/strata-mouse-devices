@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# strata:summary=List connected mice and available battery readings as JSON
+set -euo pipefail
+export LC_ALL=C
+
+kernel=$(
+  for event in /sys/class/input/event*; do
+    [[ -e $event ]] || continue
+    properties=$(udevadm info --query=property --path="$event" 2>/dev/null) || continue
+    grep -qE '^ID_INPUT_(MOUSE|TOUCHPAD)=1$' <<<"$properties" || continue
+    touchpad=false
+    if grep -qx 'ID_INPUT_TOUCHPAD=1' <<<"$properties"; then touchpad=true; fi
+    name=$(sed -E 's/^([^ ]+) \1 /\1 /' "$event/device/name")
+    serial=$(sed -n 's/^ID_SERIAL=//p' <<<"$properties")
+    short_serial=$(sed -n 's/^ID_SERIAL_SHORT=//p' <<<"$properties")
+    physical=$(cat "$event/device/phys" 2>/dev/null || true)
+    id="${serial:-$name}:${physical%/input*}"
+    if [[ $touchpad == true ]]; then id="$id:touchpad"; fi
+    external=false
+    # Keyboard mouse emulation is not a physical external mouse.
+    if grep -qE '^ID_BUS=(usb|bluetooth)$' <<<"$properties"; then
+      parent_device=$(readlink -f "$event/device/device")
+      if ! find "$parent_device/.." -path '*/input/input*/name' -exec cat {} \; 2>/dev/null | grep -qi 'keyboard'; then
+        external=true
+      fi
+    fi
+    battery='{"percentage":null,"charging":null}'
+    # HID battery providers are optional. Unsupported devices remain visible.
+    vendor=$(sed -n 's/^ID_VENDOR_ID=//p' <<<"$properties")
+    product=$(sed -n 's/^ID_MODEL_ID=//p' <<<"$properties")
+    if [[ $vendor == 1532 && ( $product == 00c0 || $product == 00c1 ) ]]; then
+      for raw in /sys/class/hidraw/hidraw*; do
+        [[ -r $raw/device/uevent ]] || continue
+        grep -qx "HID_PHYS=$physical" "$raw/device/uevent" || continue
+        if result=$(timeout 4s strata-mouse-hid-battery "/dev/${raw##*/}" 2>/dev/null); then
+          battery=$result
+        fi
+        break
+      done
+    fi
+    jq -cn --arg id "$id" --arg name "$name" --arg serial "$short_serial" --argjson battery "$battery" --argjson external "$external" --argjson touchpad "$touchpad" \
+      '{id:$id,name:$name,serial:$serial,external:$external,touchpad:$touchpad} + $battery'
+  done | jq -s 'unique_by(.id)'
+)
+
+# UPower exposes standard USB HID, Bluetooth, and receiver battery devices.
+power=$(
+  while IFS= read -r object; do
+    [[ -n $object ]] || continue
+    busctl --system --timeout=2 --json=short call org.freedesktop.UPower "$object" \
+      org.freedesktop.DBus.Properties GetAll s org.freedesktop.UPower.Device 2>/dev/null |
+      jq -c '.data[0] | select(.Type.data == 5 and .IsPresent.data != false) |
+        {id:("upower:" + (.NativePath.data // .Serial.data // .Model.data)),
+         external:true,name:(.Model.data // "Wireless mouse"), serial:(.Serial.data // ""),
+         percentage:(if (.Percentage.data | type) == "number" then .Percentage.data | round else null end),
+         charging:(.State.data == 1)}' || true
+  done < <(upower --enumerate 2>/dev/null || true)
+)
+jq -cn --argjson kernel "$kernel" --argjson power "$(jq -s . <<<"$power")" '
+  def normalized: ascii_downcase | gsub("[^a-z0-9]"; "");
+  def matches($mouse; $battery):
+    (($mouse.serial != "" and $mouse.serial == $battery.serial) or
+      (($battery.name | normalized) as $name | $name != "" and ($mouse.name | normalized | contains($name))));
+  [$kernel[] | . as $mouse | [$power[] | select(matches($mouse;.))] as $found |
+    if ($found|length) == 1 and .percentage == null
+    then . + {percentage:$found[0].percentage,charging:$found[0].charging} else . end] +
+  [$power[] | . as $battery | select(any($kernel[]; matches(.;$battery)) | not)]'

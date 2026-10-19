@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.waycast.Network1
+Exec=/usr/libexec/strata-waycast-networkd
+User=root
+SystemdService=strata-waycast-networkd.service

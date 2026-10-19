@@ -7,7 +7,7 @@ function normalizeEntry(value) {
   var type = String(value.type || value.kind || "")
   if (type === "text") {
     var text = String(value.text || "")
-    return text.trim().length > 0 ? { type: "text", text: text } : null
+    return text.trim().length > 0 ? { type: "text", text: text, pinned: value.pinned === true } : null
   }
 
   if (type === "image") {
@@ -16,7 +16,8 @@ function normalizeEntry(value) {
     var entry = {
       type: "image",
       path: path,
-      mime: String(value.mime || "image/png")
+      mime: String(value.mime || "image/png"),
+      pinned: value.pinned === true
     }
     if (value.capturedAt !== undefined && value.capturedAt !== null)
       entry.capturedAt = String(value.capturedAt)
@@ -48,25 +49,45 @@ function parseHistory(raw) {
   }
 }
 
+// Pins survive recopying and automatic history trimming. The limit applies to
+// recent unpinned items; explicitly pinned items are never silently evicted.
+function trimHistory(history, limit) {
+  var max = limit === undefined || limit === null ? 100 : Number(limit)
+  if (!isFinite(max)) max = 100
+  max = Math.max(0, Math.floor(max))
+  var count = 0
+  return history.filter(function(entry) {
+    if (entry.pinned === true) return true
+    return count++ < max
+  })
+}
+
 function addEntry(history, entry, limit) {
   var normalized = normalizeEntry(entry)
-  var max = limit === undefined || limit === null ? 100 : Number(limit)
-  if (isNaN(max)) max = 100
-  max = Math.max(0, max)
-  if (!normalized) return Array.isArray(history) ? history.slice(0, max) : []
-  if (max === 0) return []
-
-  var key = entryKey(normalized)
-  var next = [normalized]
   var values = Array.isArray(history) ? history : []
-
-  for (var i = 0; i < values.length && next.length < max; i++) {
+  if (!normalized) return trimHistory(values, limit)
+  var key = entryKey(normalized)
+  var next = []
+  for (var i = 0; i < values.length; i++) {
     var existing = normalizeEntry(values[i])
-    if (!existing || entryKey(existing) === key) continue
-    next.push(existing)
+    if (!existing) continue
+    if (entryKey(existing) === key) {
+      if (existing.pinned) normalized.pinned = true
+    } else next.push(existing)
   }
+  next.unshift(normalized)
+  return trimHistory(next, limit)
+}
 
-  return next
+function togglePinAt(history, index) {
+  var values = Array.isArray(history) ? history.slice() : []
+  if (!Number.isInteger(index) || index < 0 || index >= values.length) return values
+  var entry = normalizeEntry(values[index])
+  if (entry) {
+    entry.pinned = !entry.pinned
+    values[index] = entry
+  }
+  return values
 }
 
 function removeEntryAt(history, index) {
@@ -79,8 +100,10 @@ function removeEntryAt(history, index) {
   return next
 }
 
-function clearHistory() {
-  return []
+function clearHistory(history) {
+  return (Array.isArray(history) ? history : []).filter(function(entry) {
+    return entry.pinned === true
+  })
 }
 
 function parseEntryJson(line) {
@@ -180,8 +203,13 @@ function displayRows(history, query, limit) {
   if (max === 0) return []
 
   var rows = []
+  // Sort references rather than stored history so helper indices remain valid.
+  var indices = []
+  for (var n = 0; n < values.length; n++) if (values[n].pinned === true) indices.push(n)
+  for (var n = 0; n < values.length; n++) if (values[n].pinned !== true) indices.push(n)
 
-  for (var i = 0; i < values.length; i++) {
+  for (var position = 0; position < indices.length; position++) {
+    var i = indices[position]
     var entry = cappedEntry(normalizeEntry(values[i]))
     if (!entry) continue
     if (needle && searchableText(entry).toLowerCase().indexOf(needle) < 0) continue
@@ -192,6 +220,7 @@ function displayRows(history, query, limit) {
     var previewPath = isImage ? String(entry.path || "") : (isFile && paths.length === 1 && isImagePath(paths[0]) ? paths[0] : "")
     rows.push({
       entryType: isFile ? "file" : entry.type,
+      pinned: values[i].pinned === true,
       fullText: isImage ? "" : fullText(entry),
       previewText: previewText(entry),
       previewImage: previewPath,
@@ -211,6 +240,8 @@ if (typeof module !== "undefined") {
     entryKey: entryKey,
     parseHistory: parseHistory,
     addEntry: addEntry,
+    trimHistory: trimHistory,
+    togglePinAt: togglePinAt,
     removeEntryAt: removeEntryAt,
     clearHistory: clearHistory,
     parseEntryJson: parseEntryJson,

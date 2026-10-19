@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Publish only display enable/disable states, never execute personal Lua as root.
+# strata:hidden=true
+set -euo pipefail
+[[ $# == 0 || ( $# == 1 && $1 == --print ) ]] || exit 64
+errors=$(hyprctl configerrors)
+[[ -z ${errors//[[:space:]]/} ]] || exit 0
+rows=$(hyprctl monitors all -j | jq -ce '
+  if type == "array" and length > 0 and
+     any(.[]; .disabled != true and .width > 0 and .height > 0)
+  then map({name, disabled:(.disabled == true)})
+  else error("No usable display state") end')
+# An emergency laptop fallback is temporary; publish its original disabled
+# preference, not the recovered runtime state, to the next login screen.
+fallback=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/strata-monitor-fallback.json
+if [[ -f $fallback ]]; then
+  name=$(jq -r 'select(.disabled == true) | .name // empty' "$fallback")
+  if [[ $name =~ ^(eDP|LVDS|DSI)-[A-Za-z0-9._-]+$ ]]; then
+    rows=$(jq -c --arg name "$name" 'map(if .name == $name then .disabled = true else . end)' <<<"$rows")
+    # With only the temporary panel connected, retain the existing policy.
+    jq -e 'any(.[]; .disabled == false)' <<<"$rows" >/dev/null || exit 0
+  fi
+fi
+if [[ ${1:-} == --print ]]; then
+  printf '%s\n' "$rows"
+else
+  pkexec /usr/bin/strata-greeter-monitors-install "$rows"
+fi

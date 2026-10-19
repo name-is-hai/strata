@@ -20,6 +20,8 @@ Panel {
   function close() {
     root.controller.hide()
     cancelPasswordPrompt()
+    hotspotFormVisible = false
+    hotspotError = ""
   }
 
   function cancelPasswordPrompt() {
@@ -82,6 +84,22 @@ Panel {
   property string bandSelected: "auto"
   property var bandAvailable: []
   property string pendingBand: ""
+  property bool hotspotActive: false
+  property string hotspotSsid: ""
+  property bool hotspotFormVisible: false
+  property bool hotspotBusy: false
+  property string hotspotName: "Strata Hotspot"
+  property string hotspotPassword: ""
+  // "auto" uses the current station's band where present. A single radio
+  // cannot be a 2.4 GHz station and a 5 GHz AP at the same time.
+  property string hotspotBand: "auto"
+  property string hotspotError: ""
+  property var hotspotClients: []
+  property var hotspotBlockedClients: []
+  property var hotspotAllowedClients: []
+  property bool hotspotAllowOnly: false
+  property string hotspotAllowMac: ""
+  property bool hotspotClientBusy: false
 
   // Per-row in-flight state. `actionSsid` flips on for the row whose action
   // is currently running so it can render "Connecting…" / "Disconnecting…" /
@@ -125,14 +143,26 @@ Panel {
   property int headerIndex: 0
   readonly property bool canDisconnect: !!connectedWifiNetwork
   readonly property bool headerHasDisconnect: false
+  readonly property bool canShareWifi: info.type === "wifi" && canShareNetwork(connectedWifiNetwork)
   // The hero switch is the Wi-Fi radio, so it only exists when there is a
   // radio to switch. On a wired box it would otherwise sit there reading
   // "off" beside a perfectly live Ethernet connection.
   readonly property bool canToggleWifi: networkManagerAvailable && wifiStationAvailable
-  readonly property int speedHeaderIndex: canRunSpeedTest ? 0 : -1
-  readonly property int toggleHeaderIndex: canToggleWifi ? (canRunSpeedTest ? 1 : 0) : -1
-  readonly property int headerActionCount: (canRunSpeedTest ? 1 : 0) + (canToggleWifi ? 1 : 0)
+  readonly property bool canUseHotspot: networkManagerAvailable && !!wifiDevice
+  // Network Plus: use the full NetworkManager editor for connections that
+  // need advanced settings (VPNs, static addresses, and enterprise Wi-Fi).
+  // An empty value deliberately hides the gear for people who do not want a
+  // separate network-settings application.
+  readonly property string settingsCommand: String(setting("settingsCommand", "nm-connection-editor")).trim()
+  readonly property bool canOpenSettings: settingsCommand !== ""
+  readonly property int qrHeaderIndex: canShareWifi ? 0 : -1
+  readonly property int speedHeaderIndex: canRunSpeedTest ? (canShareWifi ? 1 : 0) : -1
+  readonly property int settingsHeaderIndex: canOpenSettings ? (canShareWifi ? 1 : 0) + (canRunSpeedTest ? 1 : 0) : -1
+  readonly property int toggleHeaderIndex: canToggleWifi ? (canShareWifi ? 1 : 0) + (canRunSpeedTest ? 1 : 0) + (canOpenSettings ? 1 : 0) : -1
+  readonly property int headerActionCount: (canShareWifi ? 1 : 0) + (canRunSpeedTest ? 1 : 0) + (canOpenSettings ? 1 : 0) + (canToggleWifi ? 1 : 0)
+  readonly property bool qrHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === qrHeaderIndex
   readonly property bool speedHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === speedHeaderIndex
+  readonly property bool settingsHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === settingsHeaderIndex
   readonly property bool toggleHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === toggleHeaderIndex
   readonly property string toggleHint: Networking.wifiEnabled ? "Turn Wi-Fi off" : "Turn Wi-Fi on"
   readonly property var dnsProviders: ["DHCP", "Cloudflare", "Google", "Custom"]
@@ -160,8 +190,7 @@ Panel {
   readonly property bool bandBusy: pendingBand !== ""
   // The speed test needs an interface to test, so its hero action only
   // appears once there is one.
-  // Network speed testing is intentionally excluded from the minimal base.
-  readonly property bool canRunSpeedTest: false
+  readonly property bool canRunSpeedTest: !!info.iface
   property int bandIndex: 0
   // The band section has up to two cursor rows: the Automatic switch on the
   // header line, then the pills. Same shape as wifiActionFocused.
@@ -205,6 +234,23 @@ Panel {
     Qt.callLater(function() { root.refresh(true) })
   }
 
+  function openSettings() {
+    if (!canOpenSettings) return
+    root.close()
+    Quickshell.execDetached(["bash", "-c", settingsCommand])
+  }
+
+  function summonWifiQr(forceDetect) {
+    controller.hide()
+    cancelPasswordPrompt()
+    var payload = {}
+    if (!forceDetect && info.type === "wifi" && info.iface) {
+      payload.iface = info.iface
+      if (info.ssid) payload.ssid = info.ssid
+    }
+    bar.shell.summon("strata.wifiqr", JSON.stringify(payload))
+  }
+
   ShellIpc {
     target: "strata.network"
 
@@ -214,13 +260,60 @@ Panel {
     function hide() { root.close() }
     function toggle() { root.toggle() }
     function toggleNetwork() { root.toggleNetwork() }
+    function openSettings() { root.openSettings() }
+    function showQr() { root.summonWifiQr(true) }
     function speedTest() { root.summonSpeedTest() }
     function openCaptivePortal() { root.openCaptivePortal() }
     function checkConnectivity() { root.checkConnectivity() }
   }
 
+  function hotspotToggle() {
+    if (hotspotActive) { hotspotProc.command = ["strata-network-hotspot", "stop"]; hotspotBusy = true; hotspotProc.running = true }
+    else { hotspotFormVisible = !hotspotFormVisible; hotspotError = "" }
+  }
+  function startHotspot() {
+    if (!wifiDevice || hotspotBusy) return
+    hotspotProc.command = ["strata-network-hotspot", "start", wifiDevice.name, hotspotName, hotspotPassword, hotspotBand]
+    hotspotBusy = true; hotspotProc.running = true
+  }
+  function parseHotspotClients(raw) {
+    var result = []
+    var lines = String(raw || "").trim().split("\n")
+    for (var i = 0; i < lines.length; ++i) {
+      if (lines[i].indexOf("client=") !== 0) continue
+      var fields = lines[i].slice(7).split("|")
+      if (fields.length >= 3) result.push({ mac: fields[0], ip: fields[1], signal: fields[2], name: fields.length >= 4 ? fields[3] : "" })
+    }
+    hotspotClients = result
+  }
+  function parseHotspotBlocked(raw) {
+    var result = []
+    var lines = String(raw || "").trim().split("\n")
+    for (var i = 0; i < lines.length; ++i) if (lines[i].indexOf("blocked=") === 0) result.push(lines[i].slice(8))
+    hotspotBlockedClients = result
+  }
+  function parseHotspotAllowed(raw) {
+    var result = []
+    var lines = String(raw || "").trim().split("\n")
+    for (var i = 0; i < lines.length; ++i) if (lines[i].indexOf("allowed=") === 0) result.push(lines[i].slice(8))
+    hotspotAllowedClients = result
+  }
+  function refreshHotspotDevices() {
+    if (!hotspotActive) { hotspotClients = []; hotspotBlockedClients = []; hotspotAllowedClients = []; return }
+    if (!hotspotClientsProc.running) hotspotClientsProc.running = true
+    if (!hotspotBlockedProc.running) hotspotBlockedProc.running = true
+    if (!hotspotAllowedProc.running) hotspotAllowedProc.running = true
+  }
+  function hotspotClientAction(action, mac) {
+    if (hotspotClientBusy) return
+    hotspotClientActionProc.command = ["strata-network-hotspot", action, mac]
+    hotspotClientBusy = true
+    hotspotClientActionProc.running = true
+  }
   function activateHeader() {
-    if (headerIndex === speedHeaderIndex) summonSpeedTest()
+    if (headerIndex === qrHeaderIndex) summonWifiQr()
+    else if (headerIndex === speedHeaderIndex) summonSpeedTest()
+    else if (headerIndex === settingsHeaderIndex) openSettings()
     else if (headerIndex === toggleHeaderIndex) toggleNetwork()
   }
 
@@ -553,6 +646,7 @@ Panel {
       dnsProc.command = ["bash", "-c", root.dnsCommand("")]
       dnsProc.running = true
     }
+    if (!hotspotProc.running) hotspotProc.running = true
     if (!bandProc.running) {
       bandProc.command = ["strata-network-band"]
       bandProc.running = true
@@ -770,6 +864,15 @@ Panel {
     passwordSsid = ssid
   }
 
+  function openEnterpriseSetup(ssid) {
+    if (canOpenSettings) {
+      openSettings()
+      return
+    }
+    failureSsid = ssid
+    failureReason = "Set up in network settings"
+  }
+
   function networkForSsid(ssid) {
     var networks = wifiNetworkObjects || []
     for (var i = 0; i < networks.length; i++) {
@@ -883,6 +986,95 @@ Panel {
   implicitHeight: button.implicitHeight
 
   Component.onCompleted: refresh()
+
+  Process {
+    id: hotspotProc
+    command: ["strata-network-hotspot", "status"]
+    stdout: StdioCollector { id: hotspotStdout; waitForEnd: true }
+    stderr: StdioCollector { id: hotspotStderr; waitForEnd: true }
+    onExited: function(code) {
+      var wasStatus = command.length > 1 && command[1] === "status"
+      hotspotBusy = false
+      if (code === 0 && wasStatus) {
+        var values = Model.parseKeyValue(hotspotStdout.text)
+        hotspotActive = values.active === "1"
+        hotspotSsid = values.ssid || ""
+        hotspotAllowOnly = values.allow_only === "1"
+        if (hotspotActive) {
+          hotspotFormVisible = false
+          // A prior activation can time out at the client while NetworkManager
+          // completes it moments later. The live status is authoritative.
+          hotspotError = ""
+        }
+        refreshHotspotDevices()
+      } else if (code === 0) {
+        hotspotFormVisible = false
+        command = ["strata-network-hotspot", "status"]
+        running = true
+      } else {
+        hotspotError = String(hotspotStderr.text || "Could not change hotspot").trim()
+        command = ["strata-network-hotspot", "status"]
+      }
+    }
+  }
+
+  Process {
+    id: hotspotClientsProc
+    command: ["strata-network-hotspot", "clients"]
+    stdout: StdioCollector { id: hotspotClientsStdout; waitForEnd: true }
+    onExited: function(code) { if (code === 0) root.parseHotspotClients(hotspotClientsStdout.text) }
+  }
+
+  Process {
+    id: hotspotAllowedProc
+    command: ["strata-network-hotspot", "allowed"]
+    stdout: StdioCollector { id: hotspotAllowedStdout; waitForEnd: true }
+    onExited: function(code) { if (code === 0) root.parseHotspotAllowed(hotspotAllowedStdout.text) }
+  }
+
+  Process {
+    id: hotspotBlockedProc
+    command: ["strata-network-hotspot", "blocked"]
+    stdout: StdioCollector { id: hotspotBlockedStdout; waitForEnd: true }
+    onExited: function(code) { if (code === 0) root.parseHotspotBlocked(hotspotBlockedStdout.text) }
+  }
+
+  Process {
+    id: hotspotClientActionProc
+    stdout: StdioCollector { id: hotspotClientActionStdout; waitForEnd: true }
+    stderr: StdioCollector { id: hotspotClientActionStderr; waitForEnd: true }
+    onExited: function(code) {
+      root.hotspotClientBusy = false
+      if (code !== 0) root.hotspotError = String(hotspotClientActionStderr.text || "Could not update this device").trim()
+      root.refreshHotspotDevices()
+      if (!hotspotProc.running) {
+        hotspotProc.command = ["strata-network-hotspot", "status"]
+        hotspotProc.running = true
+      }
+    }
+  }
+
+  Timer {
+    interval: 3000
+    repeat: true
+    running: root.opened && root.hotspotActive
+    onTriggered: root.refreshHotspotDevices()
+  }
+
+  // NetworkManager may finish activating the AP after the Start command has
+  // returned. Keep status fresh while the panel is open so its controls swap
+  // from setup to the active client list without requiring a close/reopen.
+  Timer {
+    interval: 1500
+    repeat: true
+    running: root.opened
+    onTriggered: {
+      if (!hotspotProc.running) {
+        hotspotProc.command = ["strata-network-hotspot", "status"]
+        hotspotProc.running = true
+      }
+    }
+  }
 
   // Pulls everything we want about the active route's interface in one shot.
   Process {
@@ -1078,6 +1270,7 @@ Panel {
   // here is the wifi-specific UI inside.
   KeyboardPanel {
     id: panel
+    panelHeader: panelTitleHeader
     anchorItem: button
     owner: root
     bar: root.bar
@@ -1188,6 +1381,7 @@ Panel {
       onTextKey: function(t) {
         if (t === "r" || t === "R") root.refresh()
         else if (t === "w" || t === "W") root.toggleNetwork()
+        else if (t === "s" || t === "S") root.openSettings()
       }
 
     Column {
@@ -1198,22 +1392,13 @@ Panel {
       spacing: Style.space(12)
 
       // ---------- Hero: network icon · SSID + state · actions ----------
-      Item {
+      PanelHeaderSurface {
+        id: panelTitleHeader
+        parent: panel.headerContainer
         width: parent.width
-        implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, heroActions.implicitHeight)
+        headerForeground: root.bar.foreground
+        implicitHeight: Style.space(58)
 
-        // Status only — the switch owns toggling, mouse and keyboard alike.
-        Text {
-          id: heroIcon
-          textFormat: Text.PlainText
-          text: root.icon
-          color: root.restricted ? root.bar.urgent : root.bar.foreground
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.display
-          opacity: root.networkManagerAvailable ? 1.0 : 0.5
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-        }
 
         // Sharing belongs to the connected-network hero rather than the scan
         // result row. The radio switch remains beside it as the other hero action.
@@ -1221,7 +1406,25 @@ Panel {
           id: heroActions
           spacing: Style.space(8)
           anchors.right: parent.right
+          anchors.rightMargin: Style.space(12)
           anchors.verticalCenter: parent.verticalCenter
+
+          Button {
+            id: qrAction
+            visible: root.canShareWifi
+            iconText: "󰐲"
+            tooltipText: "Show Wi-Fi QR code"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            iconSize: Style.font.subtitle * 1.5
+            opticalIcon: true
+            horizontalPadding: Style.space(5)
+            verticalPadding: Style.space(2)
+            hasCursor: root.qrHeaderHasCursor
+            Layout.alignment: Qt.AlignVCenter
+            onHovered: function(on) { if (on) root.setHeaderCursor(root.qrHeaderIndex) }
+            onClicked: root.summonWifiQr()
+          }
 
           Button {
             id: speedAction
@@ -1237,6 +1440,22 @@ Panel {
             Layout.alignment: Qt.AlignVCenter
             onHovered: function(on) { if (on) root.setHeaderCursor(root.speedHeaderIndex) }
             onClicked: root.summonSpeedTest()
+          }
+
+          Button {
+            id: settingsAction
+            visible: root.canOpenSettings
+            iconText: "󰒓"
+            tooltipText: "Network settings (s)"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            iconSize: Style.font.subtitle * 1.5
+            horizontalPadding: Style.space(5)
+            verticalPadding: Style.space(2)
+            hasCursor: root.settingsHeaderHasCursor
+            Layout.alignment: Qt.AlignVCenter
+            onHovered: function(on) { if (on) root.setHeaderCursor(root.settingsHeaderIndex) }
+            onClicked: root.openSettings()
           }
 
           ToggleSwitch {
@@ -1259,8 +1478,8 @@ Panel {
 
         Column {
           id: heroLabels
-          anchors.left: heroIcon.right
-          anchors.leftMargin: Style.space(14)
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(16)
           anchors.right: parent.right
           anchors.rightMargin: heroActions.width > 0 ? heroActions.width + Style.space(12) : 0
           anchors.verticalCenter: parent.verticalCenter
@@ -1286,7 +1505,7 @@ Panel {
             text: heroSsid.detail !== "" ? heroSsid.title + " (" + heroSsid.detail + ")" : heroSsid.title
             color: root.bar.foreground
             font.family: root.bar.fontFamily
-            font.pixelSize: Style.font.title
+            font.pixelSize: Style.font.body
             font.bold: true
             elide: Text.ElideRight
           }
@@ -1296,23 +1515,22 @@ Panel {
             textFormat: Text.PlainText
             width: parent.width
             text: {
-              if (root.hasCaptivePortal) return "SIGN-IN REQUIRED"
-              if (root.restricted) return "LIMITED INTERNET ACCESS"
+              if (root.hasCaptivePortal) return "Sign-in required"
+              if (root.restricted) return "Limited internet access"
               if (root.info.type === "wifi") {
-                if (root.canDisconnect) return root.connectionPhrase.toUpperCase()
-                if (root.kind === "disconnected") return "NOT CONNECTED"
+                if (root.canDisconnect) return root.connectionPhrase
+                if (root.kind === "disconnected") return "Not connected"
                 return ""
               }
-              if (root.info.type === "ethernet") return root.connectionPhrase.toUpperCase()
-              if (root.kind === "disconnected") return "NOT CONNECTED"
+              if (root.info.type === "ethernet") return root.connectionPhrase
+              if (root.kind === "disconnected") return "Not connected"
               return ""
             }
             visible: text !== ""
-            color: root.restricted ? root.bar.urgent : Qt.darker(root.bar.foreground, 1.4)
+            color: root.restricted ? root.bar.urgent : Util.alpha(root.bar.foreground, 0.6)
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.caption
-            font.bold: true
-            font.letterSpacing: 1.2
+
             elide: Text.ElideRight
           }
         }
@@ -1354,6 +1572,167 @@ Panel {
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.bodySmall
         }
+      }
+
+      Column {
+        visible: root.canUseHotspot && !root.hotspotActive && !root.hotspotFormVisible
+        width: parent.width
+        spacing: Style.spacing.labelGap
+        Button {
+          width: parent.width
+          text: "Set up Wi-Fi hotspot"
+          iconText: "󰖩"
+          bordered: true
+          onClicked: root.hotspotToggle()
+        }
+        Text {
+          width: parent.width
+          text: "Share this computer’s internet connection and manage who can join."
+          wrapMode: Text.WordWrap; color: root.bar.foreground; opacity: 0.65
+          font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        visible: root.hotspotFormVisible && !root.hotspotActive
+        width: parent.width
+        spacing: Style.spacing.labelGap
+        Text { text: "Create Wi-Fi hotspot"; color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.body; font.bold: true }
+        TextField { id: hotspotNameField; width: parent.width; text: root.hotspotName; placeholderText: "Hotspot name"; onTextChanged: root.hotspotName = text }
+        TextField { id: hotspotPasswordField; width: parent.width; text: root.hotspotPassword; placeholderText: "Password (8–63 characters)"; echoMode: TextInput.Password; onTextChanged: root.hotspotPassword = text }
+        Row {
+          spacing: Style.space(4)
+          Text { text: "Band"; color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; anchors.verticalCenter: parent.verticalCenter }
+          Button { text: "Auto"; bordered: true; active: root.hotspotBand === "auto"; onClicked: root.hotspotBand = "auto" }
+          Button { text: "5 GHz"; bordered: true; active: root.hotspotBand === "5"; onClicked: root.hotspotBand = "5" }
+          Button { text: "2.4 GHz"; bordered: true; active: root.hotspotBand === "2.4"; onClicked: root.hotspotBand = "2.4" }
+        }
+        Text {
+          width: parent.width
+          text: "When Wi-Fi is the internet source, the hotspot must use the same band as that connection."
+          wrapMode: Text.WordWrap; color: root.bar.foreground; opacity: 0.65
+          font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+        }
+        Button { text: root.hotspotBusy ? "Starting…" : "Start hotspot"; enabled: !root.hotspotBusy; bordered: true; onClicked: root.startHotspot() }
+        Text { visible: root.hotspotError !== ""; text: root.hotspotError; color: root.bar.urgent; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption }
+      }
+
+      Column {
+        visible: root.hotspotActive
+        width: parent.width
+        spacing: Style.spacing.labelGap
+
+        Text {
+          text: "Hotspot · " + (root.hotspotSsid || "Strata Hotspot")
+          color: root.bar.foreground; font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.body; font.bold: true
+        }
+        Button {
+          width: parent.width
+          text: root.hotspotBusy ? "Stopping…" : "Turn hotspot off"
+          bordered: true; active: true; enabled: !root.hotspotBusy
+          onClicked: root.hotspotToggle()
+        }
+        Row {
+          width: parent.width; spacing: Style.space(8)
+          Text {
+            width: parent.width - allowOnlySwitch.width - Style.space(8)
+            text: "Only allowed devices"
+            color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ToggleSwitch {
+            id: allowOnlySwitch
+            checked: root.hotspotAllowOnly; busy: root.hotspotClientBusy
+            foreground: root.bar.foreground
+            onToggled: root.hotspotClientAction("allow-only", root.hotspotAllowOnly ? "off" : "on")
+          }
+        }
+        Text {
+          width: parent.width
+          text: root.hotspotAllowOnly
+            ? "Only devices in the allowed list can use the hotspot."
+            : "Any device with the password can connect."
+          wrapMode: Text.WordWrap; color: root.bar.foreground; opacity: 0.65
+          font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+        }
+        Row {
+          width: parent.width; spacing: Style.space(6)
+          TextField {
+            id: hotspotAllowMacField
+            width: Math.max(Style.space(120), parent.width - allowMacButton.width - Style.space(6))
+            text: root.hotspotAllowMac; placeholderText: "MAC address to allow"
+            onTextChanged: root.hotspotAllowMac = text
+          }
+          Button {
+            id: allowMacButton
+            text: "Allow"; bordered: true; enabled: !root.hotspotClientBusy && root.hotspotAllowMac !== ""
+            onClicked: { root.hotspotClientAction("allow", root.hotspotAllowMac); root.hotspotAllowMac = "" }
+          }
+        }
+        Text {
+          text: "Connected devices · " + root.hotspotClients.length
+          color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
+        }
+        Repeater {
+          model: root.hotspotClients
+          delegate: Rectangle {
+            required property var modelData
+            width: parent.width; height: clientDetails.implicitHeight + Style.space(14)
+            radius: Style.cornerRadius; color: Util.alpha(root.bar.foreground, 0.06)
+            Column {
+              id: clientDetails
+              anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(10); anchors.rightMargin: Style.space(8)
+              spacing: Style.space(3)
+              RowLayout {
+                width: parent.width
+                Text {
+                  text: modelData.name !== "" ? modelData.name : "Unknown device"
+                  color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
+                  Layout.fillWidth: true; elide: Text.ElideRight
+                }
+                Button { text: "Disconnect"; bordered: true; enabled: !root.hotspotClientBusy; onClicked: root.hotspotClientAction("kick", modelData.mac) }
+                Button { text: "Block"; bordered: true; active: true; enabled: !root.hotspotClientBusy; onClicked: root.hotspotClientAction("block", modelData.mac) }
+              }
+              Text { text: modelData.mac + " · " + modelData.ip + " · " + modelData.signal + " dBm"; color: root.bar.foreground; opacity: 0.68; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
+            }
+          }
+        }
+        Text {
+          visible: root.hotspotClients.length === 0
+          text: "No devices connected"
+          color: root.bar.foreground; opacity: 0.65; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption
+        }
+        Text {
+          visible: root.hotspotBlockedClients.length > 0
+          text: "Blocked devices"
+          color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
+        }
+        Repeater {
+          model: root.hotspotBlockedClients
+          delegate: Row {
+            required property var modelData
+            width: parent.width; spacing: Style.space(8)
+            Text { text: modelData; color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; anchors.verticalCenter: parent.verticalCenter }
+            Button { text: "Allow"; bordered: true; enabled: !root.hotspotClientBusy; onClicked: root.hotspotClientAction("unblock", modelData) }
+          }
+        }
+        Text {
+          visible: root.hotspotAllowedClients.length > 0
+          text: "Allowed devices"
+          color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
+        }
+        Repeater {
+          model: root.hotspotAllowedClients
+          delegate: Row {
+            required property var modelData
+            width: parent.width; spacing: Style.space(8)
+            Text { text: modelData; color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; anchors.verticalCenter: parent.verticalCenter }
+            Button { text: "Remove"; bordered: true; enabled: !root.hotspotClientBusy; onClicked: root.hotspotClientAction("disallow", modelData) }
+          }
+        }
+        Text { visible: root.hotspotError !== ""; text: root.hotspotError; color: root.bar.urgent; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption }
       }
 
       // Connection details: transfer metrics first, then IP/Gateway.
@@ -1625,7 +2004,17 @@ Panel {
         boundsBehavior: Flickable.StopAtBounds
         interactive: contentHeight > height
 
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        ScrollBar.vertical: PanelScrollBar {
+          // Keep the rail outside the list's content, so network rows use
+          // the same width as the DNS buttons and section dividers above.
+          parent: keyCatcher
+          x: column.x + networkList.x + networkList.width + panel.padding - Style.space(4) - width
+          y: column.y + networkList.y
+          width: thickness
+          height: networkList.height
+          visible: networkList.visible
+          policy: ScrollBar.AsNeeded
+        }
 
         model: root.wifiStationAvailable ? root.wifiNetworks : []
         currentIndex: root.selectedIndex
@@ -1651,7 +2040,6 @@ Panel {
               text: sectionTitle
               foreground: root.bar.foreground
               fontFamily: root.bar.fontFamily
-              height: visible ? implicitHeight : 0
             }
 
             NetworkRow {
@@ -1839,6 +2227,10 @@ Panel {
           return
         }
         if (row.requiresCredentials && !row.isKnown) {
+          if (row.isEnterprise) {
+            root.openEnterpriseSetup(row.net.ssid)
+            return
+          }
           root.openPasswordPrompt(row.net.ssid)
           return
         }
@@ -1945,7 +2337,6 @@ Panel {
           // so rows without status keep a tight one-line look.
           text: row.statusText
           visible: row.statusText !== ""
-          height: visible ? implicitHeight : 0
           color: row.statusColor
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption

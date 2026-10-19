@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Privileged fixed-destination helper for the greeter's lock style tokens.
+set -euo pipefail
+umask 022
+
+destination=/usr/share/strata/greeter/theme.conf
+[[ $EUID == 0 ]] || { echo 'Run through pkexec' >&2; exit 77; }
+
+if [[ $# == 2 && $1 == --sync-files ]]; then
+  caller_uid=${PKEXEC_UID:-}
+  [[ $caller_uid =~ ^[0-9]+$ ]] || { echo 'Missing caller identity' >&2; exit 77; }
+  caller_home=$(getent passwd "$caller_uid" | cut -d: -f6)
+  [[ -n $caller_home && $caller_home != /root ]] || { echo 'Invalid caller home' >&2; exit 77; }
+  caller_home=$(realpath -e -- "$caller_home")
+  state_home=$(realpath -e -- "$2")
+  [[ $state_home == "$caller_home"/* ]] || { echo 'State directory must be inside caller home' >&2; exit 77; }
+  source_theme="$state_home/strata/current/theme"
+  source_theme=$(realpath -e -- "$source_theme")
+  [[ $source_theme == "$caller_home"/* && -d $source_theme ]] || { echo 'Invalid active theme directory' >&2; exit 77; }
+  source_user_shell="$caller_home/.config/strata/shell.toml"
+  theme_destination=/usr/share/strata/greeter/theme
+  install -d -m 0755 -- "$theme_destination"
+  for pair in "colors.toml:$source_theme/colors.toml" "shell.toml:$source_theme/shell.toml" "user-shell.toml:$source_user_shell"; do
+    name=${pair%%:*}
+    source=${pair#*:}
+    temporary=$(mktemp "$theme_destination/.${name}.XXXXXX")
+    trap 'rm -f -- "$temporary"' EXIT
+    if [[ -f $source ]]; then
+      source_real=$(realpath -e -- "$source")
+      [[ $source_real == "$caller_home"/* ]] || { echo 'Theme file escaped caller home' >&2; exit 77; }
+      install -m 0644 -- "$source_real" "$temporary"
+    else
+      : > "$temporary"
+      chmod 0644 "$temporary"
+    fi
+    if [[ ! -f $theme_destination/$name ]] || ! cmp -s -- "$temporary" "$theme_destination/$name"; then
+      mv -f -- "$temporary" "$theme_destination/$name"
+    else
+      rm -f -- "$temporary"
+    fi
+    trap - EXIT
+  done
+  exit 0
+fi
+
+declare -A style=()
+declare -A allowed=(
+  [paletteBackground]=color [paletteForeground]=color
+  [palettePlaceholder]=color [paletteFieldSurface]=color
+  [paletteHoverSurface]=color [paletteBorder]=color
+  [paletteBorderActive]=color [paletteBorderError]=color
+  [paletteError]=color [paletteSelection]=color
+  [paletteBorderActiveEnd]=color
+  [paletteControlNormalBorder]=color [paletteControlHoverBorder]=color
+  [paletteControlFocusBorder]=color [paletteControlFocusFill]=color
+  [paletteControlPressedFill]=color
+  [fontFamily]=font [fontHeading]=number [fontBody]=number [fontIcon]=number
+  [cornerRadius]=number [borderWidth]=number [borderAngle]=number
+  [controlBorderWidth]=number [spacingXxl]=number [spacingSm]=number
+  [spacingMd]=number [controlGap]=number
+)
+(( $# == ${#allowed[@]} )) || { echo 'Incomplete greeter style' >&2; exit 64; }
+
+for argument in "$@"; do
+  [[ $argument == *=* ]] || { echo 'Invalid greeter style argument' >&2; exit 64; }
+  key=${argument%%=*}
+  value=${argument#*=}
+  [[ $key =~ ^[A-Za-z]+$ ]] || { echo 'Invalid greeter style key' >&2; exit 64; }
+  [[ -v allowed[$key] && ! -v style[$key] ]] || { echo 'Duplicate or invalid greeter style key' >&2; exit 64; }
+  case ${allowed[$key]} in
+    color)
+      [[ $value =~ ^#[[:xdigit:]]{8}$ ]] || { echo 'Invalid greeter color' >&2; exit 64; }
+      value=${value,,}
+      ;;
+    font)
+      [[ ${#value} -ge 1 && ${#value} -le 100 && $value != *$'\n'* && $value != *$'\r'* && $value != *'='* ]] || {
+        echo 'Invalid greeter font' >&2; exit 64;
+      }
+      ;;
+    number)
+      [[ $value =~ ^[0-9]{1,3}$ ]] || { echo 'Invalid greeter number' >&2; exit 64; }
+      ;;
+  esac
+  style[$key]=$value
+done
+
+install -d -m 0755 -- "${destination%/*}"
+temporary=$(mktemp "${destination%/*}/.style.XXXXXX")
+trap 'rm -f -- "$temporary"' EXIT
+{
+  printf '[General]\n'
+  for key in paletteBackground paletteForeground palettePlaceholder paletteFieldSurface \
+             paletteHoverSurface paletteBorder paletteBorderActive paletteBorderError \
+             paletteError paletteSelection paletteBorderActiveEnd borderWidth borderAngle \
+             paletteControlNormalBorder paletteControlHoverBorder paletteControlFocusBorder \
+             paletteControlFocusFill paletteControlPressedFill controlBorderWidth \
+             fontFamily fontHeading fontBody fontIcon spacingXxl spacingSm spacingMd \
+             controlGap cornerRadius; do
+    printf '%s=%s\n' "$key" "${style[$key]}"
+  done
+  # Keep any manually added fields and sections while replacing owned keys.
+  if [[ -f $destination ]]; then
+    section=
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line =~ ^[[:space:]]*\[([^]]+)\][[:space:]]*$ ]]; then
+        section=${BASH_REMATCH[1]}
+        [[ $section == General ]] || printf '%s\n' "$line"
+      elif [[ $section == General && $line =~ ^[[:space:]]*([A-Za-z]+)[[:space:]]*= ]]; then
+        key=${BASH_REMATCH[1]}
+        [[ -v style[$key] ]] || printf '%s\n' "$line"
+      elif [[ $section != General ]]; then
+        printf '%s\n' "$line"
+      fi
+    done < "$destination"
+  fi
+} > "$temporary"
+chmod 0644 "$temporary"
+mv -f -- "$temporary" "$destination"
+trap - EXIT

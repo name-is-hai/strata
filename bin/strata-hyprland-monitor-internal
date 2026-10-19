@@ -54,8 +54,9 @@ recover() {
   strata-hyprland-monitor-external-active && return 0
   strata-hyprland-toggle-enabled $TOGGLE || return 0
 
-  strata-hyprland-toggle $TOGGLE off
-  wake
+  # Recover only the runtime output; retain the manual off preference so
+  # reconnecting an external display can restore the saved configuration.
+  strata-monitor-fallback
 }
 
 toggle() {

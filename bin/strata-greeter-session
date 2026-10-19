@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_DESKTOP=strata-greeter
+export QT_QPA_PLATFORM=wayland
+export HYPRCURSOR_THEME=Win11OSX
+export HYPRCURSOR_SIZE=26
+export XCURSOR_THEME=Win11OSX
+export XCURSOR_SIZE=26
+export STRATA_MAIN_MONITOR=$(cat /etc/strata/main-monitor 2>/dev/null || true)
+export STRATA_LOGIN_USER=$(cat /var/lib/greetd/strata-last-user 2>/dev/null || cat /etc/strata/login-user 2>/dev/null || true)
+export STRATA_GREETER_ROOT=/usr/share/strata/greeter
+export STRATA_GREETER_THEME_DIR=/usr/share/strata/greeter/theme
+export STRATA_GREETER_USER_SHELL_FILE=/usr/share/strata/greeter/theme/user-shell.toml
+
+# Clear the VT before Hyprland takes over. Keep diagnostics in a private log
+# instead of letting compositor/Qt status lines remain visible on eDP.
+exec 3>&1 4>&2
+printf '\033[2J\033[H\033[?25l' >&3
+umask 077
+exec >"${HOME:-/var/lib/greetd}/strata-greeter.log" 2>&1
+
+# A closed panel can leave a hybrid-GPU greeter rendering through the laptop's
+# GPU before the external output is ready. Start on the connected external
+# output's GPU instead, retaining the other cards for hotplug/lid reopening.
+# Respect an explicitly configured device order.
+if [[ -z ${AQ_DRM_DEVICES:-} ]]; then
+  devices=$(/usr/bin/strata-greeter-gpu "$STRATA_MAIN_MONITOR" || true)
+  if [[ -n $devices ]]; then
+    export AQ_DRM_DEVICES=$devices
+    printf 'Closed-lid greeter DRM order: %s\n' "$AQ_DRM_DEVICES"
+  fi
+fi
+
+# greetd waits for this compositor to exit before it starts the authenticated
+# user's session. A minimal, separate Hyprland config cannot start user apps.
+marker=$(mktemp /tmp/strata-greeter-started.XXXXXX)
+export STRATA_GREETER_STARTED_FILE=$marker
+trap 'rm -f -- "$marker"; printf "\033[2J\033[H\033[?25h" >&3 || true' EXIT
+
+set +e
+/usr/bin/Hyprland --config /usr/share/strata/greeter/hyprland.lua
+set -e
+if grep -qx started "$marker" 2>/dev/null; then
+  exit 0
+fi
+
+# A broken graphical greeter must leave a working text login on this VT.
+rm -f -- "$marker"
+printf '\033[2J\033[H\033[?25h' >&3
+exec 1>&3 2>&4
+exec /usr/bin/agreety --cmd 'systemd-cat -t strata-login-session uwsm start -e -D Hyprland hyprland.desktop'

@@ -1,0 +1,8 @@
+[options]
+suppress_default_binds = false
+
+[binds]
+# Save a clockwise rotation; imv automatically reloads changed files.
+<Ctrl+r> = exec strata-image-rotate "$imv_current_file"
+# Export a converted/resized copy, preserving the original.
+<Ctrl+Shift+C> = exec strata-image-convert --interactive "$imv_current_file"

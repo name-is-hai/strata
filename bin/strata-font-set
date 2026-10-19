@@ -41,8 +41,10 @@ if [[ -f ~/.config/kitty/kitty.conf ]] || strata-cmd-present kitty; then
   pkill -USR1 kitty
 fi
 
-if [[ -f ~/.config/ghostty/config ]]; then
-  sed -i "s/font-family = \".*\"/font-family = \"$font_name\"/g" ~/.config/ghostty/config
+ghostty_config=~/.config/ghostty/config.ghostty
+[[ -f $ghostty_config ]] || ghostty_config=~/.config/ghostty/config
+if [[ -f $ghostty_config ]]; then
+  sed -i "s/font-family = \".*\"/font-family = \"$font_name\"/g" "$ghostty_config"
   pkill -SIGUSR2 ghostty
 fi
 
@@ -72,6 +74,7 @@ cat >"$fontconfig_file" <<XML
 XML
 
 strata-restart-shell
+strata-greeter-theme-sync || echo "Could not synchronize greeter font" >&2
 
 if pgrep -x ghostty; then
   strata-notification-send -g  "You must restart Ghostty to see font change"

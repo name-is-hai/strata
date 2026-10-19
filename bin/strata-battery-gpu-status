@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Status only; report NVIDIA draw when an integrated GPU is also present.
+set -u
+command -v nvidia-smi >/dev/null || exit 0
+hybrid=false
+for vendor_file in /sys/class/drm/card*/device/vendor; do
+  [[ -r $vendor_file ]] || continue
+  IFS= read -r vendor <"$vendor_file" || continue
+  [[ $vendor != 0x10de ]] && hybrid=true
+done
+[[ $hybrid == true ]] || exit 0
+result=$(nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv,noheader,nounits 2>/dev/null) || exit 0
+IFS= read -r first_line <<<"$result"
+[[ $first_line =~ ^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*, ]] && printf '%s\n' "$first_line"

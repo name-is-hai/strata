@@ -2,7 +2,7 @@
 
 # strata:summary=Start or stop screen recording
 # strata:group=capture
-# strata:args=[--fullscreen] [--with-desktop-audio] [--with-microphone-audio] [--with-webcam] [--webcam-device=<device>] [--webcam-size=<small|medium|large>] [--resolution=<size>] [--stop-recording]
+# strata:args=[--select-region|--select-app|--fullscreen|--output=<monitor>|--geometry="x,y WxH"] [--with-desktop-audio] [--with-microphone-audio] [--with-webcam] [--webcam-device=<device>] [--webcam-size=<small|medium|large>] [--resolution=<size>] [--stop-recording]
 # strata:examples=strata screenrecord | strata capture screenrecording --with-desktop-audio
 # strata:aliases=strata screenrecord
 #
@@ -34,6 +34,9 @@ WEBCAM_DEVICE=""
 WEBCAM_SIZE="medium"
 RESOLUTION=""
 FULLSCREEN="false"
+CAPTURE_GEOMETRY=""
+CAPTURE_OUTPUT=""
+PICKER_MODE="smart"
 STOP_RECORDING="false"
 # Both of these live in the per-user runtime directory, which is 0700. What
 # RECORDING_FILE holds is read back on stop and used as a path -- ffmpeg writes
@@ -57,9 +60,22 @@ for arg in "$@"; do
   --webcam-size=*) WEBCAM_SIZE="${arg#*=}" ;;
   --resolution=*) RESOLUTION="${arg#*=}" ;;
   --fullscreen) FULLSCREEN="true" ;;
+  --select-region) PICKER_MODE="region" ;;
+  --select-app) PICKER_MODE="windows" ;;
+  --geometry=*) CAPTURE_GEOMETRY="${arg#*=}" ;;
+  --output=*) CAPTURE_OUTPUT="${arg#*=}" ;;
   --stop-recording) STOP_RECORDING="true" ;;
   esac
 done
+
+if [[ -n $CAPTURE_GEOMETRY && ! $CAPTURE_GEOMETRY =~ ^-?[0-9]+,-?[0-9]+[[:space:]][0-9]+x[0-9]+$ ]]; then
+  echo "Invalid recording geometry: $CAPTURE_GEOMETRY" >&2
+  exit 2
+fi
+if [[ -n $CAPTURE_GEOMETRY && -n $CAPTURE_OUTPUT ]]; then
+  echo "Choose one recording target: geometry or output" >&2
+  exit 2
+fi
 
 case $WEBCAM_SIZE in
 small | medium | large) ;;
@@ -68,6 +84,10 @@ small | medium | large) ;;
   exit 1
   ;;
 esac
+
+toggle_screenrecording_indicator() {
+  strata-shell -q strata.indicators refresh
+}
 
 # Fedora ships wf-recorder but not gpu-screen-recorder. Preserve the canonical
 # command and its toggle behavior with a minimal Fedora backend instead of
@@ -132,11 +152,15 @@ fallback_wf_recorder() {
   local filename="$OUTPUT_DIR/Screenrec_$(date '+%Y-%m-%d_%H-%M-%S').mp4"
   local recorder_args=(-f "$filename")
 
-  if [[ $FULLSCREEN == "true" ]]; then
+  if [[ -n $CAPTURE_GEOMETRY ]]; then
+    recorder_args=(-g "$CAPTURE_GEOMETRY" "${recorder_args[@]}")
+  elif [[ -n $CAPTURE_OUTPUT ]]; then
+    recorder_args=(-o "$CAPTURE_OUTPUT" "${recorder_args[@]}")
+  elif [[ $FULLSCREEN == "true" ]]; then
     recorder_args=(-o "$(strata-hyprland-monitor-focused)" "${recorder_args[@]}")
   else
     local target geometry
-    target=$(strata-capture-region smart --match-monitor) || return 0
+    target=$(strata-capture-region "$PICKER_MODE" --match-monitor) || return 0
     case "$target" in
       monitor:*) recorder_args=(-o "${target#monitor:}" "${recorder_args[@]}") ;;
       *)
@@ -198,23 +222,23 @@ start_webcam_overlay() {
 
   # Try preferred 16:9 resolutions in order, use first available
   local preferred_resolutions=("640x360" "1280x720" "1920x1080")
-  local capture_options="framerate=30"
+  local capture_options=(-framerate 30)
   local available_formats=$(v4l2-ctl --list-formats-ext -d "$WEBCAM_DEVICE" 2>/dev/null)
 
   for resolution in "${preferred_resolutions[@]}"; do
     if echo "$available_formats" | grep -q "$resolution"; then
-      capture_options="video_size=$resolution,$capture_options"
+      capture_options+=(-video_size "$resolution")
       break
     fi
   done
 
-  mpv "av://v4l2:$WEBCAM_DEVICE" \
-    --profile=low-latency --untimed --no-cache \
-    --demuxer-lavf-o="$capture_options" \
-    '--vf=lavfi=[crop=ih*8/9:ih]' \
-    --title="WebcamOverlay" --wayland-app-id="WebcamOverlay-$WEBCAM_SIZE" \
-    --no-border --no-audio --no-osc --osd-level=0 \
-    --really-quiet &>/dev/null &
+  # ffplay is only the recorder's borderless webcam surface; Celluloid owns
+  # normal video playback. SDL's app ID keeps the existing overlay geometry.
+  SDL_VIDEODRIVER=wayland SDL_VIDEO_WAYLAND_WMCLASS="WebcamOverlay-$WEBCAM_SIZE" \
+    ffplay -hide_banner -loglevel error -f v4l2 "${capture_options[@]}" \
+      -fflags nobuffer -flags low_delay -framedrop \
+      -vf 'crop=ih*8/9:ih' -window_title WebcamOverlay \
+      -noborder -an -i "$WEBCAM_DEVICE" &>/dev/null &
 
   # The move has to settle before gpu-screen-recorder starts, or the camera is
   # recorded sliding into its corner. Waiting for the map is what the blind
@@ -253,7 +277,7 @@ default_resolution() {
 # user cancelled the picker.
 select_capture_target() {
   local target
-  target=$(strata-capture-region smart --match-monitor) || return 1
+  target=$(strata-capture-region "$PICKER_MODE" --match-monitor) || return 1
 
   if [[ $target == monitor:* ]]; then
     echo "$target"
@@ -281,7 +305,14 @@ start_screenrecording() {
   # the portal backend supports and the kms backend doesn't). Default flow uses
   # slurp + the kms backend, which avoids the EGL DMA-BUF modifier import
   # failures the portal path can hit on some configurations.
-  if [[ $FULLSCREEN == "true" ]]; then
+  if [[ -n $CAPTURE_GEOMETRY ]]; then
+    [[ $CAPTURE_GEOMETRY =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || return 1
+    target="region:${BASH_REMATCH[3]}x${BASH_REMATCH[4]}+${BASH_REMATCH[1]}+${BASH_REMATCH[2]}"
+    capture_args=(-w "${target#region:}")
+  elif [[ -n $CAPTURE_OUTPUT ]]; then
+    target="monitor:$CAPTURE_OUTPUT"
+    capture_args=(-w "$CAPTURE_OUTPUT" -s "${RESOLUTION:-$(default_resolution)}")
+  elif [[ $FULLSCREEN == "true" ]]; then
     target="monitor:$(strata-hyprland-monitor-focused)"
     capture_args=(-w "${target#monitor:}" -s "${RESOLUTION:-$(default_resolution)}")
   elif [[ ${STRATA_SCREENRECORD_USE_PORTAL:-false} == "true" ]]; then
@@ -358,7 +389,7 @@ stop_screenrecording() {
 
     strata-notification-send "Screen recording saved" "Open with Super + Alt + , (or click this)" \
       -t 10000 --image "${preview:-$filename}" \
-      --exec mpv -- "$filename"
+      --exec celluloid -- "$filename"
 
     # The shell loads the thumbnail into memory when the toast appears and never
     # re-reads the file, so the preview only has to outlive that load -- not the
@@ -370,10 +401,6 @@ stop_screenrecording() {
   fi
 
   rm -f "$RECORDING_FILE"
-}
-
-toggle_screenrecording_indicator() {
-  strata-shell -q strata.indicators refresh
 }
 
 screenrecording_active() { [[ $(strata-screen-capture-status) == recording ]]; }

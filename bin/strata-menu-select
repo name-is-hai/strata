@@ -25,12 +25,21 @@ shift
 options=()
 menu_width=""
 menu_maxheight=""
+menu_description=""
 
 while (( $# > 0 )); do
   if [[ $1 == "--" ]]; then
     shift
     while (( $# > 0 )); do
       case "$1" in
+        --description)
+          shift
+          if (( $# == 0 )); then
+            echo "strata-menu-select: --description requires text" >&2
+            exit 1
+          fi
+          menu_description="$1"
+          ;;
         --width)
           shift
           if (( $# == 0 )); then
@@ -72,19 +81,24 @@ done_file=$(mktemp)
 rm -f "$done_file"
 trap 'rm -f "$selection_file" "$done_file"' EXIT
 
-options_json=$(perl -MEncode=decode -MJSON::PP=encode_json -e 'print encode_json([map { decode("UTF-8", $_) } @ARGV])' "${options[@]}")
-payload=$(perl -MEncode=decode -MJSON::PP=encode_json,decode_json -e '
-  my $payload = {
-    mode => "select",
-    prompt => decode("UTF-8", $ARGV[0]),
-    options => decode_json($ARGV[1]),
-    selectionFile => decode("UTF-8", $ARGV[2]),
-    doneFile => decode("UTF-8", $ARGV[3])
-  };
-  $payload->{width} = int($ARGV[4]) if length($ARGV[4] // "");
-  $payload->{maxHeight} = int($ARGV[5]) if length($ARGV[5] // "");
-  print encode_json($payload)
-' "$prompt" "$options_json" "$selection_file" "$done_file" "$menu_width" "$menu_maxheight")
+# jq is already a Strata runtime dependency. Keep this helper independent of
+# Perl's optional JSON::PP module so every menu picker works on a minimal
+# Fedora install too. Shell arguments cannot contain NUL, which makes it a
+# safe delimiter while preserving spaces, tabs, and UTF-8 glyphs in rows.
+options_json=$(printf '%s\0' "${options[@]}" | jq -Rs 'split("\u0000") | .[:-1]')
+payload=$(jq -cn \
+  --arg prompt "$prompt" \
+  --argjson options "$options_json" \
+  --arg selectionFile "$selection_file" \
+  --arg doneFile "$done_file" \
+  --arg width "$menu_width" \
+  --arg maxHeight "$menu_maxheight" \
+  --arg description "$menu_description" \
+  '{ mode: "select", prompt: $prompt, options: $options,
+     description: $description,
+     selectionFile: $selectionFile, doneFile: $doneFile }
+   + (if $width == "" then {} else { width: ($width | tonumber) } end)
+   + (if $maxHeight == "" then {} else { maxHeight: ($maxHeight | tonumber) } end)')
 
 strata-shell shell summon strata.menu "$payload" >/dev/null
 

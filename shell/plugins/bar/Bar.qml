@@ -52,6 +52,8 @@ Item {
   property string centerAnchor: ""
   property bool requestedTransparent: false
   property bool useTransparentForeground: false
+  property bool foregroundRefreshPending: false
+  property bool foregroundRequestTransparent: false
   property bool transparent: false
   property bool centerSectionHovered: false
   // One bar surface exists per monitor and each reports into this count, so a
@@ -73,9 +75,13 @@ Item {
   // [bar] section. Property names kept for the rest of this file's bindings.
   property color themeForeground: Color.bar.text
   property color themeContrastForeground: Color.background
+  property var localForegroundSamples: ({})
+  property color opaqueForeground: Color.bar.text
   property color transparentForeground: Color.bar.text
-  property color foreground: themeForeground
-  property color barForeground: useTransparentForeground ? transparentForeground : themeForeground
+  property color barForeground: useTransparentForeground
+    ? (requestedTransparent ? transparentForeground : opaqueForeground)
+    : themeForeground
+  property color foreground: barForeground
   property bool foregroundAnimationEnabled: true
   property color background: Color.bar.background
   property color urgent: Color.bar.active
@@ -127,7 +133,7 @@ Item {
 
   function bindPluginBarApi(api) {
     if (!api) return
-    api.foreground = Qt.binding(function() { return root.foreground })
+    api.foreground = Qt.binding(function() { return root.barForeground })
     api.barForeground = Qt.binding(function() { return root.barForeground })
     api.background = Qt.binding(function() { return root.background })
     api.urgent = Qt.binding(function() { return root.urgent })
@@ -266,6 +272,7 @@ Item {
       pluginId: key,
       moduleName: String(moduleName || ""),
       shell: pluginShell,
+      _foregroundForItem: function(target) { return root.foregroundForItem(target) },
       _showTooltip: function(target, text) { root.showTooltip(target, text) },
       _hideTooltip: function(target) { root.hideTooltip(target) },
       _registerClickTarget: function(target) { root.registerPluginClickTarget(key, target) },
@@ -334,8 +341,10 @@ Item {
   Component.onDestruction: {
     for (var id in pluginBarApis) {
       root.releasePluginObjects(id)
+      // Child widgets still use their styling facade during teardown. Keep it
+      // alive until those children and their pending callbacks are gone.
       if (pluginBarApis[id] && typeof pluginBarApis[id].destroy === "function")
-        pluginBarApis[id].destroy()
+        pluginBarApis[id].destroy(1)
     }
     pluginBarApis = ({})
   }
@@ -1041,6 +1050,23 @@ Item {
     return true
   }
 
+  function foregroundForItem(item) {
+    if (!root.transparent || !item) return root.barForeground
+    var win = root.targetWindow(item)
+    if (!win || !win.screen) return root.barForeground
+    var samples = root.localForegroundSamples[win.screen.name]
+    if (!samples || !samples.length) return root.barForeground
+    // Read ancestor coordinates so layout changes invalidate this binding.
+    var dependency = 0
+    for (var parent = item; parent; parent = parent.parent)
+      dependency += root.vertical ? parent.y : parent.x
+    var point = item.mapToItem(null, item.width / 2, item.height / 2)
+    var extent = root.vertical ? win.height : win.width
+    var coordinate = root.vertical ? point.y : point.x
+    return samples[Math.max(0, Math.min(samples.length - 1,
+      Math.floor(coordinate / Math.max(1, extent) * samples.length)))]
+  }
+
   function colorHex(colorValue) {
     var c = colorValue
     if (typeof c === "string") c = Qt.color(c)
@@ -1051,15 +1077,27 @@ Item {
     return "#" + hexChannel(c.r) + hexChannel(c.g) + hexChannel(c.b)
   }
 
+  function opaqueBarSample() {
+    var surface = background
+    if (surface.a >= 0.999) return colorHex(surface)
+    var base = Color.background
+    var alpha = surface.a
+    return colorHex(Qt.rgba(
+      surface.r * alpha + base.r * (1 - alpha),
+      surface.g * alpha + base.g * (1 - alpha),
+      surface.b * alpha + base.b * (1 - alpha),
+      1
+    ))
+  }
+
   function setRequestedTransparency(value) {
     var nextTransparent = value === true
     requestedTransparent = nextTransparent
     if (!nextTransparent) {
       foregroundAnimationEnabled = false
-      useTransparentForeground = false
       transparent = false
-      transparentForeground = themeForeground
       restoreForegroundAnimation()
+      scheduleTransparentForegroundRefresh()
       return
     }
     scheduleTransparentForegroundRefresh()
@@ -1072,18 +1110,39 @@ Item {
   }
 
   function scheduleTransparentForegroundRefresh() {
-    if (!requestedTransparent) {
-      transparentForeground = themeForeground
-      return
-    }
     transparentForegroundTimer.restart()
   }
 
-  function refreshTransparentForeground() {
-    if (!requestedTransparent || transparentForegroundProc.running) return
-
+  function refreshOpaqueForeground() {
+    if (requestedTransparent) return
+    if (transparentForegroundProc.running) {
+      foregroundRefreshPending = true
+      return
+    }
+    foregroundRequestTransparent = false
+    foregroundRefreshPending = false
     transparentForegroundProc.command = [
       "strata-bar-text-color",
+      root.position,
+      String(root.barSize),
+      colorHex(root.themeForeground),
+      colorHex(root.themeContrastForeground),
+      "--opaque", "--surface", root.opaqueBarSample()
+    ]
+    transparentForegroundProc.running = true
+  }
+
+  function refreshTransparentForeground() {
+    if (!requestedTransparent) return
+    if (transparentForegroundProc.running) {
+      foregroundRefreshPending = true
+      return
+    }
+    foregroundRequestTransparent = true
+    foregroundRefreshPending = false
+
+    transparentForegroundProc.command = [
+      "strata-bar-text-colors",
       root.position,
       String(root.barSize),
       colorHex(root.themeForeground),
@@ -1094,27 +1153,49 @@ Item {
 
   onRequestedTransparentChanged: scheduleTransparentForegroundRefresh()
   onPositionChanged: scheduleTransparentForegroundRefresh()
+  onBarSizeChanged: scheduleTransparentForegroundRefresh()
   onThemeForegroundChanged: scheduleTransparentForegroundRefresh()
   onThemeContrastForegroundChanged: scheduleTransparentForegroundRefresh()
+  onBackgroundChanged: scheduleTransparentForegroundRefresh()
 
   Timer {
     id: transparentForegroundTimer
     interval: 120
     repeat: false
-    onTriggered: root.refreshTransparentForeground()
+    onTriggered: {
+      if (root.requestedTransparent) root.refreshTransparentForeground()
+      else root.refreshOpaqueForeground()
+    }
   }
 
   Process {
     id: transparentForegroundProc
+    onRunningChanged: {
+      if (!running) {
+        if (root.foregroundRefreshPending || root.requestedTransparent !== root.foregroundRequestTransparent)
+          transparentForegroundTimer.restart()
+      }
+    }
     stdout: SplitParser {
       onRead: function(line) {
         var value = String(line || "").trim()
+        if (root.foregroundRequestTransparent && value.charAt(0) === "{") {
+          try {
+            var data = JSON.parse(value)
+            root.localForegroundSamples = data.samples || ({})
+            root.transparentForeground = root.themeForeground
+            root.useTransparentForeground = true
+            if (root.requestedTransparent) root.transparent = true
+          } catch (error) { console.warn("Invalid bar contrast samples:", error) }
+          return
+        }
         if (!/^#[0-9A-Fa-f]{6}$/.test(value)) return
 
         root.foregroundAnimationEnabled = false
-        root.transparentForeground = value
-        if (root.requestedTransparent) {
-          root.useTransparentForeground = true
+        if (root.foregroundRequestTransparent) root.transparentForeground = value
+        else root.opaqueForeground = value
+        root.useTransparentForeground = true
+        if (root.foregroundRequestTransparent && root.requestedTransparent) {
           root.transparent = true
         }
         root.restoreForegroundAnimation()
@@ -1166,6 +1247,28 @@ Item {
 
     tooltipRequest += 1
     clearTooltip()
+  }
+
+  // Refresh live values without hiding the tooltip or restarting its delay.
+  Connections {
+    target: root.tooltipTarget
+    ignoreUnknownSignals: true
+    function onTooltipTextChanged() {
+      if (!root.tooltipTarget) return
+      root.tooltipText = String(root.tooltipTarget.tooltipText || "")
+      if (!root.tooltipText) root.hideTooltip(root.tooltipTarget)
+    }
+  }
+
+  Connections {
+    target: root.pendingTooltipTarget
+    ignoreUnknownSignals: true
+    function onTooltipTextChanged() {
+      if (root.pendingTooltipTarget) {
+        root.pendingTooltipText = String(root.pendingTooltipTarget.tooltipText || "")
+        if (!root.pendingTooltipText) root.hideTooltip(root.pendingTooltipTarget)
+      }
+    }
   }
 
   Timer {
@@ -1255,6 +1358,9 @@ Item {
 
   component BarPanel: PanelWindow {
     id: barWindow
+    onWidthChanged: root.scheduleTransparentForegroundRefresh()
+    onHeightChanged: root.scheduleTransparentForegroundRefresh()
+    onScreenChanged: root.scheduleTransparentForegroundRefresh()
 
     // Hiding parks the bar just past its screen edge instead of unmapping it.
     // Unmapping frees the layer surface and the whole scene graph, so every
@@ -1924,12 +2030,12 @@ Item {
       // desktop — so it underlines a top bar, overlines a bottom one, and
       // points inward from a left or right one. It reads as pointing at the
       // panel that opens on that side.
-      // Snap toward the start of the slot, matching native glyph rendering.
+      // Share the icon's exact center, including half-pixel slot coordinates.
       x: root.vertical
         ? (root.position === "left" ? parent.width - width - inset : inset)
-        : Math.floor((parent.width - width) / 2)
+        : (parent.width - width) / 2
       y: root.vertical
-        ? Math.floor((parent.height - height) / 2)
+        ? (parent.height - height) / 2
         : (root.position === "top" ? parent.height - height - inset : inset)
       z: 50
 
@@ -2087,7 +2193,8 @@ Item {
     keepSpace: setting("keepSpace", false) === true
     horizontalMargin: Number(setting("horizontalMargin", 7.5))
     verticalPadding: Number(setting("verticalPadding", 6))
-    fontSize: Number(setting("fontSize", 12))
+    fontSize: settings && settings.fontSize !== undefined && settings.fontSize !== null
+      ? Style.bar.contentPx(Number(settings.fontSize)) : labelFontSize
 
     onPressed: function(button) {
       var command = ""

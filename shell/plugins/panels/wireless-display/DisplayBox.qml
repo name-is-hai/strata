@@ -1,0 +1,107 @@
+import QtQuick
+import qs.Ui
+import qs.Commons
+
+// One display, as a bordered box: its name, a line of detail, and whatever
+// controls the caller supplies on the trailing edge.
+//
+// Both display lists in the panel are the same shape -- only the detail line
+// and the buttons differ -- so they share this rather than each hand-rolling
+// a Rectangle and getting the padding subtly different.
+BorderSurface {
+  id: root
+
+  property var bar: null
+  property string title: ""
+  property string subtitle: ""
+
+  // The connected display. Drawn as a lighter fill with no border, so it
+  // reads as the active row without the outline competing with the panel's
+  // own separators -- a border here made the list look like a table.
+  property bool highlighted: false
+
+  // Buttons for this display. A Component, not an Item, so each delegate gets
+  // its own instance; see the note at the call site about `modelData` not
+  // resolving inside it.
+  property Component actions: null
+
+  // Optional content revealed *below* the row, growing the box rather than
+  // opening anything over it — the same shape the stock network panel uses for
+  // its Wi-Fi passphrase prompt. Keeping it inside the row is what makes it
+  // obvious which display is being asked about, which a centred dialog cannot
+  // do once the list has more than one entry in it.
+  property Component expansion: null
+  property bool expanded: false
+
+  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property color dim: Qt.darker(foreground, 1.4)
+
+  color: highlighted ? Util.alpha(foreground, 0.10) : "transparent"
+  borderSpec: Border.none()
+  radius: Style.cornerRadius
+
+  readonly property real rowHeight:
+    Math.max(labels.implicitHeight, actionLoader.implicitHeight) + Style.spacing.sm * 2
+
+  implicitHeight: rowHeight
+    + (expanded && expansionLoader.item ? expansionLoader.implicitHeight + Style.spacing.sm : 0)
+
+  // No leading glyph. Every row in both lists would carry the same one, so it
+  // distinguished nothing -- the name and the mode line already say which
+  // display this is and what it is doing.
+  Column {
+    id: labels
+    anchors.left: parent.left
+    anchors.leftMargin: Style.spacing.sm
+    anchors.right: actionLoader.left
+    anchors.rightMargin: Style.spacing.sm
+    anchors.top: parent.top
+    anchors.topMargin: Style.spacing.sm
+    spacing: Style.space(2)
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      text: root.title
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      font.bold: true
+      elide: Text.ElideRight
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      visible: root.subtitle !== ""
+      width: parent.width
+      text: root.subtitle
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
+    }
+  }
+
+  Loader {
+    id: actionLoader
+    sourceComponent: root.actions
+    anchors.right: parent.right
+    anchors.rightMargin: Style.spacing.sm
+    // Centred on the row, not on the box: once the box grows to hold the
+    // expansion, the box's centre is somewhere inside that instead.
+    y: (root.rowHeight - height) / 2
+  }
+
+  Loader {
+    id: expansionLoader
+    active: root.expanded
+    sourceComponent: root.expansion
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: Style.spacing.sm
+    anchors.rightMargin: Style.spacing.sm
+    anchors.top: parent.top
+    anchors.topMargin: root.rowHeight
+  }
+}

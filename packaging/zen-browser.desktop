@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Zen Browser
+Comment=Browse the web
+Exec=zen-browser %U
+Terminal=false
+Type=Application
+Icon=zen-browser
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/x-extension-htm;application/x-extension-html;application/x-extension-shtml;application/x-extension-xhtml;application/x-extension-xht;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+StartupWMClass=zen

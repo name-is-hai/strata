@@ -1,0 +1,697 @@
+//! Subtitle discovery and `WebVTT` preparation for cast sessions.
+//!
+//! Google Cast receivers render sidecar text tracks in `WebVTT` only, so every
+//! candidate (an `.srt` next to the file, a `Subs/` folder, or a text stream
+//! inside an MKV) is converted with ffmpeg on first request and cached for the
+//! session.
+
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubtitleSource {
+    Sidecar(PathBuf),
+    Embedded { stream_index: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SubtitleTrack {
+    /// 1-based, unique within one media file; doubles as the Cast track id.
+    pub id: u32,
+    /// Human label, e.g. "English (SDH)".
+    pub label: String,
+    /// Two-letter language code when known, else empty.
+    pub language: String,
+    #[serde(skip)]
+    pub source: SubtitleSource,
+}
+
+const SIDECAR_EXTENSIONS: [&str; 4] = ["srt", "vtt", "ass", "ssa"];
+const TEXT_CODECS: [&str; 7] = ["subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"];
+const SUBTITLE_DIRS: [&str; 4] = ["Subs", "subs", "Subtitles", "subtitles"];
+
+/// Recognised language tokens: (aliases, two-letter code, English name).
+const LANGUAGES: &[(&[&str], &str, &str)] = &[
+    (&["en", "eng", "english"], "en", "English"),
+    (
+        &["es", "spa", "spanish", "espanol", "español"],
+        "es",
+        "Spanish",
+    ),
+    (
+        &["fr", "fre", "fra", "french", "francais", "français"],
+        "fr",
+        "French",
+    ),
+    (&["de", "ger", "deu", "german", "deutsch"], "de", "German"),
+    (&["it", "ita", "italian", "italiano"], "it", "Italian"),
+    (
+        &["pt", "por", "portuguese", "portugues", "português"],
+        "pt",
+        "Portuguese",
+    ),
+    (&["nl", "dut", "nld", "dutch", "nederlands"], "nl", "Dutch"),
+    (&["ru", "rus", "russian"], "ru", "Russian"),
+    (&["ja", "jpn", "japanese"], "ja", "Japanese"),
+    (&["ko", "kor", "korean"], "ko", "Korean"),
+    (&["zh", "chi", "zho", "chinese"], "zh", "Chinese"),
+    (&["ar", "ara", "arabic"], "ar", "Arabic"),
+    (&["hi", "hin", "hindi"], "hi", "Hindi"),
+    (&["tr", "tur", "turkish"], "tr", "Turkish"),
+    (&["pl", "pol", "polish"], "pl", "Polish"),
+    (&["sv", "swe", "swedish"], "sv", "Swedish"),
+    (&["da", "dan", "danish"], "da", "Danish"),
+    (&["no", "nor", "nob", "norwegian"], "no", "Norwegian"),
+    (&["fi", "fin", "finnish"], "fi", "Finnish"),
+    (&["cs", "cze", "ces", "czech"], "cs", "Czech"),
+    (&["el", "gre", "ell", "greek"], "el", "Greek"),
+    (&["he", "heb", "hebrew"], "he", "Hebrew"),
+    (&["hu", "hun", "hungarian"], "hu", "Hungarian"),
+    (&["ro", "rum", "ron", "romanian"], "ro", "Romanian"),
+    (&["uk", "ukr", "ukrainian"], "uk", "Ukrainian"),
+    (&["bg", "bul", "bulgarian"], "bg", "Bulgarian"),
+    (&["hr", "hrv", "croatian"], "hr", "Croatian"),
+    (&["sr", "srp", "serbian"], "sr", "Serbian"),
+    (&["sk", "slo", "slk", "slovak"], "sk", "Slovak"),
+    (&["sl", "slv", "slovenian"], "sl", "Slovenian"),
+    (&["th", "tha", "thai"], "th", "Thai"),
+    (&["vi", "vie", "vietnamese"], "vi", "Vietnamese"),
+    (&["id", "ind", "indonesian"], "id", "Indonesian"),
+    (&["ms", "may", "msa", "malay"], "ms", "Malay"),
+    (&["ta", "tam", "tamil"], "ta", "Tamil"),
+    (&["te", "tel", "telugu"], "te", "Telugu"),
+    (&["et", "est", "estonian"], "et", "Estonian"),
+    (&["lv", "lav", "latvian"], "lv", "Latvian"),
+    (&["lt", "lit", "lithuanian"], "lt", "Lithuanian"),
+    (&["ca", "cat", "catalan"], "ca", "Catalan"),
+    (&["fa", "per", "fas", "persian", "farsi"], "fa", "Persian"),
+];
+
+fn language_lookup(token: &str) -> Option<(&'static str, &'static str)> {
+    let token = token.to_lowercase();
+    LANGUAGES
+        .iter()
+        .find(|(aliases, _, _)| aliases.contains(&token.as_str()))
+        .map(|(_, code, name)| (*code, *name))
+}
+
+/// Largest sidecar subtitle file considered; real ones are well under 1 MiB.
+const MAX_SIDECAR_BYTES: u64 = 8 * 1024 * 1024;
+/// Largest converted `WebVTT` file the daemon writes or serves.
+pub const MAX_VTT_BYTES: u64 = 16 * 1024 * 1024;
+/// Most subtitle tracks offered for one file (sidecars plus embedded).
+const MAX_TRACKS: usize = 32;
+
+/// A regular file (not a symlink) of sane size with a subtitle extension.
+fn is_subtitle_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .is_ok_and(|meta| meta.file_type().is_file() && meta.len() <= MAX_SIDECAR_BYTES)
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| SIDECAR_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+}
+
+fn tokens(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Derives (language code, label) from the descriptive part of a sidecar file
+/// name, e.g. `en.forced` or `2_English`. `fallback` names an undescribed file.
+fn describe_sidecar(descriptor: &str, fallback: &str) -> (String, String) {
+    let parts = tokens(descriptor);
+    let language = parts.iter().find_map(|part| language_lookup(part));
+    let mut flags = Vec::new();
+    for part in &parts {
+        match part.as_str() {
+            "forced" => flags.push("forced"),
+            "sdh" | "hi" | "cc" => flags.push("SDH"),
+            _ => {}
+        }
+    }
+    flags.dedup();
+    let base = language.map_or_else(|| fallback.to_string(), |(_, name)| name.to_string());
+    let label = if flags.is_empty() {
+        base
+    } else {
+        format!("{base} ({})", flags.join(", "))
+    };
+    (
+        language.map_or_else(String::new, |(code, _)| code.to_string()),
+        label,
+    )
+}
+
+fn prettify(stem: &str) -> String {
+    let words: Vec<String> = tokens(stem)
+        .into_iter()
+        .filter(|word| !word.chars().all(|c| c.is_ascii_digit()))
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + chars.as_str()
+            })
+        })
+        .collect();
+    if words.is_empty() {
+        "Subtitles".to_string()
+    } else {
+        words.join(" ")
+    }
+}
+
+fn sidecars(media: &Path) -> Vec<(PathBuf, String, String)> {
+    let Some(dir) = media.parent() else {
+        return Vec::new();
+    };
+    let stem = media
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let mut found = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let mut paths: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| is_subtitle_file(path))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            if stem.is_empty() || !name.starts_with(&stem) {
+                continue;
+            }
+            let descriptor = name[stem.len()..].trim_start_matches(['.', '_', '-', ' ']);
+            let (language, label) = describe_sidecar(descriptor, "Subtitles");
+            found.push((path, label, language));
+        }
+    }
+    for folder in SUBTITLE_DIRS {
+        let Ok(entries) = std::fs::read_dir(dir.join(folder)) else {
+            continue;
+        };
+        let mut paths: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| is_subtitle_file(path))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let (language, label) = describe_sidecar(&name, &prettify(&name));
+            found.push((path, label, language));
+        }
+    }
+    found
+}
+
+struct EmbeddedStream {
+    index: u32,
+    language: String,
+    title: String,
+}
+
+fn embedded(media: &Path) -> Vec<EmbeddedStream> {
+    let Some(stdout) = crate::util::ffprobe(
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            "s",
+            "-show_entries",
+            "stream=index,codec_name:stream_tags=language,title",
+            "-of",
+            "json",
+        ],
+        media,
+    ) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&stdout) else {
+        return Vec::new();
+    };
+    let text = |v: &serde_json::Value, key: &str| {
+        v.get(key)
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
+    value
+        .get("streams")
+        .and_then(|streams| streams.as_array())
+        .map(|streams| {
+            streams
+                .iter()
+                .filter(|stream| {
+                    TEXT_CODECS.contains(&text(stream, "codec_name").to_lowercase().as_str())
+                })
+                .filter_map(|stream| {
+                    let index = u32::try_from(stream.get("index")?.as_u64()?).ok()?;
+                    let tags = stream.get("tags").cloned().unwrap_or_default();
+                    Some(EmbeddedStream {
+                        index,
+                        language: text(&tags, "language"),
+                        title: text(&tags, "title"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every text subtitle usable for `media`: sidecar files first, then embedded
+/// streams in container order. Ids are assigned 1..n.
+pub fn discover(media: &Path) -> Vec<SubtitleTrack> {
+    let mut tracks = Vec::new();
+    for (path, label, language) in sidecars(media) {
+        tracks.push(SubtitleTrack {
+            id: 0,
+            label,
+            language,
+            source: SubtitleSource::Sidecar(path),
+        });
+    }
+    for stream in embedded(media) {
+        let language = language_lookup(&stream.language);
+        let base = language.map_or_else(
+            || format!("Track {}", stream.index),
+            |(_, name)| name.to_string(),
+        );
+        let label = if stream.title.is_empty() || stream.title.eq_ignore_ascii_case(&base) {
+            base
+        } else {
+            format!("{base} ({})", stream.title)
+        };
+        tracks.push(SubtitleTrack {
+            id: 0,
+            label,
+            language: language.map_or_else(String::new, |(code, _)| code.to_string()),
+            source: SubtitleSource::Embedded {
+                stream_index: stream.index,
+            },
+        });
+    }
+    tracks.truncate(MAX_TRACKS);
+    for (n, track) in tracks.iter_mut().enumerate() {
+        track.id = u32::try_from(n + 1).unwrap_or(u32::MAX);
+    }
+    tracks
+}
+
+/// Longest a single subtitle conversion may take (an embedded track in a large
+/// MKV on slow storage is the slow case).
+const CONVERT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Opens a sidecar for conversion: a regular file, not a symlink, not over
+/// the size cap, checked on the descriptor itself so a path swapped since
+/// discovery (for a FIFO, a link, a huge file) is refused, and returns whether
+/// its contents are valid UTF-8 (a BOM is fine). ffmpeg then reads that same
+/// descriptor through `/proc/<pid>/fd/<n>`.
+fn pin_sidecar(path: &Path) -> Result<(crate::util::PinnedFile, bool), String> {
+    use std::io::Read;
+    let pinned = crate::util::PinnedFile::open_no_follow(path)
+        .map_err(|error| format!("cannot open the subtitle file: {error}"))?;
+    let mut file = std::fs::File::open(pinned.data_path())
+        .map_err(|error| format!("cannot read the subtitle file: {error}"))?;
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_SIDECAR_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("cannot read the subtitle file: {error}"))?;
+    if bytes.len() as u64 > MAX_SIDECAR_BYTES {
+        return Err("the subtitle file is too large".to_string());
+    }
+    let utf8 = std::str::from_utf8(&bytes).is_ok();
+    Ok((pinned, utf8))
+}
+
+/// Path of the `WebVTT` file for `track`, converting it into `dir` on first use.
+pub async fn ensure_vtt(
+    track: &SubtitleTrack,
+    media: &Path,
+    dir: &Path,
+) -> Result<PathBuf, String> {
+    let target = dir.join(format!("{}.vtt", track.id));
+    if tokio::fs::metadata(&target).await.is_ok() {
+        return Ok(target);
+    }
+    tokio::fs::create_dir_all(dir)
+        .await
+        .map_err(|error| format!("cannot create subtitle cache: {error}"))?;
+    let part = dir.join(format!("{}.vtt.part", track.id));
+    // Held until the conversion ends, so ffmpeg reads the file checked here.
+    let mut _pinned = None;
+    let attempts: Vec<Vec<String>> = match &track.source {
+        SubtitleSource::Sidecar(path) => {
+            let (pinned, utf8) = pin_sidecar(path)?;
+            let source = pinned.data_path();
+            _pinned = Some(pinned);
+            // Older .srt files are often Latin-1. ffmpeg does not fail on
+            // them, it silently drops every line with invalid UTF-8, so
+            // decide up front.
+            if utf8 {
+                vec![
+                    ffmpeg_args(&source, None, None),
+                    ffmpeg_args(&source, None, Some("ISO-8859-1")),
+                ]
+            } else {
+                vec![ffmpeg_args(&source, None, Some("ISO-8859-1"))]
+            }
+        }
+        SubtitleSource::Embedded { stream_index } => {
+            vec![ffmpeg_args(media, Some(*stream_index), None)]
+        }
+    };
+    for args in attempts {
+        let _ = tokio::fs::remove_file(&part).await;
+        // Bounded, and killed if the request that asked for it goes away, so a
+        // stuck extraction never outlives the lock that serialises conversions.
+        let status = tokio::time::timeout(
+            CONVERT_TIMEOUT,
+            tokio::process::Command::new("ffmpeg")
+                .args(&args)
+                .arg(&part)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .status(),
+        )
+        .await;
+        if status.is_ok_and(|status| status.is_ok_and(|status| status.success()))
+            && tokio::fs::metadata(&part)
+                .await
+                .is_ok_and(|meta| meta.len() > 0 && meta.len() <= MAX_VTT_BYTES)
+            && tokio::fs::rename(&part, &target).await.is_ok()
+        {
+            return Ok(target);
+        }
+    }
+    let _ = tokio::fs::remove_file(&part).await;
+    Err("ffmpeg could not convert the subtitle track".to_string())
+}
+
+fn ffmpeg_args(source: &Path, stream_index: Option<u32>, charenc: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "-nostdin".to_string(),
+        "-y".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+    ];
+    if let Some(charenc) = charenc {
+        args.push("-sub_charenc".to_string());
+        args.push(charenc.to_string());
+    }
+    args.extend(crate::util::ffmpeg_input(source));
+    if let Some(index) = stream_index {
+        args.push("-map".to_string());
+        args.push(format!("0:{index}"));
+    }
+    // Stop writing just past the cap: a crafted track must not fill the
+    // RAM-backed runtime directory the cache lives in. ffmpeg stops once the
+    // output reaches this size and still exits 0, so a result over the cap
+    // is a cut-off track and `ensure_vtt` refuses it.
+    args.push("-fs".to_string());
+    args.push((MAX_VTT_BYTES + 1).to_string());
+    args.push("-f".to_string());
+    args.push("webvtt".to_string());
+    args
+}
+
+fn parse_timestamp(text: &str) -> Option<f64> {
+    let parts: Vec<&str> = text.trim().split(':').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return None;
+    }
+    let mut seconds = 0.0;
+    for part in &parts {
+        let value: f64 = part.parse().ok()?;
+        seconds = seconds * 60.0 + value;
+    }
+    Some(seconds)
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn format_timestamp(seconds: f64) -> String {
+    let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
+    let hours = total_ms / 3_600_000;
+    let minutes = (total_ms % 3_600_000) / 60_000;
+    let secs = (total_ms % 60_000) / 1000;
+    let millis = total_ms % 1000;
+    format!("{hours:02}:{minutes:02}:{secs:02}.{millis:03}")
+}
+
+/// Splits a cue timing line into (start, end, trailing settings).
+fn parse_cue_timing(line: &str) -> Option<(f64, f64, &str)> {
+    let (start, rest) = line.split_once("-->")?;
+    let rest = rest.trim_start();
+    let (end, settings) = match rest.split_once(char::is_whitespace) {
+        Some((end, settings)) => (end, settings.trim()),
+        None => (rest.trim_end(), ""),
+    };
+    Some((parse_timestamp(start)?, parse_timestamp(end)?, settings))
+}
+
+/// Rewrites a `WebVTT` document so its cues line up with a stream that started
+/// `seconds` into the file: cues that end before that point are dropped, one
+/// straddling it is clamped, the rest are shifted earlier.
+/// A `WebVTT` track as `SubRip`, the format Samsung (and most DLNA TVs) load
+/// as external subtitles. The header, NOTE/STYLE/REGION blocks and cue
+/// settings are dropped, cues are renumbered, `<i>`/`<b>`/`<u>` are kept and
+/// other markup removed, and a UTF-8 byte-order mark is added so the TV does
+/// not guess the encoding.
+pub fn vtt_to_srt(vtt: &str) -> String {
+    use std::fmt::Write as _;
+    let text = vtt.strip_prefix('\u{feff}').unwrap_or(vtt);
+    let mut out = String::from('\u{feff}');
+    let mut number = 0_usize;
+    let mut block: Vec<&str> = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.trim().is_empty() {
+            block.push(line);
+            if lines.peek().is_some() {
+                continue;
+            }
+        }
+        // A cue's timing line is its first, or its second after an id; the
+        // header and NOTE/STYLE/REGION blocks have none.
+        let cue = block
+            .iter()
+            .take(2)
+            .position(|line| line.contains("-->"))
+            .and_then(|at| parse_cue_timing(block[at]).map(|timing| (at, timing)));
+        if let Some((at, (start, end, _settings))) = cue {
+            let body: Vec<String> = block[at + 1..]
+                .iter()
+                .map(|line| srt_text(line))
+                .filter(|line| !line.trim().is_empty())
+                .collect();
+            if !body.is_empty() {
+                number += 1;
+                let _ = write!(
+                    out,
+                    "{number}\n{} --> {}\n",
+                    srt_timestamp(start),
+                    srt_timestamp(end)
+                );
+                for line in body {
+                    out.push_str(&line);
+                    out.push('\n');
+                }
+                out.push('\n');
+            }
+        }
+        block.clear();
+    }
+    out
+}
+
+fn srt_timestamp(seconds: f64) -> String {
+    format_timestamp(seconds).replacen('.', ",", 1)
+}
+
+/// One cue text line with only the markup `SubRip` renderers understand.
+fn srt_text(line: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(open) = rest.find('<') {
+        out.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find('>') else {
+            out.push_str(&rest[open..]);
+            rest = "";
+            break;
+        };
+        let tag = &rest[open + 1..open + close];
+        let (slash, name) = tag.strip_prefix('/').map_or(("", tag), |name| ("/", name));
+        let name = name
+            .split(|c: char| c == '.' || c.is_whitespace())
+            .next()
+            .unwrap_or_default();
+        if matches!(name, "i" | "b" | "u") {
+            let _ = write!(out, "<{slash}{name}>");
+        }
+        rest = &rest[open + close + 1..];
+    }
+    out.push_str(rest);
+    out.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&nbsp;", " ")
+        .replace("&lrm;", "")
+        .replace("&rlm;", "")
+        .replace("&amp;", "&")
+}
+
+pub fn shift_vtt(text: &str, seconds: f64) -> String {
+    if seconds <= 0.0 {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut pending: Vec<&str> = Vec::new();
+    let mut dropping = false;
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            if !dropping {
+                for kept in &pending {
+                    out.push_str(kept);
+                    out.push('\n');
+                }
+                out.push('\n');
+            }
+            pending.clear();
+            dropping = false;
+            continue;
+        }
+        if dropping {
+            continue;
+        }
+        if let Some((start, end, settings)) = parse_cue_timing(line) {
+            let end = end - seconds;
+            if end <= 0.0 {
+                dropping = true;
+                pending.clear();
+                continue;
+            }
+            let start = (start - seconds).max(0.0);
+            let mut timing = format!("{} --> {}", format_timestamp(start), format_timestamp(end));
+            if !settings.is_empty() {
+                timing.push(' ');
+                timing.push_str(settings);
+            }
+            for kept in &pending {
+                out.push_str(kept);
+                out.push('\n');
+            }
+            pending.clear();
+            out.push_str(&timing);
+            out.push('\n');
+            continue;
+        }
+        pending.push(line);
+    }
+    if !dropping {
+        for kept in &pending {
+            out.push_str(kept);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sidecar_descriptions() {
+        assert_eq!(
+            describe_sidecar("", "Subtitles"),
+            (String::new(), "Subtitles".to_string())
+        );
+        assert_eq!(
+            describe_sidecar("en", "Subtitles"),
+            ("en".to_string(), "English".to_string())
+        );
+        assert_eq!(
+            describe_sidecar("eng.forced", "Subtitles"),
+            ("en".to_string(), "English (forced)".to_string())
+        );
+        assert_eq!(
+            describe_sidecar("2_English.SDH", "x"),
+            ("en".to_string(), "English (SDH)".to_string())
+        );
+        assert_eq!(
+            describe_sidecar("Director Commentary", &prettify("Director Commentary")),
+            (String::new(), "Director Commentary".to_string())
+        );
+    }
+
+    #[test]
+    fn timestamps() {
+        assert_eq!(parse_timestamp("01:02:03.500"), Some(3723.5));
+        assert_eq!(parse_timestamp("02:03.250"), Some(123.25));
+        assert_eq!(parse_timestamp("nope"), None);
+        assert_eq!(format_timestamp(3723.5), "01:02:03.500");
+        assert_eq!(format_timestamp(0.0), "00:00:00.000");
+    }
+
+    #[test]
+    fn vtt_becomes_numbered_srt() {
+        let vtt = "WEBVTT\nKind: captions\n\nNOTE a comment\nspanning lines\n\nSTYLE\n::cue { color: red }\n\nintro\n00:01.500 --> 00:03.000 align:start line:90%\n<v Anna>Hello</v> <i>there</i>\n<c.loud>friend</c>\n\n01:02:03.004 --> 01:02:05.000\r\nTwo &amp; <b>three</b> <00:00:04.000>words\r\n";
+        assert_eq!(
+            vtt_to_srt(vtt),
+            "\u{feff}1\n00:00:01,500 --> 00:00:03,000\nHello <i>there</i>\nfriend\n\n2\n01:02:03,004 --> 01:02:05,000\nTwo & <b>three</b> words\n\n"
+        );
+        // A re-timed track keeps its numbering contiguous.
+        let shifted = vtt_to_srt(&shift_vtt(
+            "WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nGone\n\n00:00:20.000 --> 00:00:25.000\nKept\n",
+            10.0,
+        ));
+        assert_eq!(
+            shifted,
+            "\u{feff}1\n00:00:10,000 --> 00:00:15,000\nKept\n\n"
+        );
+    }
+
+    #[test]
+    fn shifting_cues() {
+        let vtt = "WEBVTT\n\nNOTE made up\n\n1\n00:00:05.000 --> 00:00:08.000\nGone\n\n2\n00:00:08.000 --> 00:00:12.000 line:90%\nClamped\n\n00:00:20.000 --> 00:00:25.000\nShifted\n";
+        let shifted = shift_vtt(vtt, 10.0);
+        assert!(shifted.starts_with("WEBVTT\n\nNOTE made up\n\n"));
+        assert!(!shifted.contains("Gone"));
+        assert!(!shifted.contains("\n1\n"));
+        assert!(shifted.contains("2\n00:00:00.000 --> 00:00:02.000 line:90%\nClamped\n"));
+        assert!(shifted.contains("00:00:10.000 --> 00:00:15.000\nShifted\n"));
+        assert_eq!(shift_vtt(vtt, 0.0), vtt);
+    }
+
+    #[test]
+    fn discovers_sidecars() {
+        let dir = std::env::temp_dir().join(format!("strata-cast-subs-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("Subs")).expect("temp dir");
+        let media = dir.join("Movie.2024.mkv");
+        std::fs::write(&media, b"").expect("media");
+        std::fs::write(dir.join("Movie.2024.srt"), b"1\n").expect("srt");
+        std::fs::write(dir.join("Movie.2024.es.srt"), b"1\n").expect("srt");
+        std::fs::write(dir.join("Other.srt"), b"1\n").expect("srt");
+        std::fs::write(dir.join("Subs").join("3_French.srt"), b"1\n").expect("srt");
+        let found = sidecars(&media);
+        let labels: Vec<&str> = found.iter().map(|(_, label, _)| label.as_str()).collect();
+        assert_eq!(labels, vec!["Spanish", "Subtitles", "French"]);
+        assert_eq!(found[0].2, "es");
+        assert_eq!(found[2].2, "fr");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

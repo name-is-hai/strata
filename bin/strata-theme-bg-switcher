@@ -5,10 +5,6 @@
 # strata:name=bg-switcher
 # strata:aliases=strata background
 
-theme_name=$(cat "$HOME/.local/state/strata/current/theme.name" 2>/dev/null)
-current_background=$(readlink -f "$HOME/.local/state/strata/current/background" 2>/dev/null)
-
-strata-menu-images \
-  --selected "$current_background" \
-  "$HOME/.local/state/strata/current/theme/backgrounds" \
-  "$HOME/.config/strata/backgrounds/$theme_name"
+# Preserve the command's selection-only contract for scripts: the caller
+# decides whether to apply the returned path.
+exec "${STRATA_PATH:-/usr/share/strata}/shell/plugins/theme-picker/pick.sh" --background

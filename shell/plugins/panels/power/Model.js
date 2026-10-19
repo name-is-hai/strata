@@ -49,12 +49,15 @@ function batteryFraction(device) {
   return device && device.isPresent ? Math.max(0, Math.min(1, device.percentage)) : 0
 }
 
-function chargeThresholdActive(device, onBattery, states) {
+function chargeThresholdActive(device, onBattery, states, threshold) {
   var d = device || {}
   var s = states || {}
-  if (!(d && d.isPresent && !onBattery)) return false
+  if (!(d && d.isPresent && !onBattery && threshold)) return false
 
   var fraction = batteryFraction(d)
+  var limits = String(threshold).match(/\d+/g)
+  var endLimit = limits && Number(limits[limits.length - 1])
+  if (!endLimit || endLimit >= 99 || fraction * 100 > endLimit + 2) return false
   if (d.state === s.Discharging) return false
   if (d.state === s.PendingCharge) return true
   if (d.state === s.FullyCharged && fraction < 0.99) return true
@@ -63,30 +66,31 @@ function chargeThresholdActive(device, onBattery, states) {
   return Number(d.changeRate || 0) <= 0.2 || Number(d.timeToFull || 0) >= 8 * 60 * 60
 }
 
-function batteryIcon(device, onBattery, states) {
+function batteryIcon(device, onBattery, states, thresholdValue) {
   var d = device || {}
   if (!d.isPresent) return ""
 
   var chargingIcons = ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"]
   var defaultIcons = ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
   var index = Math.max(0, Math.min(9, Math.floor(d.percentage * 10)))
-  var threshold = chargeThresholdActive(d, onBattery, states)
+  var threshold = chargeThresholdActive(d, onBattery, states, thresholdValue)
 
   if (threshold) return defaultIcons[index]
-  if (d.state === states.FullyCharged) return "󰂅"
+  if (d.state === states.FullyCharged) return d.percentage >= 0.99 ? "󰂅" : defaultIcons[index]
   if (!onBattery) return chargingIcons[index]
   return defaultIcons[index]
 }
 
-function modeLabel(device, onBattery, states) {
+function modeLabel(device, onBattery, states, thresholdValue) {
   var d = device || {}
   if (!d.isPresent) return ""
 
   var percentage = d.isPresent ? d.percentage : 0
-  if (chargeThresholdActive(d, onBattery, states)) return "Threshold"
+  if (chargeThresholdActive(d, onBattery, states, thresholdValue)) return "Holding at charge limit"
   if (onBattery) return "On battery"
-  if (!onBattery && percentage >= 1) return "Fully charged"
-  return "Charging"
+  if (d.state === states.FullyCharged || percentage >= 1) return "Fully charged"
+  if (d.state === states.Charging) return "Charging"
+  return "Not charging"
 }
 
 if (typeof module !== "undefined") {

@@ -165,6 +165,15 @@ function rawStreamLabel(node) {
     || node.name
 }
 
+function streamDetail(node) {
+  if (!node) return ""
+  var p = nodeProps(node)
+  var label = String(p["application.name"] || node.description || node.name || "").trim().toLowerCase()
+  var detail = String(p["media.name"] || node.description || "").trim()
+  if (!detail || detail.toLowerCase() === label || streamLabelIsGeneric(detail)) return ""
+  return detail
+}
+
 function mprisPlayerLabel(player) {
   if (!player) return ""
   return friendlyStreamLabel(player.identity || player.desktopEntry || "")
@@ -274,6 +283,7 @@ if (typeof module !== "undefined") {
     streamLabelKey: streamLabelKey,
     streamLabelIsGeneric: streamLabelIsGeneric,
     rawStreamLabel: rawStreamLabel,
+    streamDetail: streamDetail,
     mprisPlayerLabel: mprisPlayerLabel,
     mprisPlayerIsProxy: mprisPlayerIsProxy,
     streamRepresentsMprisPlayer: streamRepresentsMprisPlayer,

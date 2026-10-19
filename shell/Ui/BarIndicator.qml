@@ -13,9 +13,12 @@ BarIconButton {
   property string indicatorBlock: "single"
   property var indicatorHost: null
   property var activeOverride: null
+  // A persistent indicator remains available as a control even while inactive.
+  // Most status-only indicators retain the compact active-only behavior.
+  property bool alwaysVisible: false
   readonly property bool effectiveActive: activeOverride === null || activeOverride === undefined ? active : activeOverride === true
   readonly property bool belongsInBlock: indicatorBlock === "active" ? effectiveActive : (indicatorBlock === "inactive" ? !effectiveActive : true)
-  readonly property bool inactiveRevealed: !effectiveActive && !!indicatorHost && indicatorHost.revealInactiveIndicators
+  readonly property bool inactiveRevealed: !effectiveActive && (alwaysVisible || (!!indicatorHost && indicatorHost.revealInactiveIndicators))
 
   function extractData(raw) {
     return Util.parseModuleJson(raw)
@@ -43,7 +46,6 @@ BarIconButton {
   useActiveColor: false
   maintainIndicatorReveal: indicatorBlock === "inactive"
   revealHost: indicatorHost
-  fontSize: Style.font.caption
   horizontalMargin: 5
   verticalPadding: 5
   fixedWidth: vertical ? -1 : Style.bar.statusSlot

@@ -1,0 +1,110 @@
+#!/usr/bin/gjs
+// Read and activate actions exposed by the focused application's AT-SPI tree.
+// The short-lived bridge keeps accessibility dependencies out of strata-shell.
+const Atspi = imports.gi.Atspi;
+const System = imports.system;
+const args = ARGV;
+const mode = args[0] || "";
+const pid = Number(args[1]);
+const actionRoles = new Set([
+  Atspi.Role.MENU_ITEM, Atspi.Role.CHECK_MENU_ITEM,
+  Atspi.Role.RADIO_MENU_ITEM, Atspi.Role.PUSH_BUTTON_MENU,
+  Atspi.Role.PUSH_BUTTON, Atspi.Role.BUTTON, Atspi.Role.TOGGLE_BUTTON,
+  Atspi.Role.FRAME
+]);
+
+function safe(call, fallback) {
+  try { return call(); } catch (e) { return fallback; }
+}
+
+function applicationForPid() {
+  const desktop = safe(() => Atspi.get_desktop(0), null);
+  if (!desktop) return null;
+  const count = Math.min(safe(() => desktop.get_child_count(), 0), 256);
+  for (let i = 0; i < count; i++) {
+    const app = safe(() => desktop.get_child_at_index(i), null);
+    if (app && safe(() => app.get_process_id(), -1) === pid) return app;
+  }
+  return null;
+}
+
+function atPath(root, path) {
+  let node = root;
+  for (const index of path) {
+    if (!Number.isInteger(index) || index < 0 || index >= 256) return null;
+    node = safe(() => node.get_child_at_index(index), null);
+    if (!node) return null;
+  }
+  return node;
+}
+
+function actionLabel(name) {
+  return String(name || "")
+    .replace(/^(?:win|window|app)\./, "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function focusedFrame(root) {
+  const count = Math.min(safe(() => root.get_child_count(), 0), 256);
+  let first = null;
+  for (let i = 0; i < count; i++) {
+    const child = safe(() => root.get_child_at_index(i), null);
+    if (!child || safe(() => child.get_role(), -1) !== Atspi.Role.FRAME) continue;
+    if (!first) first = { node: child, index: i };
+    const state = safe(() => child.get_state_set(), null);
+    if (state && safe(() => state.contains(Atspi.StateType.ACTIVE), false))
+      return { node: child, index: i };
+  }
+  return first;
+}
+
+if (!Number.isInteger(pid) || pid <= 0) { print("[]"); System.exit(2); }
+try { Atspi.init(); } catch (e) { print("[]"); System.exit(1); }
+const app = applicationForPid();
+if (!app) { print("[]"); System.exit(0); }
+
+if (mode === "activate") {
+  let path = [];
+  try { path = JSON.parse(args[2] || "[]"); } catch (e) { System.exit(2); }
+  if (!Array.isArray(path) || path.length > 16) System.exit(2);
+  const node = atPath(app, path);
+  const index = Number(args[3]);
+  const expected = args[4] || "";
+  if (!node || !Number.isInteger(index) || index < 0 || index >= safe(() => node.get_n_actions(), 0) ||
+      !actionRoles.has(safe(() => node.get_role(), -1)) ||
+      safe(() => node.get_action_name(index), "") !== expected) System.exit(2);
+  System.exit(safe(() => node.do_action(index), false) ? 0 : 1);
+}
+
+if (mode !== "list") System.exit(2);
+const rows = [];
+let visited = 0;
+function walk(node, path, parents) {
+  if (!node || visited++ >= 3000 || path.length > 12 || rows.length >= 250) return;
+  const role = safe(() => node.get_role(), -1);
+  const name = String(safe(() => node.get_name(), "") || "").trim();
+  const state = safe(() => node.get_state_set(), null);
+  const enabled = !state || safe(() => state.contains(Atspi.StateType.ENABLED), true);
+  // GTK window frames expose app actions while omitting the ENABLED state.
+  if ((enabled || role === Atspi.Role.FRAME) && actionRoles.has(role)) {
+    const actions = Math.min(safe(() => node.get_n_actions(), 0), 64);
+    for (let index = 0; index < actions && rows.length < 250; index++) {
+      const actionName = String(safe(() => node.get_action_name(index), "") || "");
+      if (!actionName || actionName === "default.activate") continue;
+      const label = role === Atspi.Role.FRAME || !name ? actionLabel(actionName) : name;
+      if (!label) continue;
+      const binding = String(safe(() => node.get_action_iface().get_key_binding(index), "") || "");
+      rows.push({ name: label, path, actionIndex: index, actionName,
+        detail: role === Atspi.Role.FRAME ? "Window · " + actionName : parents.join(" › "), binding });
+    }
+  }
+  const nextParents = name && (role === Atspi.Role.MENU || role === Atspi.Role.MENU_BAR || role === Atspi.Role.POPUP_MENU)
+    ? parents.concat([name]) : parents;
+  const count = Math.min(safe(() => node.get_child_count(), 0), 256);
+  for (let i = 0; i < count; i++) walk(safe(() => node.get_child_at_index(i), null), path.concat([i]), nextParents);
+}
+const frame = focusedFrame(app);
+if (frame) walk(frame.node, [frame.index], []);
+else walk(app, [], []);
+print(JSON.stringify(rows));

@@ -10,7 +10,7 @@ import Quickshell.Wayland
 // enough to cost nothing, off the overlay layer so it never blocks direct
 // scanout for fullscreen apps. Opening only resizes and raises it.
 PanelWindow {
-  id: window
+  id: overlayWindow
 
   // Whether the overlay is showing. Drive this instead of visible.
   property bool shown: false
@@ -34,12 +34,33 @@ PanelWindow {
     for (var i = 0; i < Quickshell.screens.length; i++) {
       if (Quickshell.screens[i].name === name) return Quickshell.screens[i]
     }
-    return null
+    return Quickshell.screens.length ? Quickshell.screens[0] : null
   }
 
-  onShownChanged: if (shown) targetScreen = focusedScreen() || targetScreen
+  onShownChanged: if (shown) {
+    targetScreen = focusedScreen()
+    // Removing an output can destroy the underlying layer surface while
+    // visible stays true. A new show must map it again, not just raise it.
+    if (!backingWindowVisible) remapGuard.remap()
+  }
 
-  visible: true
+  onTargetScreenChanged: remapGuard.remap()
+
+  Connections {
+    target: Quickshell
+    function onScreensChanged() {
+      if (Quickshell.screens.indexOf(overlayWindow.targetScreen) !== -1) return
+      overlayWindow.targetScreen = overlayWindow.focusedScreen()
+      remapGuard.remap()
+    }
+  }
+
+  ScreenMoveRemap {
+    id: remapGuard
+    window: overlayWindow
+  }
+
+  visible: Quickshell.screens.length > 0 && !remapGuard.remapping
   screen: targetScreen
   anchors {
     top: true
@@ -59,8 +80,8 @@ PanelWindow {
   // is still 1x1 holds only the scrim's color, which the compositor would
   // stretch across the whole screen until the fullscreen frame arrives.
   Binding {
-    target: window.contentItem
+    target: overlayWindow.contentItem
     property: "visible"
-    value: window.shown && window.width > 1 && window.height > 1
+    value: overlayWindow.shown && overlayWindow.width > 1 && overlayWindow.height > 1
   }
 }

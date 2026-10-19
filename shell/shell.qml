@@ -46,8 +46,8 @@ ShellRoot {
       transparent: false,
       centerAnchor: "strata.clock",
       layout: {
-        left: [{ id: "strata.menu" }, { id: "strata.workspaces" }],
-        center: [{ id: "strata.clock", format: "dddd HH:mm" }],
+        left: [{ id: "strata.menu" }, { id: "strata.system-update" }, { id: "strata.workspaces" }],
+        center: [{ id: "strata.clock", format: "d MMM 'W'ww HH:mm:ss" }],
         right: [{ id: "strata.audio" }]
       }
     },
@@ -169,6 +169,7 @@ ShellRoot {
   // Exposed as a property so child plugins (notifications, future panels)
   // can read barSize/barHidden/position to anchor relative to the active bar.
   readonly property string defaultBarId: "strata.bar"
+  readonly property bool barEnabled: !shell.barConfig || shell.barConfig.enabled !== false
   readonly property string selectedBarId: {
     var config = shell.barConfig
     if (Util.isPlainObject(config)) {
@@ -182,12 +183,12 @@ ShellRoot {
     var revision = shell.pluginRegistry.registryRevision
     return shell.barOptionAvailable(shell.selectedBarId)
   }
-  readonly property string activeBarId: selectedBarId !== failedBarId && selectedBarAvailable ? selectedBarId : defaultBarId
+  readonly property string activeBarId: !barEnabled ? "" : (selectedBarId !== failedBarId && selectedBarAvailable ? selectedBarId : defaultBarId)
   readonly property var activeBarManifest: {
     var revision = shell.pluginRegistry.registryRevision
     return shell.barManifestFor(shell.activeBarId)
   }
-  readonly property string activeBarSourceUrl: activeBarId === defaultBarId ? "" : shell.pluginRegistry.entryPointUrl(activeBarManifest, "bar")
+  readonly property string activeBarSourceUrl: !activeBarId || activeBarId === defaultBarId ? "" : shell.pluginRegistry.entryPointUrl(activeBarManifest, "bar")
   property var bar: null
 
   onSelectedBarIdChanged: if (failedBarId !== "") failedBarId = ""
@@ -367,11 +368,13 @@ ShellRoot {
 
   function pluginCloneMaySummon(manifest, requestedId) {
     var metadata = manifest && Util.isPlainObject(manifest.strata) ? manifest.strata : null
-    var sourceId = metadata ? String(metadata.clonedFrom || "") : ""
+    var sourceId = metadata ? String(metadata.clonedFrom || "") : String(manifest && manifest.id || "")
     var allowed = {
       "strata.audio": ["strata.osd"],
       "strata.media": ["strata.osd"],
-      "strata.monitor": ["strata.osd"]
+      "strata.monitor": ["strata.osd"],
+      "strata.keyboard-osd": ["strata.osd"],
+      "strata.network": ["strata.speedtest", "strata.wifiqr"]
     }
     var targets = allowed[sourceId] || []
     return targets.indexOf(String(requestedId || "")) !== -1
@@ -439,7 +442,7 @@ ShellRoot {
     if (_pluginBarStateApis[cacheKey]) return _pluginBarStateApis[cacheKey]
     var api = pluginBarStateApiComponent.createObject(null, { ownerPluginId: pluginId })
     if (!api) return null
-    api.barHidden = Qt.binding(function() { return shell.bar ? shell.bar.barHidden === true : false })
+    api.barHidden = Qt.binding(function() { return !shell.barEnabled || (shell.bar ? shell.bar.barHidden === true : false) })
     api.barSize = Qt.binding(function() { return shell.bar ? Math.max(0, shell.bar.barSize || 0) : 0 })
     api.fontFamily = Qt.binding(function() { return shell.bar ? String(shell.bar.fontFamily || "") : "" })
     api.position = Qt.binding(function() { return shell.bar ? String(shell.bar.position || "top") : "top" })
@@ -1660,6 +1663,36 @@ ShellRoot {
     }
   }
 
+  // Keep this IPC endpoint in the shell host.  The image-picker overlay can
+  // be hidden or reloaded while scripts are waiting for their selection file.
+  ShellIpc {
+    target: "image-selector"
+
+    function open(imageDirs: string, imageRowsB64: string, selectedImage: string,
+                  selectionFile: string, doneFile: string, showLabels: string,
+                  filterable: string): string {
+      var payload = JSON.stringify({
+        imageDirs: imageDirs,
+        imageRows: Util.decodeBase64(imageRowsB64),
+        selectedImage: selectedImage,
+        selectionFile: selectionFile,
+        doneFile: doneFile,
+        showLabels: showLabels,
+        filterable: filterable
+      })
+      return shell.summon("strata.image-picker", payload) ? "ok" : "unknown"
+    }
+
+    function preload(imageRowsB64: string, selectedImage: string,
+                     showLabels: string, filterable: string): string {
+      var loader = shell.panelLoaders["strata.image-picker"]
+      var picker = loader && loader.item ? loader.item : null
+      if (picker && typeof picker.preloadRows === "function")
+        picker.preloadRows(Util.decodeBase64(imageRowsB64), selectedImage, showLabels, filterable)
+      return "ok"
+    }
+  }
+
   ShellIpc {
     target: "shell"
 
@@ -1753,17 +1786,18 @@ ShellRoot {
         out.push({
           id: id,
           name: plugins[id].name,
+          version: String(plugins[id].version || ""),
+          description: String(plugins[id].description || ""),
           kinds: kinds,
-          // What `strata plugin enable/disable` toggles: for a widget that is
-          // its place in the bar, not whether its component is loadable.
+          // Widget-only plugins follow bar placement; mixed plugins also own
+          // a service or panel whose enabled state matters without a button.
           enabled: isBarOption ? active
-            : (isBarWidget ? shell.pluginRegistry.inBar(id) : shell.pluginRegistry.isEnabled(id)),
+            : (isBarWidget && kinds.length === 1
+              ? shell.pluginRegistry.inBar(id) && shell.pluginRegistry.isEnabled(id)
+              : shell.pluginRegistry.isEnabled(id)),
+          onBar: isBarWidget && shell.pluginRegistry.inBar(id),
           active: active,
-          // A bar has no off, only a successor: you leave one by enabling
-          // another, so there is nothing for disable to do to it. Said here so
-          // that a caller offering the verbs does not have to read kinds and
-          // work it out again.
-          canDisable: !isBarOption,
+          canDisable: true,
           firstParty: !!plugins[id].__isFirstParty,
           clonedFrom: clonedFrom
         })

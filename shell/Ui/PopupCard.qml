@@ -16,6 +16,9 @@ PopupWindow {
   property color borderColor: Color.popups.border
   property var borderSpec: Border.localOrSurfaceSpec("popups", "border", borderColor, Color.popups.border, Math.max(1, Style.space(2)))
   property bool open: false
+  property Item panelHeader: null
+  readonly property alias headerContainer: headerHolder
+  readonly property real headerHeight: panelHeader && panelHeader.visible ? panelHeader.implicitHeight : 0
   property bool centerOnBar: false
   // "click" — uses HyprlandFocusGrab so clicking outside dismisses the popup.
   // "hover" — passive overlay; the owning widget controls open via hover.
@@ -35,7 +38,7 @@ PopupWindow {
   readonly property real availableCardHeight: screenH > 0
     ? Math.max(120, screenH - ((bar && (bar.position === "top" || bar.position === "bottom")) ? barH : 0) - root.margin * 2)
     : 0
-  readonly property real verticalContentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec)
+  readonly property real verticalContentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec) + headerHeight
 
   function fittedContentWidth(width, cap) {
     var desired = Math.max(1, Number(width) || 1)
@@ -161,9 +164,20 @@ PopupWindow {
     }
 
     Item {
+      id: headerHolder
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.leftMargin: card.borderLeft
+      anchors.rightMargin: card.borderRight
+      anchors.topMargin: card.borderTop
+      height: root.headerHeight
+    }
+
+    Item {
       id: contentHolder
       anchors.fill: parent
-      anchors.topMargin: card.contentTopInset
+      anchors.topMargin: card.contentTopInset + root.headerHeight
       anchors.rightMargin: card.contentRightInset
       anchors.bottomMargin: card.contentBottomInset
       anchors.leftMargin: card.contentLeftInset

@@ -17,6 +17,12 @@ Item {
   // Fold into the window's binding: visible: <shown> && !guard.remapping
   property bool remapping: false
 
+  function remap() {
+    settleTimer.stop()
+    remapping = true
+    remapTimer.restart()
+  }
+
   visible: false
 
   // A layout reshuffle can move the monitor more than once before it lands.
@@ -24,12 +30,13 @@ Item {
   Timer {
     id: settleTimer
     interval: 200
-    onTriggered: root.remapping = true
+    onTriggered: root.remap()
   }
 
   // Hold the surface unmapped for a beat so the compositor processes the
   // unmap before the remap instead of coalescing them into a no-op.
   Timer {
+    id: remapTimer
     interval: 50
     running: root.remapping
     onTriggered: root.remapping = false

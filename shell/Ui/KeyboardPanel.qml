@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 
@@ -40,6 +41,17 @@ PanelWindow {
   required property Item anchorItem
   required property QtObject bar
   property var owner: null
+  // Menu-launched panels have no bar button to anchor to.
+  property bool standalone: false
+  property var standaloneScreen: null
+
+  function focusedScreen() {
+    var monitor = Hyprland.focusedMonitor
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      if (monitor && Quickshell.screens[i].name === monitor.name) return Quickshell.screens[i]
+    }
+    return Quickshell.screens.length ? Quickshell.screens[0] : null
+  }
   property int margin: Style.gapsOut
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
@@ -47,6 +59,22 @@ PanelWindow {
   property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
   property bool centerOnBar: false
   property bool open: false
+  property Item panelHeader: null
+  property bool autoDockHeaders: true
+  property Item automaticHeaderSource: null
+  readonly property Item effectivePanelHeader: panelHeader || automaticHeaderLoader.item
+  readonly property alias headerContainer: headerHolder
+  readonly property real headerHeight: effectivePanelHeader && effectivePanelHeader.visible ? effectivePanelHeader.implicitHeight : 0
+
+  function registerAutomaticHeader(hero) {
+    if (!autoDockHeaders || panelHeader || (automaticHeaderSource && automaticHeaderSource !== hero)) return false
+    automaticHeaderSource = hero
+    return true
+  }
+
+  function releaseAutomaticHeader(hero) {
+    if (automaticHeaderSource === hero) automaticHeaderSource = null
+  }
   property int gap: Style.gapsOut  // distance between bar edge and panel
   property bool popoutSwitching: false
   property bool popoutSwitchClosing: false
@@ -77,8 +105,24 @@ PanelWindow {
 
   // --- screen + lifetime ---------------------------------------------------
 
-  screen: anchorWindow ? anchorWindow.screen : null
-  visible: open || card.opacity > 0 || popoutSwitching
+  readonly property var targetScreen: standalone ? standaloneScreen : (anchorWindow ? anchorWindow.screen : null)
+  Connections {
+    target: Quickshell
+    function onScreensChanged() {
+      if (root.standalone && Quickshell.screens.indexOf(root.standaloneScreen) === -1)
+        root.standaloneScreen = root.focusedScreen()
+    }
+  }
+  screen: targetScreen
+  visible: (open || card.opacity > 0 || popoutSwitching) && !screenRemap.remapping
+  onTargetScreenChanged: Qt.callLater(function() { if (screenRemap) screenRemap.remap() })
+
+  // A mapped layer keeps its old output placement when the anchor changes
+  // screens or the monitor layout moves. Unmap before placing it again.
+  ScreenMoveRemap {
+    id: screenRemap
+    window: root
+  }
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
 
@@ -148,15 +192,17 @@ PanelWindow {
   }
   readonly property real anchorW: anchorItem ? anchorItem.width : 0
   readonly property real anchorH: anchorItem ? anchorItem.height : 0
-  readonly property real screenW: screen ? screen.width : 0
-  readonly property real screenH: screen ? screen.height : 0
+  // Bound the card by the actual configured surface during output changes,
+  // rather than mixing the new screen size with the old surface geometry.
+  readonly property real screenW: width > 0 ? width : (screen ? screen.width : 0)
+  readonly property real screenH: height > 0 ? height : (screen ? screen.height : 0)
   readonly property real availableCardWidth: screenW > 0
     ? Math.max(120, screenW - ((barPos === "left" || barPos === "right") ? barW + gap + margin : margin * 2))
     : 0
   readonly property real availableCardHeight: screenH > 0
     ? Math.max(120, screenH - ((barPos === "top" || barPos === "bottom") ? barH + gap + margin : margin * 2))
     : 0
-  readonly property real verticalContentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec)
+  readonly property real verticalContentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec) + headerHeight
 
   function fittedContentWidth(width, cap) {
     var desired = Math.max(1, Number(width) || 1)
@@ -192,6 +238,9 @@ PanelWindow {
   readonly property real barW: anchorWindow ? anchorWindow.width : screenW
   readonly property real barH: anchorWindow ? anchorWindow.height : 0
   readonly property point cardOrigin: {
+    if (standalone) return Qt.point(
+      Math.round(Math.max(margin, (screenW - contentWidth) / 2)),
+      Math.round(Math.max(margin, (screenH - contentHeight) / 2)))
     if (!anchorItem || !bar) return Qt.point(margin, margin)
     var x = 0, y = 0
     if (centerOnBar && (barPos === "top" || barPos === "bottom")) {
@@ -225,6 +274,7 @@ PanelWindow {
   // animation, which made ownership transfer to a sibling popup race.
   onOpenChanged: {
     if (open) {
+      if (standalone) standaloneScreen = focusedScreen()
       focusPrimed = false
       beginFocusPrime()
       if (focusTarget) Qt.callLater(function() {
@@ -401,9 +451,43 @@ PanelWindow {
     }
 
     Item {
+      id: headerHolder
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.leftMargin: card.borderLeft
+      anchors.rightMargin: card.borderRight
+      anchors.topMargin: card.borderTop
+      height: root.headerHeight
+
+      Loader {
+        id: automaticHeaderLoader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        active: root.autoDockHeaders && !root.panelHeader && root.automaticHeaderSource !== null
+        sourceComponent: Component {
+          PanelHero {
+            autoDock: false
+            readonly property var sourceHeader: root.automaticHeaderSource
+            title: sourceHeader ? sourceHeader.title : ""
+            meta: sourceHeader ? sourceHeader.meta : ""
+            detail: sourceHeader ? sourceHeader.detail : ""
+            foreground: sourceHeader ? sourceHeader.foreground : Color.popups.text
+            fontFamily: sourceHeader ? sourceHeader.fontFamily : Style.font.family
+            iconComponent: sourceHeader ? sourceHeader.iconComponent : null
+            iconSize: sourceHeader ? sourceHeader.iconSize : Style.font.display
+            iconOpacity: sourceHeader ? sourceHeader.iconOpacity : 1
+            metaOpacity: sourceHeader ? sourceHeader.metaOpacity : 1
+            trailingControl: sourceHeader ? sourceHeader.trailingControl : null
+          }
+        }
+      }
+    }
+
+    Item {
       id: contentHolder
       anchors.fill: parent
-      anchors.topMargin: card.contentTopInset
+      anchors.topMargin: card.contentTopInset + root.headerHeight
       anchors.rightMargin: card.contentRightInset
       anchors.bottomMargin: card.contentBottomInset
       anchors.leftMargin: card.contentLeftInset

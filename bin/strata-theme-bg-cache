@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
-# strata:summary=Cache background switcher thumbnails for the current theme
+# strata:summary=Warm theme and wallpaper previews for the theme picker
 
-theme_name=$(cat "$HOME/.local/state/strata/current/theme.name" 2>/dev/null)
-
-strata-menu-images \
-  --cache-only \
-  "$HOME/.local/state/strata/current/theme/backgrounds" \
-  "$HOME/.config/strata/backgrounds/$theme_name"
+picker=${STRATA_PATH:-/usr/share/strata}/shell/plugins/theme-picker
+"$picker/index.sh" >/dev/null || exit $?
+exec "$picker/thumbs.sh"

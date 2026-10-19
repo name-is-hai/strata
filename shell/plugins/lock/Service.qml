@@ -5,6 +5,7 @@ import Quickshell.Services.Pam
 import Quickshell.Wayland
 import qs.Commons
 import "FingerprintModel.js" as FingerprintModel
+import "ScreenSelection.js" as ScreenSelection
 
 Item {
   id: root
@@ -35,6 +36,8 @@ Item {
   property string enteredPassword: ""
   property string pendingPassword: ""
   property string failureMessage: ""
+  property string powerActionError: ""
+  property string pendingPowerAction: ""
   property int failedAttempts: 0
   property string backgroundPath: ""
   property string videoPosterPath: ""
@@ -44,11 +47,8 @@ Item {
   property string backgroundSignature: ""
   property string lastEvent: "init"
   property string lastEventAt: ""
-  property bool displaysBlank: false
-  // displaysBlank tracks what the lock asked for; Hyprland reports what each
-  // panel actually did. While a video is on show the two are reconciled, so a
-  // blank that failed keeps playing and a panel woken behind the lock's back
-  // (a resume that kept the same outputs) resumes instead of freezing.
+  // The idle service owns display-off policy, including while locked.
+  // Read actual DPMS state so video wallpapers pause only on blank displays.
   property var monitorDpms: ({})
   property bool monitorDpmsKnown: false
   readonly property bool videoBackground: Util.isVideoPath(backgroundPath)
@@ -57,7 +57,8 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
-  readonly property var batteryService: shell && shell.services ? shell.firstPartyServiceFor("strata.battery") : null
+  readonly property string formScreenName: ScreenSelection.formScreenName(Quickshell.screens || [])
+  readonly property var batteryService: shell && shell.services ? shell.firstPartyServiceFor("strata.power") : null
   readonly property bool powerSaverActive: batteryService ? batteryService.powerSaverOnBattery : false
   // A prompt clears the unavailable notice before the attempt finishes.
   readonly property bool fingerprintUnavailable: FingerprintModel.isUnavailable(fingerprintProbeStreak) || (fingerprintConfigured && (!fingerprintAttemptReachedDevice || fingerprintAttemptFastError) && FingerprintModel.isUnavailable(fingerprintUnreachedStreak))
@@ -203,8 +204,8 @@ Item {
     }
 
     resetAuthenticationState()
+    root.powerActionError = ""
     lockRequested = true
-    armBlankTimer()
     logEvent("lock-requested")
     queueSessionLock()
 
@@ -224,22 +225,25 @@ Item {
     sessionLockStabilizeTimer.stop()
     pendingSessionLockTimer.stop()
     resetAuthenticationState()
-    idleBlankTimer.stop()
     sessionLock.locked = false
     logEvent("unlocked")
     runWake()
   }
 
-  function armBlankTimer() {
-    idleBlankTimer.armedAt = Date.now()
-    idleBlankTimer.restart()
+  function runPowerAction(action) {
+    if (powerActionProcess.running) return
+    if (["suspend", "poweroff", "reboot"].indexOf(action) === -1) return
+    root.powerActionError = ""
+    root.pendingPowerAction = action
+    // loginctl manages sessions; power operations belong to systemctl.
+    // A locked session cannot answer an external authentication dialog.
+    powerActionProcess.command = ["systemctl", "--no-ask-password", action]
+    powerActionProcess.running = true
   }
 
   function runWake() {
-    root.displaysBlank = false
     root.monitorDpmsKnown = false
     if (!wakeProcess.running) wakeProcess.running = true
-    if (lockRequested) armBlankTimer()
     nudgeFingerprint()
   }
 
@@ -291,15 +295,9 @@ Item {
     armFingerprintRetry(FingerprintModel.MATCH_RETRY_MS)
   }
 
-  function runBlank() {
-    root.displaysBlank = true
-    root.monitorDpmsKnown = false
-    if (!blankProcess.running) blankProcess.running = true
-  }
-
   function screenBlank(screenName) {
     var name = String(screenName || "")
-    if (!monitorDpmsKnown || !(name in monitorDpms)) return displaysBlank
+    if (!monitorDpmsKnown || !(name in monitorDpms)) return false
     return !monitorDpms[name]
   }
 
@@ -479,8 +477,11 @@ Item {
         fingerprintUnavailable: root.fingerprintUnavailable
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
+        powerActionPending: powerActionProcess.running
+        powerActionError: root.powerActionError
         failedAttempts: root.failedAttempts
         inputEnabled: root.lockRequested
+        showForm: !!lockSurface.screen && lockSurface.screen.name === root.formScreenName
         loadBackground: root.locked
         displaysBlank: root.screenBlank(lockSurface.screen ? lockSurface.screen.name : "")
         powerSaverActive: root.powerSaverActive
@@ -489,6 +490,9 @@ Item {
         onSubmitPassword: function(password) { root.submitPassword(password) }
         onClearFailureRequested: root.failureMessage = ""
         onWakeRequested: root.runWake()
+        onSuspendRequested: root.runPowerAction("suspend")
+        onShutdownRequested: root.runPowerAction("poweroff")
+        onRebootRequested: root.runPowerAction("reboot")
       }
 
     }
@@ -698,13 +702,22 @@ Item {
   }
 
   Process {
-    id: blankProcess
-    command: ["bash", "-c", "strata-brightness-keyboard off; strata-brightness-display off"]
+    id: powerActionProcess
+    stderr: StdioCollector { id: powerActionStderr; waitForEnd: true }
+    onExited: function(code, exitStatus) {
+      if (code !== 0 || exitStatus !== 0) {
+        var label = root.pendingPowerAction === "suspend" ? "Sleep"
+          : root.pendingPowerAction === "poweroff" ? "Shutdown" : "Restart"
+        root.powerActionError = label + " failed. Unlock and try again."
+        root.logEvent("power-action-failed: " + root.pendingPowerAction)
+        console.warn("lock: " + root.pendingPowerAction + " failed: " + powerActionStderr.text.trim())
+      }
+    }
   }
 
   // Quickshell exposes no DPMS signal, so the panel state is polled while a
-  // video is the locked wallpaper. A wake or blank request drops the last
-  // answer, so its optimistic state applies until the next poll confirms it.
+  // video is the locked wallpaper. A wake request drops the last answer so
+  // the wallpaper resumes while the next poll confirms the display state.
   Process {
     id: monitorDpmsProcess
     command: ["hyprctl", "monitors", "-j"]
@@ -724,26 +737,6 @@ Item {
     }
     onRunningChanged: {
       if (!running) root.monitorDpmsKnown = false
-    }
-  }
-
-  Timer {
-    id: idleBlankTimer
-    interval: 5000
-    repeat: false
-    property double armedAt: 0
-    onTriggered: {
-      // A countdown frozen by suspend fires right after resume, which would
-      // blank the freshly woken unlock screen under the user. Wall-clock time
-      // exposes the gap: take a fresh run-up instead of blanking.
-      if (Date.now() - armedAt > interval + 2000) {
-        root.armBlankTimer()
-        return
-      }
-      // Only a password check in flight should hold the display up. The
-      // fingerprint PAM stays armed for the whole lock, so gating on
-      // `authenticating` here would keep the panel lit until unlock.
-      if (root.lockRequested && !root.authenticatingPassword) root.runBlank()
     }
   }
 
@@ -786,19 +779,13 @@ Item {
       // A panel coming back is a display turning on that runWake did not ask
       // for, so the blank state has to be given up here or a visible lock
       // wallpaper stays frozen until the next keypress.
-      root.displaysBlank = false
+      root.monitorDpmsKnown = false
       root.requestSessionLock()
 
       // A monitor still coming up has no workspace, so cannot answer yet.
       strandedLockRetryTimer.rearm()
       root.checkStrandedLock()
     }
-  }
-
-  onAuthenticatingPasswordChanged: {
-    if (!lockRequested) return
-    if (authenticatingPassword) idleBlankTimer.stop()
-    else armBlankTimer()
   }
 
   FileView {
@@ -832,7 +819,11 @@ Item {
 
     function lock(): string {
       if (!root.passwordPamConfigured) return "missing-pam"
-      if (!root.locked && !root.beginLock()) return "failed"
+      // WlSessionLock.secure can lag behind a successful unlock. It is useful
+      // for reporting the compositor's state, but must not suppress the next
+      // explicit lock request after the lock object itself has gone away.
+      if (root.lockRequested || sessionLock.locked) return "ok"
+      if (!root.beginLock()) return "failed"
       return "ok"
     }
 
@@ -848,6 +839,7 @@ Item {
         sessionLocked: sessionLock.locked,
         secure: sessionLock.secure,
         realScreens: root.realScreenCount(),
+        formScreen: root.formScreenName,
         passwordPam: root.passwordPamConfigured,
         fingerprint: root.fingerprintConfigured,
         fingerprintUnavailable: root.fingerprintUnavailable,

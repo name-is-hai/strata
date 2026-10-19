@@ -1,0 +1,22 @@
+[package]
+name = "waycast-stream"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gstreamer = { workspace = true }
+gstreamer-video = { workspace = true }
+gstreamer-rtp = { workspace = true }
+gstreamer-app = { workspace = true }
+gstreamer-audio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+waycast-capture = { path = "../capture" }
+libc = "0.2"
+# GSocket adopts reserved RTP/RTCP descriptors without releasing their ports.
+gio = "0.22"
+
+[dev-dependencies]
+waycast-rtsp = { path = "../rtsp" }

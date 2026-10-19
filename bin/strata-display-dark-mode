@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# strata:summary=Set the desktop light or dark appearance
+# strata:args=[dark|light|toggle]
+# strata:examples=strata display dark mode dark | strata display dark mode toggle
+
+SCHEMA="org.gnome.desktop.interface"
+
+usage() {
+  echo "Usage: strata-display-dark-mode [dark|light|toggle]"
+  echo "  (no args)  print the current appearance"
+}
+
+current_mode() {
+  local scheme theme
+  scheme="$(gsettings get "$SCHEMA" color-scheme 2>/dev/null || true)"
+  theme="$(gsettings get "$SCHEMA" gtk-theme 2>/dev/null || true)"
+  if [[ $scheme == *prefer-dark* || $theme == *-dark* ]]; then echo dark; else echo light; fi
+}
+
+set_mode() {
+  if [[ $1 == dark ]]; then
+    gsettings set "$SCHEMA" color-scheme "prefer-dark"
+    gsettings set "$SCHEMA" gtk-theme "Adwaita-dark"
+  else
+    gsettings set "$SCHEMA" color-scheme "prefer-light"
+    gsettings set "$SCHEMA" gtk-theme "Adwaita"
+  fi
+}
+
+case "${1:-}" in
+  "") current_mode ;;
+  dark|light) set_mode "$1" ;;
+  toggle) [[ $(current_mode) == dark ]] && set_mode light || set_mode dark ;;
+  -h|--help) usage ;;
+  *) usage >&2; exit 1 ;;
+esac

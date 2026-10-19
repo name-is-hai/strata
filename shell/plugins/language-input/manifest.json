@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.language-input",
+  "name": "Language & Input",
+  "version": "1.0.0",
+  "author": "Strata (adapted from Xarishark)",
+  "description": "Manage active Fcitx5 input methods",
+  "keepLoaded": true,
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Panel.qml" },
+  "barWidget": {
+    "displayName": "Language & Input",
+    "description": "Active input language and keyboard layout settings",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

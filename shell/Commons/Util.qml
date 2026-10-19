@@ -61,7 +61,7 @@ QtObject {
   // Run an argv vector without a shell interpreting it: the constant `exec "$@"`
   // means the args only ever land in positional parameters, which bash expands
   // without re-tokenizing — so untrusted data ($(id), a filename) stays literal.
-  // The login shell (-l) keeps the PATH/session env GUI targets (omasnap, mpv,
+  // The login shell (-l) keeps the PATH/session env GUI targets (strata-snip, mpv,
   // xdg-open) need. Prefer this over execDetached for anything built from input.
   function execArgv(argv) {
     Quickshell.execDetached(["bash", "-lc", 'exec "$@"', "bash"].concat(argv))
@@ -72,7 +72,13 @@ QtObject {
   }
 
   function canonicalWidgetId(id) {
-    return String(id || "")
+    var key = String(id || "")
+    // Notification history used to be a separate plugin. Keep existing bar
+    // layouts working after it was folded into the notification service.
+    if (key === "strata.notification-slideover") return "strata.notifications"
+    // Battery warnings and the battery/power widget share one lifecycle.
+    if (key === "strata.battery") return "strata.power"
+    return key
   }
 
   // Best-effort base64 decode. Returns "" on parse failure rather than

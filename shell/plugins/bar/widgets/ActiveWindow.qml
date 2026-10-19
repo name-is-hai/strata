@@ -21,6 +21,12 @@ BarWidget {
     NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic }
   }
 
+  BarLabelMetrics {
+    id: labelSizing
+    fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+    targetHeight: Math.min(Style.bar.labelSize, root.barSize)
+  }
+
   Item {
     anchors.fill: parent
     anchors.leftMargin: Style.space(8)
@@ -31,12 +37,15 @@ BarWidget {
       id: labelText
       textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenterOffset: height / 2 - baselineOffset - labelSizing.figureInk.y - labelSizing.figureInk.height / 2
       anchors.left: parent.left
       width: parent.width
       text: root.title
-      color: root.bar ? root.bar.barForeground : Color.foreground
+      color: root.bar && typeof root.bar.foregroundForItem === "function"
+        ? root.bar.foregroundForItem(root) : (root.bar ? root.bar.barForeground : Color.foreground)
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.body
+      font.pixelSize: labelSizing.pixelSize
+      renderType: Text.NativeRendering
       elide: Text.ElideRight
       opacity: 0.85
     }

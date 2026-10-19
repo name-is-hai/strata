@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.mouse",
+  "name": "Mouse",
+  "version": "1.0.0",
+  "author": "Strata",
+  "description": "Pointer speed, scrolling, acceleration, and mouse buttons",
+  "kinds": ["service", "bar-widget"],
+  "entryPoints": {"barWidget": "Panel.qml", "service": "Service.qml"},
+  "barWidget": {
+    "displayName": "Mouse",
+    "description": "Mouse and pointer controls",
+    "category": "System",
+    "aliases": ["mouse", "pointer", "scroll", "sensitivity"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

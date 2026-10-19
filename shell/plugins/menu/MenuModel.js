@@ -1,7 +1,45 @@
 function stripJsonc(raw) {
-  return String(raw || "")
-    .replace(/^\s*\/\/[^\n]*(\n|$)/gm, "")
-    .replace(/,(\s*[}\]])/g, "$1")
+  var input = String(raw || "")
+  var output = "", quoted = false, escaped = false, line = false, block = false
+  for (var i = 0; i < input.length; i++) {
+    var c = input.charAt(i), next = input.charAt(i + 1)
+    if (line) {
+      if (c === "\n" || c === "\r") { line = false; output += c }
+      continue
+    }
+    if (block) {
+      if (c === "*" && next === "/") { block = false; i++ }
+      else if (c === "\n" || c === "\r") output += c
+      continue
+    }
+    if (quoted) {
+      output += c
+      if (escaped) escaped = false
+      else if (c === "\\") escaped = true
+      else if (c === '"') quoted = false
+      continue
+    }
+    if (c === '"') quoted = true
+    else if (c === "/" && next === "/") { line = true; output += " "; i++; continue }
+    else if (c === "/" && next === "*") { block = true; output += " "; i++; continue }
+    output += c
+  }
+  if (block) return ""
+  var result = ""
+  quoted = false; escaped = false
+  for (var j = 0; j < output.length; j++) {
+    var value = output.charAt(j)
+    if (!quoted && value === ",") {
+      var k = j + 1
+      while (/\s/.test(output.charAt(k)) && k < output.length) k++
+      if (output.charAt(k) === "}" || output.charAt(k) === "]") continue
+    }
+    result += value
+    if (quoted && escaped) escaped = false
+    else if (quoted && value === "\\") escaped = true
+    else if (value === '"') quoted = !quoted
+  }
+  return result
 }
 
 function normalizeAliases(value) {
@@ -31,6 +69,7 @@ function normalizeItem(id, raw) {
     target: value.target || "",
     description: value.description || "",
     action: value.action || "",
+    plugin: value.plugin === undefined ? String((pluginAction(value.action) || {}).id || "") : String(value.plugin || ""),
     provider: value.provider || "",
     aliases: aliases,
     when: value.when || "",
@@ -58,7 +97,9 @@ function parseMenuJsonc(raw) {
   for (var id in source) {
     var entry = source[id]
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
-    out.push(normalizeItem(id, entry))
+    var normalized = normalizeItem(id, entry)
+    normalized.__fields = Object.keys(entry)
+    out.push(normalized)
   }
   return out
 }
@@ -77,9 +118,16 @@ function mergeMenuSources(defaultItems, userItems) {
       var prior = nextItems[entry.id] || {}
       var merged = {}
       for (var k in prior) merged[k] = prior[k]
-      for (var k2 in entry) merged[k2] = entry[k2]
-      merged.id = entry.id
-      nextItems[entry.id] = merged
+      // Only explicitly supplied fields override an existing row. Inferred
+      // empty defaults must not erase its label, icon, guards or aliases.
+      var fields = entry.__fields || Object.keys(entry)
+      for (var f = 0; f < fields.length; f++) {
+        var key = fields[f]
+        if (key !== "__fields") merged[key] = entry[key]
+      }
+      if (fields.indexOf("action") !== -1 && fields.indexOf("plugin") === -1)
+        merged.plugin = String((pluginAction(merged.action) || {}).id || "")
+      nextItems[entry.id] = normalizeItem(entry.id, merged)
     }
   }
 
@@ -252,8 +300,9 @@ function childCount(items, itemOrder, id) {
   return count
 }
 
-function isVisible(items, itemOrder, whenResults, entry, depth) {
+function isVisible(items, itemOrder, whenResults, entry, depth, pluginEnabled) {
   if (!entry) return false
+  if (entry.plugin && pluginEnabled && !pluginEnabled(entry.plugin)) return false
   if (entry.when && whenResults && whenResults[entry.id] === false) return false
   if (entry.kind !== "menu" && entry.kind !== "link") return true
   if (entry.provider) return true
@@ -265,7 +314,7 @@ function isVisible(items, itemOrder, whenResults, entry, depth) {
   var order = Array.isArray(itemOrder) ? itemOrder : []
   for (var i = 0; i < order.length; i++) {
     var child = item(items, order[i])
-    if (child && child.parent === target && isVisible(items, itemOrder, whenResults, child, guard + 1)) return true
+    if (child && child.parent === target && isVisible(items, itemOrder, whenResults, child, guard + 1, pluginEnabled)) return true
   }
 
   return false
@@ -275,6 +324,7 @@ function isVisible(items, itemOrder, whenResults, entry, depth) {
 // Install submenus use it so software already on the machine reads as
 // installed rather than disappearing from the list it was installed from.
 function isDisabled(disabledResults, entry) {
+  if (entry && entry.unavailable === true) return true
   if (!entry || !entry.disabled) return false
   return !!(disabledResults && disabledResults[entry.id])
 }
@@ -384,6 +434,136 @@ function displayRow(items, itemOrder, checkedResults, disabledResults, entry, de
   }
 }
 
+// Keep arithmetic local and deliberately small: a launcher query must never
+// be evaluated as JavaScript or passed to a shell. An initial '=' opts in.
+function calculate(query) {
+  var input = String(query || "").trim()
+  if (input.charAt(0) !== "=") return null
+  var expression = input.slice(1).replace(/\s+/g, "")
+  if (!expression || !/^[0-9.+*/()%\-]+$/.test(expression)) return null
+  var pos = 0
+  function number() {
+    var start = pos
+    while (/[0-9.]/.test(expression.charAt(pos)) && pos < expression.length) pos++
+    if (start === pos) throw new Error("number expected")
+    var raw = expression.slice(start, pos)
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) throw new Error("invalid number")
+    return Number(raw)
+  }
+  function factor() {
+    if (expression.charAt(pos) === "+") { pos++; return factor() }
+    if (expression.charAt(pos) === "-") { pos++; return -factor() }
+    if (expression.charAt(pos) === "(") {
+      pos++
+      var value = sum()
+      if (expression.charAt(pos) !== ")") throw new Error("missing parenthesis")
+      pos++
+      return value
+    }
+    return number()
+  }
+  function product() {
+    var value = factor()
+    while (pos < expression.length) {
+      var op = expression.charAt(pos)
+      if (op !== "*" && op !== "/" && op !== "%") break
+      pos++
+      var right = factor()
+      value = op === "*" ? value * right : op === "/" ? value / right : value % right
+    }
+    return value
+  }
+  function sum() {
+    var value = product()
+    while (pos < expression.length) {
+      var op = expression.charAt(pos)
+      if (op !== "+" && op !== "-") break
+      pos++
+      var right = product()
+      value = op === "+" ? value + right : value - right
+    }
+    return value
+  }
+  try {
+    var answer = sum()
+    if (pos !== expression.length || !Number.isFinite(answer)) return null
+    return String(Number(answer.toPrecision(12)))
+  } catch (e) { return null }
+}
+
+function windowMatches(clients, query) {
+  var needle = String(query || "").trim().toLowerCase()
+  if (!needle || !Array.isArray(clients)) return []
+  var rows = []
+  for (var i = 0; i < clients.length; i++) {
+    var client = clients[i]
+    if (!client || client.mapped === false || client.hidden === true) continue
+    if (!client.workspace || Number(client.workspace.id) <= 0) continue
+    var address = String(client.address || "").toLowerCase()
+    if (!/^0x[0-9a-f]+$/.test(address)) continue
+    var title = String(client.title || "")
+    var app = String(client.class || client.initialClass || "Application")
+    if ((title + " " + app).toLowerCase().indexOf(needle) < 0) continue
+    var history = Number(client.focusHistoryID)
+    rows.push({address: address, title: title || app, app: app,
+      history: Number.isFinite(history) && history >= 0 ? history : 2147483647})
+  }
+  rows.sort(function(a, b) { return a.history - b.history })
+  return rows.slice(0, 8)
+}
+
+function launcherPrefix(query) {
+  var text = String(query || "").trim()
+  if (text.charAt(0) === "~") return { kind: "files", text: text.slice(1).trim() }
+  if (/^cb(?:\s|$)/i.test(text)) return { kind: "clipboard", text: text.slice(2).trim() }
+  var web = /^(g|dd|yt|wiki)\s+(.+)$/i.exec(text)
+  if (web) return { kind: "web", engine: web[1].toLowerCase(), text: web[2].trim() }
+  return { kind: "all", text: text }
+}
+
+function launcherGroup(entry) {
+  if (!entry) return "Commands"
+  if (entry.kind === "app") return "Apps"
+  if (entry.id === "setup" || String(entry.id || "").indexOf("setup.") === 0) return "Settings"
+  if (entry.kind === "menu" || entry.kind === "link") return "Browse"
+  return "Commands"
+}
+
+function webSearch(query) {
+  var prefix = launcherPrefix(query)
+  if (prefix.kind !== "web" || !prefix.text) return null
+  var engines = {
+    g: { label: "Google", url: "https://www.google.com/search?q=" },
+    dd: { label: "DuckDuckGo", url: "https://duckduckgo.com/?q=" },
+    yt: { label: "YouTube", url: "https://www.youtube.com/results?search_query=" },
+    wiki: { label: "Wikipedia", url: "https://en.wikipedia.org/w/index.php?search=" }
+  }
+  var engine = engines[prefix.engine]
+  return engine ? { label: "Search " + engine.label + " for “" + prefix.text + "”",
+    detail: engine.label + " · Open in browser", url: engine.url + encodeURIComponent(prefix.text) } : null
+}
+
+function clipboardMatches(raw, query) {
+  var history
+  try { history = JSON.parse(String(raw || "[]")) } catch (e) { return [] }
+  if (!Array.isArray(history)) return []
+  var needle = String(query || "").trim().toLowerCase()
+  var rows = []
+  for (var i = 0; i < history.length && rows.length < 20; i++) {
+    var entry = history[i]
+    if (!entry || typeof entry !== "object") continue
+    if (entry.type === "text") {
+      var value = String(entry.text || "").replace(/\s+/g, " ").trim()
+      if (!value || (needle && value.toLowerCase().indexOf(needle) < 0)) continue
+      rows.push({ index: i, label: value.slice(0, 100), detail: "Clipboard text", type: "text" })
+    } else if (entry.type === "image" && !needle && entry.path) {
+      rows.push({ index: i, label: "Image", detail: String(entry.capturedAt || "Clipboard image"),
+        type: "image", path: String(entry.path), mime: String(entry.mime || "image/png") })
+    }
+  }
+  return rows
+}
+
 // Commands a `checked:` expression reads a value out of. Every sibling row
 // asks the same one -- Defaults > Browser has seven rows all comparing
 // against `strata-default-browser` -- so the batch runs it once and the rows
@@ -482,13 +662,52 @@ function guardScript(items) {
 // bare call, such as a second command or a shell-expanded payload, is left to
 // bash.
 function summonAction(action) {
-  var match = /^strata-shell shell summon ([A-Za-z0-9._-]+)(?: '([^']*)')?$/.exec(String(action || ""))
+  var launch = pluginAction(action)
+  return launch && launch.method === "summon" ? {id:launch.id, payload:launch.payload} : null
+}
+
+function pluginAction(action) {
+  var match = /^strata-shell shell (summon|toggle) ([A-Za-z0-9._-]+)(?: '([^']*)')?$/.exec(String(action || ""))
   if (!match) return null
-  return { id: match[1], payload: match[2] || "{}" }
+  return { method:match[1], id:match[2], payload:match[3] || "{}" }
+}
+
+// Toggle changes keep their delegates and scroll position. A different result
+// set gets one model reset: moving old search delegates through intermediate
+// row/section layouts can leave Qt's item-view geometry out of sync.
+function syncDisplayRows(model, rows) {
+  var structural = model.count !== rows.length
+  if (!structural) {
+    for (var i = 0; i < rows.length; i++) {
+      var current = model.get(i)
+      if (current.itemId !== rows[i].itemId || current.section !== rows[i].section) {
+        structural = true
+        break
+      }
+    }
+  }
+  if (structural) {
+    model.clear()
+    for (var j = 0; j < rows.length; j++) model.append(rows[j])
+    return {changed:true, structural:true}
+  }
+  var changed = false
+  for (var k = 0; k < rows.length; k++) {
+    var existing = model.get(k)
+    for (var key in rows[k]) {
+      if (existing[key] !== rows[k][key]) {
+        model.setProperty(k, key, rows[k][key])
+        changed = true
+      }
+    }
+  }
+  return {changed:changed, structural:false}
 }
 
 if (typeof module !== "undefined") {
   module.exports = {
+    pluginAction: pluginAction,
+    syncDisplayRows: syncDisplayRows,
     summonAction: summonAction,
     guardReaders: GUARD_READERS,
     guardScript: guardScript,

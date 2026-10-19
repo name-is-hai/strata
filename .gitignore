@@ -7,3 +7,5 @@ SRPMS/
 results/
 build-output/
 **/target/
+__pycache__/
+*.py[cod]

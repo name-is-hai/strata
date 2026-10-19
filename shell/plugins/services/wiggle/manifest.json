@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.wiggle",
+  "name": "Cursor locator",
+  "version": "1.1.1",
+  "author": "sanjyay / Strata",
+  "license": "MIT",
+  "description": "Shake the mouse or wiggle one finger on the touchpad to enlarge the cursor.",
+  "kinds": ["service"],
+  "entryPoints": {"service": "Service.qml"},
+  "keepLoaded": true
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.privacy",
+  "name": "Privacy monitoring",
+  "version": "1.0.0",
+  "author": "Strata",
+  "description": "Camera, microphone and screen capture activity from device access and PipeWire metadata",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

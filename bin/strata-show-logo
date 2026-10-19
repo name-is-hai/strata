@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 
-# strata:summary=Display the Strata logo in the terminal using green color.
+# strata:summary=Display the Fedora mark in the terminal's theme colors.
 
 clear
-echo -e "\033[32m"
-cat <$STRATA_PATH/logo.txt
-echo -e "\033[0m"
-echo
+printf '\033[0m\n  \uf30a  Fedora\n\n'

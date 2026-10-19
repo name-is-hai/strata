@@ -30,4 +30,30 @@ hl.window_rule({
     pin = true,
 })
 
+-- The recording preview is a borderless video surface, not a tiled player.
+hl.window_rule({
+    name = "strata-webcam-overlay",
+    match = { class = "^WebcamOverlay-(small|medium|large)$", title = "^WebcamOverlay$" },
+    float = true,
+    pin = true,
+    no_focus = true,
+})
+
+-- Theme installation and other Strata presentation commands launch Ghostty
+-- with this app ID. Keep that short-lived workflow out of the tiling layout.
+hl.window_rule({
+    name = "strata-presentation-terminal",
+    -- Hyprland matches PCRE-style regular expressions here, not Lua patterns.
+    match = { class = "^org[.]strata[.]terminal$" },
+    float = true,
+    center = true,
+})
+
+hl.window_rule({
+    name = "strata-shortcut-guide-settings",
+    match = { title = "^Strata Shortcut Guide$" },
+    float = true,
+    center = true,
+})
+
 return true

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# strata:summary=Install, list or remove Chromium web apps
+# strata:args=install [name url [icon-name]] | batch [file|-] | remove [id] | list
+set -euo pipefail
+
+data_dir=${XDG_DATA_HOME:-$HOME/.local/share}
+app_dir=$data_dir/applications
+state_dir=$data_dir/strata/webapps
+icon_dir=$data_dir/icons/hicolor/256x256/apps
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+trim() { local value=$1; value=${value#"${value%%[![:space:]]*}"}; printf '%s' "${value%"${value##*[![:space:]]}"}"; }
+normalize_url() {
+  local url=$1
+  [[ $url =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] || url="https://$url"
+  [[ ! $url =~ [[:space:][:cntrl:]] && ${url,,} =~ ^https?://[^/?#]+ ]] || return 1
+  printf '%s' "$url"
+}
+desktop_string() {
+  local value=$1
+  value=${value//\\/\\\\}
+  [[ $value == ' '* ]] && value="\\s${value# }"
+  printf '%s' "$value"
+}
+refresh() { update-desktop-database "$app_dir" >/dev/null 2>&1 || true; }
+install_app() {
+  local name=$1 url=$2 icon=${3:-} id tmp
+  [[ -n $name && ! $name =~ [[:cntrl:]] ]] || { printf 'Enter a name without control characters.\n' >&2; return 1; }
+  url=$(normalize_url "$url") || { printf 'Use an http:// or https:// website URL without spaces.\n' >&2; return 1; }
+  id=$(printf '%s' "$url" | sha256sum)
+  id=strata-webapp-${id:0:20}
+  if [[ -e $app_dir/$id.desktop ]] && ! grep -q '^X-Strata-WebApp=true$' "$app_dir/$id.desktop"; then
+    printf 'An unrelated launcher already uses %s.\n' "$id" >&2; return 1
+  fi
+  [[ -z $icon || $icon =~ ^[a-zA-Z0-9._-]+$ ]] || { printf 'Use an icon theme name.\n' >&2; return 1; }
+  mkdir -p "$app_dir" "$state_dir" "$icon_dir"
+  tmp=$(mktemp -d "$state_dir/.install.XXXXXX")
+  if [[ -z $icon ]]; then
+    icon=$(strata-webapp-icon "$url" "$icon_dir/$id") || icon=applications-internet
+  fi
+  jq -n --arg name "$name" --arg url "$url" '{name:$name,url:$url}' > "$tmp/app.json"
+  {
+    printf '[Desktop Entry]\nVersion=1.0\nType=Application\n'
+    printf 'Name=%s\n' "$(desktop_string "$name")"
+    printf 'Exec=strata-launch-webapp %s\n' "$id"
+    printf 'Icon=%s\n' "$(desktop_string "$icon")"
+    printf 'Terminal=false\nCategories=Network;\nStartupNotify=true\nX-Strata-WebApp=true\n'
+  } > "$tmp/app.desktop"
+  install -m0644 "$tmp/app.json" "$state_dir/$id.json"
+  mv -f "$tmp/app.desktop" "$app_dir/$id.desktop"
+  rm -rf -- "$tmp"
+  refresh
+  printf 'Installed %s\n' "$name"
+}
+list_apps() {
+  local path id name
+  shopt -s nullglob
+  for path in "$state_dir"/strata-webapp-*.json; do
+    id=${path##*/}; id=${id%.json}
+    [[ -f $app_dir/$id.desktop ]] || continue
+    name=$(jq -r '.name' "$path")
+    printf '%s\t%s\n' "$name" "$id"
+  done
+}
+case ${1:---help} in
+  install)
+    shift
+    if (( $# >= 2 )); then install_app "$@"; exit; fi
+    (( $# == 0 )) || fail 'Usage: strata-webapp install [name url [icon-name]]'
+    while true; do
+      name=$(gum input --header 'Install web app' --placeholder 'App name') || exit 130
+      url=$(gum input --header 'Website' --placeholder 'https://example.com') || exit 130
+      install_app "$(trim "$name")" "$(trim "$url")" || exit 1
+      gum confirm 'Add another web app?' || break
+    done
+    ;;
+  batch)
+    batch_file=${2:-}
+    if [[ -z $batch_file ]]; then
+      entries=$(gum write --header 'One website per line, or Name | https://example.com' --placeholder $'https://example.com\nMy app | https://example.org' --height 10) || exit 130
+    elif [[ $batch_file == - ]]; then entries=$(cat)
+    else entries=$(cat -- "$batch_file"); fi
+    names=(); urls=()
+    while IFS= read -r line || [[ -n $line ]]; do
+      line=$(trim "$line")
+      [[ -n $line ]] || continue
+      if [[ $line == *'|'* ]]; then
+        name=$(trim "${line%%|*}"); url=$(trim "${line#*|}")
+      else
+        url=$line; name=${url#*://}; name=${name%%[/?#]*}; name=${name#www.}
+      fi
+      url=$(normalize_url "$url") || fail "Invalid website: $line"
+      [[ -n $name && ! $name =~ [[:cntrl:]] ]] || fail "Invalid app name: $line"
+      names+=("$name"); urls+=("$url")
+    done <<< "$entries"
+    (( ${#urls[@]} )) || fail 'No websites entered.'
+    for i in "${!urls[@]}"; do install_app "${names[$i]}" "${urls[$i]}"; done
+    ;;
+  remove)
+    id=${2:-}
+    if [[ -z $id ]]; then
+      options=()
+      while IFS=$'\t' read -r name entry; do options+=($'󰖟\t'"$name"$'\t'"$entry"); done < <(list_apps)
+      (( ${#options[@]} )) || { printf 'No web apps installed.\n'; exit 0; }
+      choice=$(strata-menu-select 'Remove web app' "${options[@]}") || exit 130
+      id=${choice##*$'\t'}
+    fi
+    [[ $id =~ ^strata-webapp-[a-f0-9]{20}$ && -f $state_dir/$id.json && -f $app_dir/$id.desktop ]] || fail 'Web app not found.'
+    grep -q '^X-Strata-WebApp=true$' "$app_dir/$id.desktop" || fail 'This launcher is not managed by Strata.'
+    name=$(jq -r '.name' "$state_dir/$id.json")
+    rm -f -- "$app_dir/$id.desktop" "$state_dir/$id.json" "$icon_dir/$id.png" "$icon_dir/$id.jpg" "$icon_dir/$id.ico" "$icon_dir/$id.svg" "$icon_dir/$id.webp"
+    refresh
+    printf 'Removed %s\n' "$name"
+    ;;
+  list) list_apps ;;
+  -h|--help|help)
+    printf 'Usage: strata-webapp install [name url [icon-name]]\n       strata-webapp batch [file|-]\n       strata-webapp remove [id]\n       strata-webapp list\n\nBatch input: one URL per line, optionally Name | URL.\n'
+    ;;
+  *) fail 'Unknown command. Use strata-webapp --help.' ;;
+esac

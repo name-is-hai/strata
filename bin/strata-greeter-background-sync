@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Synchronize the active desktop wallpaper to the system-owned greeter.
+set -euo pipefail
+
+state_home=${XDG_STATE_HOME:-$HOME/.local/state}
+background=${1:-"$state_home/strata/current/background"}
+destination=/usr/share/strata/greeter/background.jpg
+source_hash_file=/usr/share/strata/greeter/background.sha256
+
+background=$(readlink -f -- "$background")
+[[ -f $background ]] || { echo "Active background does not exist: $background" >&2; exit 66; }
+
+# The greeter copy is blurred, so compare the original wallpaper's hash rather
+# than comparing its bytes with the processed JPEG.
+source_hash=$(sha256sum -- "$background")
+source_hash=${source_hash%% *}
+if [[ -r $destination && -r $source_hash_file ]] &&
+   [[ $(<"$source_hash_file") == "$source_hash" ]]; then
+  exit 0
+fi
+
+pkexec /usr/bin/strata-greeter-background-install "$background"

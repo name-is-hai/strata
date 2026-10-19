@@ -20,6 +20,10 @@ fi
 # Create symlink to the new background media
 ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
 
+# The greeter runs as a separate user, so publish its readable copy before
+# handing the new wallpaper to the live shell.
+strata-greeter-background-sync "$BACKGROUND"
+
 # Update the live shell background immediately when it is running. The
 # background plugin also polls this symlink, but IPC avoids the visible delay.
 strata-shell -q background set "$BACKGROUND"

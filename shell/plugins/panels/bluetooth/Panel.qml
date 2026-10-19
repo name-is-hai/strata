@@ -22,6 +22,13 @@ Panel {
   property var pendingActions: ({})
 
   readonly property var adapter: Bluetooth.defaultAdapter
+  // Bluetooth Plus compatibility: leave this empty in shell.json to hide the
+  // gear.  The default follows the upstream plugin and opens Blueman when it
+  // is installed.
+  readonly property string settingsCommand: {
+    if (!settings || settings.settingsCommand === undefined) return "blueman-manager"
+    return String(settings.settingsCommand).trim()
+  }
 
   // True while this instance owes BlueZ a StopDiscovery: set when it starts
   // discovery (or opens onto a session already running) and cleared once
@@ -637,6 +644,12 @@ Panel {
     Quickshell.execDetached(["strata-bluetooth-power", adapter.enabled ? "off" : "on"])
   }
 
+  function openSettings() {
+    if (!settingsCommand) return
+    close()
+    Util.execDetached(settingsCommand)
+  }
+
   ShellIpc {
     target: "strata.bluetooth"
 
@@ -646,6 +659,7 @@ Panel {
     function hide() { root.close() }
     function toggle() { root.toggle() }
     function toggleBluetooth() { root.toggleBluetooth() }
+    function openSettings() { root.openSettings() }
   }
 
   BarIconButton {
@@ -661,6 +675,7 @@ Panel {
 
   KeyboardPanel {
     id: panel
+    panelHeader: panelTitleHeader
     anchorItem: button
     owner: root
     bar: root.bar
@@ -683,6 +698,7 @@ Panel {
       onDeleteRequested: if (root.cursorActive) root.deleteSelected()
       onTextKey: function(t) {
         if (t === "b" || t === "B") root.toggleBluetooth()
+        else if (t === "s" || t === "S") root.openSettings()
       }
 
       Column {
@@ -691,22 +707,13 @@ Panel {
         spacing: Style.space(14)
 
         // ---------- Hero: Bluetooth icon · status ----------
-        Item {
+        PanelHeaderSurface {
+          id: panelTitleHeader
+          parent: panel.headerContainer
           width: parent.width
-          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, powerSwitch.implicitHeight)
+          headerForeground: root.bar.foreground
+          implicitHeight: Style.space(58)
 
-          // Status only — the switch owns toggling, mouse and keyboard alike.
-          Text {
-            id: heroIcon
-            textFormat: Text.PlainText
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.icon
-            color: root.bar.foreground
-            font.family: root.bar.fontFamily
-            font.pixelSize: Style.font.display
-            opacity: root.adapter && root.adapter.enabled ? 1.0 : 0.5
-          }
 
           // Compact on/off switch on the trailing edge of the hero, and the
           // header's only cursor target.
@@ -717,6 +724,7 @@ Panel {
             hasCursor: root.headerHasCursor
             foreground: root.bar.foreground
             anchors.right: parent.right
+            anchors.rightMargin: Style.space(12)
             anchors.verticalCenter: parent.verticalCenter
             onHovered: function(on) { if (on) root.setHeaderCursor() }
             onToggled: root.toggleBluetooth()
@@ -728,12 +736,27 @@ Panel {
             }
           }
 
+          // Bluetooth Plus: a compact gear immediately beside the switch.
+          PanelActionButton {
+            id: settingsBtn
+            visible: root.settingsCommand !== ""
+            anchors.right: powerSwitch.visible ? powerSwitch.left : parent.right
+            anchors.rightMargin: powerSwitch.visible ? Style.space(10) : 0
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "󰒓"
+            tooltipText: "Bluetooth settings (s)"
+            foreground: root.bar.foreground
+            hoverColor: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            onClicked: root.openSettings()
+          }
+
           Column {
             id: heroLabels
-            anchors.left: heroIcon.right
-            anchors.leftMargin: Style.space(14)
-            anchors.right: parent.right
-            anchors.rightMargin: powerSwitch.visible ? powerSwitch.width + Style.space(12) : 0
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(16)
+            anchors.right: settingsBtn.visible ? settingsBtn.left : (powerSwitch.visible ? powerSwitch.left : parent.right)
+            anchors.rightMargin: settingsBtn.visible || powerSwitch.visible ? Style.space(12) : 0
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
@@ -741,7 +764,7 @@ Panel {
               text: "Bluetooth"
               color: root.bar.foreground
               font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.body
               font.bold: true
               elide: Text.ElideRight
               width: parent.width
@@ -750,12 +773,11 @@ Panel {
             Text {
               id: heroStatus
               textFormat: Text.PlainText
-              text: root.heroStatusText.toUpperCase()
-              color: Qt.darker(root.bar.foreground, 1.4)
+              text: root.heroStatusText
+              color: Util.alpha(root.bar.foreground, 0.6)
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.caption
-              font.bold: true
-              font.letterSpacing: 1.2
+
               elide: Text.ElideRight
               width: parent.width
             }
@@ -764,10 +786,6 @@ Panel {
 
         // Scrollable device list — capped so a noisy neighborhood doesn't
         // grow the popup past the screen.
-        PanelSeparator {
-          foreground: root.bar.foreground
-        }
-
         Column {
           id: connectedList
           visible: root.connectedDevices.length > 0
@@ -812,7 +830,7 @@ Panel {
           boundsBehavior: Flickable.StopAtBounds
           interactive: contentHeight > height
 
-          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+          ScrollBar.vertical: PanelScrollBar { policy: ScrollBar.AsNeeded }
 
           model: root.scrollRows
           currentIndex: root.scrollRowIndex
@@ -831,7 +849,7 @@ Panel {
             required property int index
             readonly property string sectionTitle: root.scrollSectionTitle(index)
 
-            width: ListView.view.width
+            width: Math.max(0, ListView.view.width - Style.space(16))
             height: delegateColumn.implicitHeight
 
             Column {
@@ -841,13 +859,11 @@ Panel {
 
               PanelSeparator {
                 visible: index > 0 && sectionTitle !== ""
-                height: visible ? implicitHeight : 0
                 foreground: root.bar.foreground
               }
 
               PanelSectionHeader {
                 visible: sectionTitle !== ""
-                height: visible ? implicitHeight : 0
                 text: sectionTitle
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily

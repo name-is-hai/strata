@@ -174,9 +174,10 @@ BarWidget {
           height: Style.bar.iconSlot
           text: modelData
           fontFamily: button.fontFamily
-          fontSize: modelData.length > 3
-            ? button.fontSize * 0.9
-            : button.fontSize
+          fontSize: button.fontSize
+          fitPaintedInk: true
+          targetPaintedHeight: Math.min(Style.bar.labelSize, height)
+          maximumPaintedWidth: width
           color: button.foreground
         }
       }

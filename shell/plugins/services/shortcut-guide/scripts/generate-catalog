@@ -1,0 +1,397 @@
+#!/usr/bin/env python3
+"""Generate the local Strata Shortcut Guide catalog and Lua lookup table."""
+import argparse
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+MODIFIERS = {"SHIFT": 1, "CTRL": 4, "CONTROL": 4, "ALT": 8, "SUPER": 64}
+CANONICAL = ("SUPER", "SHIFT", "CTRL", "ALT")
+ALIASES = {"COMMA": "COMMA", "PERIOD": "PERIOD", "MINUS": "MINUS", "EQUAL": "EQUAL", "SLASH": "SLASH"}
+MOUSE_RE = re.compile(r"^(?:mouse|mouse:)", re.I)
+DISPLAY_SYMBOLS = {
+    "RETURN": "ENTER", "ESCAPE": "ESC", "BACKSPACE": "BACKSPACE",
+    "SPACE": "SPACE", "TAB": "TAB", "MINUS": "-", "EQUAL": "=",
+    "PLUS": "+", "COMMA": ",", "PERIOD": ".", "SLASH": "/",
+    "SEMICOLON": ";", "APOSTROPHE": "'", "QUOTEDBL": '"',
+    "BRACKETLEFT": "[", "BRACKETRIGHT": "]", "BACKSLASH": "\\",
+    "GRAVE": "`", "UP": "UP", "DOWN": "DOWN", "LEFT": "LEFT",
+    "RIGHT": "RIGHT", "PRIOR": "PAGE UP", "NEXT": "PAGE DOWN",
+    "HOME": "HOME", "END": "END", "DELETE": "DELETE", "INSERT": "INSERT",
+}
+# Strata binds the dedicated Copilot key by its Linux input code. It is not a
+# normal XKB character key (the generic XKB alias looks like F23), so preserve
+# the physical key's real user-facing name.
+SPECIAL_CODE_LABELS = {201: "COPILOT"}
+COMMAND_TIMEOUT_SECONDS = 15
+
+
+def fail(code, message):
+    print(json.dumps({"ok": False, "code": code, "message": message}), file=sys.stderr)
+    raise SystemExit(1)
+
+
+def command_output(command, code):
+    try:
+        # Quickshell Process keeps its stdin pipe open. xkbcli treats a
+        # non-terminal stdin as keymap input and waits for EOF, so inheriting
+        # that pipe can leave first-start catalog generation blocked forever.
+        # These discovery commands are non-interactive and must receive EOF.
+        return subprocess.check_output(
+            command,
+            text=True,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        fail(code, f"{command[0]} timed out after {COMMAND_TIMEOUT_SECONDS} seconds")
+    except (OSError, subprocess.CalledProcessError) as exc:
+        fail(code, str(exc))
+
+
+def read_input(path, command, code):
+    return Path(path).read_text() if path else command_output(command, code)
+
+
+def value(record, name, default=""):
+    return record.get(name, default).strip()
+
+
+def parse_binds(text):
+    records, current = [], None
+    for line in text.splitlines():
+        if line and not line[0].isspace() and (line.startswith("bind") or line.startswith("unbind")):
+            if current:
+                records.append(current)
+            current = {}
+            continue
+        match = re.match(r"\s*([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$", line)
+        if match and current is not None:
+            current[match.group(1).lower()] = match.group(2).strip()
+    if current:
+        records.append(current)
+    return records
+
+
+def parse_keymap(text):
+    names, symbols = {}, {}
+    for match in re.finditer(r"<([A-Za-z0-9_]+)>\s*=\s*([0-9]+)\s*;", text):
+        names[match.group(1)] = int(match.group(2))
+    for match in re.finditer(r"key\s*<([A-Za-z0-9_]+)>\s*\{\s*\[\s*([^,\]\s]+)", text):
+        symbols.setdefault(match.group(1), []).append(match.group(2).upper())
+    symbol_codes = {}
+    code_symbols = {}
+    for name, code in names.items():
+        for symbol in symbols.get(name, []):
+            symbol_codes.setdefault(symbol, set()).add(code)
+            code_symbols.setdefault(code, []).append(symbol)
+    return names, symbol_codes, code_symbols
+
+
+def normalize_key(key):
+    key = key.strip()
+    if key.lower().startswith("code:"):
+        return "code:" + key.split(":", 1)[1]
+    if key.lower().startswith("mouse:"):
+        return "mouse:" + key.split(":", 1)[1]
+    key = key.upper().replace("KEY_", "")
+    return ALIASES.get(key, key)
+
+
+def split_combo(modmask, key):
+    mods = []
+    numeric = None
+    try:
+        numeric = int(modmask)
+    except ValueError:
+        pass
+    if numeric is not None:
+        mods = [name for name, bit in (("SUPER", 64), ("SHIFT", 1), ("CTRL", 4), ("ALT", 8)) if numeric & bit]
+    else:
+        parts = re.split(r"\s*\+\s*|\s+", modmask.upper()) if modmask else []
+        mods = ["CTRL" if part == "CONTROL" else part for part in parts if part in MODIFIERS]
+    mods = [name for name in CANONICAL if name in set(mods)]
+    # Lua binds may report the full display combo in `key`; the numeric
+    # modmask already carries the modifiers, so retain only the final key.
+    if " + " in key:
+        key = key.rsplit(" + ", 1)[1]
+    return mods, normalize_key(key)
+
+
+def xkb_codes(key, names, symbol_codes):
+    if key.startswith("code:"):
+        try:
+            return [int(key.split(":", 1)[1])]
+        except ValueError:
+            return []
+    if key.startswith("mouse:"):
+        return []
+    wanted = key.upper()
+    candidates = {wanted, "XF86" + wanted if wanted.startswith("XF86") else wanted}
+    codes = set()
+    for symbol, values in symbol_codes.items():
+        if symbol in candidates or symbol.endswith("_" + wanted) or symbol == "KP_" + wanted:
+            codes.update(values)
+    return sorted(codes)
+
+
+def display_symbol(symbol):
+    value = str(symbol or "").strip()
+    if not value or value.lower() == "nosymbol":
+        return ""
+    if len(value) == 1:
+        return value.upper()
+    upper = value.upper()
+    return DISPLAY_SYMBOLS.get(upper, upper.replace("_", " "))
+
+
+def display_key(key, code_symbols):
+    if key.startswith("code:"):
+        try:
+            code = int(key.split(":", 1)[1])
+        except ValueError:
+            return key.upper()
+        if code in SPECIAL_CODE_LABELS:
+            return SPECIAL_CODE_LABELS[code]
+        for symbol in code_symbols.get(code, []):
+            label = display_symbol(symbol)
+            if label:
+                return label
+        return "KEY " + str(code)
+    return display_symbol(key) or key.upper()
+
+
+def menu_priority(combo, description):
+    """Mirror Strata's SUPER+K priority list for stable guide placement."""
+    line = f"{combo} → {description}"
+    priority = 50
+    # Apps is the primary destination in the SUPER+ALT lane, ahead of the
+    # window-width helper that otherwise sorts first there.
+    if "Apps menu" in line: priority = 0
+    if "Keybindings" in line: priority = 0
+    if "Strata menu" in line: priority = 1
+    if "Terminal" in line: priority = 2
+    if "Browser" in line and "Browser (" not in line: priority = 3
+    if "File manager" in line and "File manager (cwd)" not in line: priority = 4
+    if "Launch apps" in line: priority = 5
+    if "System menu" in line: priority = 6
+    if "Theme menu" in line: priority = 7
+    if "Full screen" in line: priority = 8
+    if "Full width" in line: priority = 9
+    if "Close window" in line: priority = 10
+    if "Close all windows" in line: priority = 11
+    if "Lock system" in line: priority = 12
+    if "Toggle window floating" in line: priority = 13
+    if "Toggle window split" in line: priority = 14
+    if "Pop window" in line: priority = 15
+    if "Universal" in line: priority = 16
+    if "Clipboard" in line: priority = 17
+    if "Audio controls" in line: priority = 18
+    if "Bluetooth controls" in line: priority = 19
+    if "Wifi controls" in line: priority = 20
+    if "Emojis" in line: priority = 21
+    if "Color picker" in line: priority = 22
+    if "Screenshot" in line: priority = 23
+    if "Screenrecording" in line: priority = 24
+    if "Tmux" in line: priority = 25
+    if "Herdr" in line: priority = 26
+    if "File manager (cwd)" in line: priority = 28
+    if re.search(r"(Switch|Next|Former|Previous).*workspace", line): priority = 29
+    if "Move window to workspace" in line: priority = 30
+    if "Move window silently to workspace" in line: priority = 31
+    if "Swap window" in line: priority = 32
+    if "Focus" in line: priority = 33
+    if re.search(r"Move window$", line): priority = 34
+    if "Resize window" in line: priority = 35
+    if "Expand window" in line: priority = 36
+    if "Shrink window" in line: priority = 37
+    if "scratchpad" in line: priority = 38
+    if "notification" in line: priority = 39
+    if "Toggle window transparency" in line: priority = 40
+    if "Toggle workspace gaps" in line: priority = 41
+    if "Toggle nightlight" in line: priority = 42
+    if "Toggle locking" in line: priority = 43
+    if "group" in line: priority = 94
+    if "Scroll active workspace" in line: priority = 95
+    if "Cycle to" in line: priority = 96
+    if "Reveal active" in line: priority = 97
+    if "Apple Display" in line: priority = 98
+    if "XF86" in line: priority = 99
+    if "Tmux keybindings" in line: priority = 100
+    if "Herdr keybindings" in line: priority = 101
+    return priority
+
+
+def category(description):
+    text = description.lower()
+    groups = [
+        ("windows", r"window|float|fullscreen|opacity|split|group|focus|move|resize|close"),
+        ("workspaces", r"workspace|scratchpad|special"),
+        ("applications", r"terminal|browser|file manager|launch|menu|emoji|app"),
+        ("system", r"lock|power|wifi|bluetooth|night.?light|system|shutdown|reboot"),
+        ("capture", r"screenshot|screen.?record|recording|capture|color picker"),
+        ("media", r"volume|audio|mute|music|play|pause|media|brightness"),
+        ("clipboard", r"clipboard|copy|paste"),
+        ("notifications", r"notification|dnd|do not disturb"),
+        ("style", r"theme|wallpaper|gap|border|layout|style"),
+    ]
+    for name, pattern in groups:
+        if re.search(pattern, text):
+            return name
+    return "other"
+
+
+def prepare_output_dir(path):
+    """Create or repair the private directory shared with bridge-control."""
+    descriptor = None
+    try:
+        path.mkdir(parents=True, mode=0o700, exist_ok=True)
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode):
+            fail("unsafe-output-directory", "output path is not a directory")
+        if info.st_uid != os.getuid():
+            fail("unsafe-output-directory", "output directory is not owned by the current user")
+        os.fchmod(descriptor, 0o700)
+    except OSError as exc:
+        fail("unsafe-output-directory", str(exc))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def atomic_write(path, data):
+    fd, temporary = tempfile.mkstemp(prefix=".strata-shortcuts.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read_private_text(path):
+    """Read a generated artifact only when it remains a private regular file."""
+    try:
+        info = path.lstat()
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            return None
+        return path.read_text()
+    except OSError:
+        return None
+
+
+def lua_string(value):
+    return json.dumps(str(value), ensure_ascii=False).replace("\\u2028", "\\n").replace("\\u2029", "\\n")
+
+
+def build(args):
+    binds = read_input(args.hyprctl_file, ["hyprctl", "binds"], "hyprctl-unavailable")
+    keymap = read_input(args.keymap_file, ["xkbcli", "compile-keymap"], "keymap-unavailable")
+    names, symbol_codes, code_symbols = parse_keymap(keymap)
+    raw = parse_binds(binds)
+    entries, seen = [], set()
+    modifier_codes = {name: set() for name in CANONICAL}
+    for symbol, codes in symbol_codes.items():
+        for name, suffixes in (("SUPER", ("LWIN", "RWIN", "SUPER_L", "SUPER_R")), ("SHIFT", ("SHIFT_L", "SHIFT_R")), ("CTRL", ("CONTROL_L", "CONTROL_R", "CTRL_L", "CTRL_R")), ("ALT", ("ALT_L", "ALT_R"))):
+            if symbol in suffixes:
+                modifier_codes[name].update(codes)
+    for record in raw:
+        mods, key = split_combo(value(record, "modmask", value(record, "mods")), value(record, "key"))
+        if not key and value(record, "keycode"):
+            key = "code:" + value(record, "keycode")
+        if not key:
+            continue
+        description = value(record, "description")
+        dispatcher = value(record, "dispatcher")
+        argument = "" if dispatcher == "__lua" else value(record, "arg", value(record, "argument"))
+        phase = "release" if value(record, "release").lower() in ("1", "true", "yes") else "press"
+        submap = value(record, "submap")
+        repeat = value(record, "repeat").lower() in ("1", "true", "yes")
+        codes = xkb_codes(key, names, symbol_codes)
+        mouse = MOUSE_RE.match(key) is not None
+        normalized = "|".join(["+".join(mods), key, description, dispatcher, argument, phase, submap])
+        identity = "sha256:" + hashlib.sha256(normalized.encode()).hexdigest()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        combo_key = display_key(key, code_symbols)
+        combo = " + ".join(mods + [combo_key]) if mods else combo_key
+        # The Copilot-key route duplicates SUPER+SPACE for the Strata menu.
+        # Mirror Strata's own keybindings menu and keep it browseable but out
+        # of the immediate Super Guide.
+        guide_eligible = not mouse and key != "code:201"
+        entries.append({"id": identity, "combo": combo, "modifiers": mods, "key": key, "xkbCodes": codes, "description": description, "category": category(description), "phase": phase, "submap": submap, "dispatcherKind": dispatcher or "other", "trackable": not mouse, "guideEligible": guide_eligible, "repeat": repeat})
+    entries.sort(key=lambda item: (menu_priority(item["combo"], item["description"]), item["combo"], item["description"], item["id"]))
+    source = json.dumps({"enabled": not args.disabled, "bindings": entries, "modifierCodes": {k: sorted(v) for k, v in modifier_codes.items()}}, sort_keys=True, separators=(",", ":"))
+    source_hash = "sha256:" + hashlib.sha256(source.encode()).hexdigest()
+    state = Path(args.output_dir)
+    prepare_output_dir(state)
+    catalog = {"schemaVersion": 1, "generatedAt": int(time.time()), "sourceHash": source_hash, "bindings": entries}
+    lua = ["return {", "  schemaVersion = 1,", "  enabled = " + ("false," if args.disabled else "true,"), f"  sourceHash = {lua_string(source_hash)},", "  modifierCodes = {"]
+    for name in CANONICAL:
+        lua.append("    " + name + " = { " + ", ".join(str(x) for x in sorted(modifier_codes[name])) + " },")
+    lua.append("  },\n  matches = {")
+    for item in entries:
+        if item["trackable"] and item["xkbCodes"]:
+            for code in item["xkbCodes"]:
+                lua.append(f"    [{lua_string('|'.join(['_'.join(item['modifiers']), str(code), item['phase'], item['submap']]))}] = {lua_string(item['id'])},")
+    lua.append("  }\n}\n")
+    catalog_path, lua_path = state / "catalog.json", state / "bridge-catalog.lua"
+    catalog_text = json.dumps(catalog, ensure_ascii=False, indent=2) + "\n"
+    lua_text = "\n".join(lua)
+    old_catalog = None
+    old_catalog_text = read_private_text(catalog_path)
+    if old_catalog_text is not None:
+        try:
+            old_catalog = json.loads(old_catalog_text)
+        except ValueError:
+            pass
+    catalog_matches = (
+        isinstance(old_catalog, dict)
+        and old_catalog.get("schemaVersion") == 1
+        and old_catalog.get("sourceHash") == source_hash
+        and old_catalog.get("bindings") == entries
+    )
+    bridge_matches = read_private_text(lua_path) == lua_text
+    changed = not catalog_matches or not bridge_matches
+    if changed:
+        # Publish the bridge first and catalog.json last. The service treats a
+        # successful process exit as the commit boundary for both artifacts.
+        atomic_write(lua_path, lua_text)
+        atomic_write(catalog_path, catalog_text)
+    print(json.dumps({"ok": True, "sourceHash": source_hash, "bindingCount": len(entries), "changed": changed}, separators=(",", ":")))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--disabled", action="store_true")
+    parser.add_argument("--hyprctl-file")
+    parser.add_argument("--keymap-file")
+    args = parser.parse_args()
+    if bool(args.hyprctl_file) != bool(args.keymap_file):
+        fail("invalid-arguments", "--hyprctl-file and --keymap-file must be supplied together")
+    build(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -4,7 +4,7 @@
   "name": "Night Light",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Owns the hyprsunset night light temperature for the bar indicator and CLI.",
+  "description": "Manual color temperature, sunrise/sunset schedule, presets and pause controls backed by hyprsunset.",
   "kinds": [
     "service"
   ],

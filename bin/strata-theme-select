@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# strata:summary=Choose and apply a Strata theme
+# strata:group=theme
+# strata:name=select
+# strata:aliases=strata themes
+
+set -euo pipefail
+
+# Swatch previews the wallpaper and shell palette before applying a theme.
+# Keep the CLI picker available when the desktop shell is not running.
+if [[ $(strata-shell shell summon strata.theme-picker '{}' 2>/dev/null) == "ok" ]]; then
+  exit 0
+fi
+
+theme_name=$(strata-theme-switcher) || exit 0
+[[ -n $theme_name ]] || exit 0
+exec strata-theme-set "$theme_name"

@@ -216,6 +216,14 @@ thumbnail_for() {
   thumbnail="$cache_dir/$hash.jpg"
 
   if [[ ! -f $thumbnail ]]; then
+    # Fedora packages vipsthumbnail in vips-tools. A source checkout may be
+    # tested before that RPM dependency is installed, so retain a usable
+    # picker by letting Qt render still images directly in that case.
+    if ! is_video_path "$image" && ! command -v vipsthumbnail >/dev/null 2>&1; then
+      printf '%s' "$image"
+      return
+    fi
+
     # A video that already failed to convert has no row to offer. Hand the
     # marker back so the caller can keep the rows uncached over its absence.
     if is_video_path "$image" && [[ -f $thumbnail.failed ]]; then

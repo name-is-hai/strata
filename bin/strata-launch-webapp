@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# strata:summary=Open an installed web app in its own Chromium window
+# strata:args=<app-id>
+set -euo pipefail
+id=${1:-}
+[[ $id =~ ^strata-webapp-[a-f0-9]{20}$ ]] || { echo 'Invalid web app ID.' >&2; exit 1; }
+metadata=${XDG_DATA_HOME:-$HOME/.local/share}/strata/webapps/$id.json
+url=$(jq -er '.url | select(type == "string")' "$metadata")
+[[ ! $url =~ [[:space:][:cntrl:]] && ${url,,} =~ ^https?://[^/?#]+ ]] || exit 1
+browser=$(command -v chromium-browser || command -v chromium) || { echo 'Install Chromium to open web apps.' >&2; exit 1; }
+if command -v uwsm-app >/dev/null; then
+  exec uwsm-app -- "$browser" "--app=$url"
+else
+  exec "$browser" "--app=$url"
+fi

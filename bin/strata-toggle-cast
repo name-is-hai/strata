@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# strata:summary=Toggle casting discovery and the Cast bar icon
+set -euo pipefail
+source strata-shell-config
+current=$(jq -r '[.bar.layout[][]? | select(.id == "strata.cast")][0].discoveryEnabled == true' "$(source_file)")
+next=true
+[[ $current != true ]] || next=false
+strata-bar set strata.cast discoveryEnabled "$next" --json

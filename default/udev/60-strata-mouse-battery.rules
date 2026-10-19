@@ -1,0 +1,5 @@
+# Battery-only provider for Razer Viper V3 Pro. Seat access is limited to
+# interface 0; keyboard-emulation interfaces retain their normal permissions.
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="00c0", ENV{STRATA_MOUSE_BATTERY}="1"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="00c1", ENV{STRATA_MOUSE_BATTERY}="1"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{STRATA_MOUSE_BATTERY}=="1", ATTRS{bInterfaceNumber}=="00", TAG+="uaccess"

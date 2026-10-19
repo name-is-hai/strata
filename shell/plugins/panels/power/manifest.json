@@ -1,19 +1,21 @@
 {
   "schemaVersion": 1,
   "id": "strata.power",
-  "name": "Power",
+  "name": "Battery & power",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Battery, power profile, and system stats",
+  "description": "Battery health, power insights, profiles, and per-profile sleep timers",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Power",
-    "description": "Battery, power profile, and system stats",
+    "displayName": "Battery & power",
+    "description": "Battery health, power insights, profiles, and per-profile sleep timers",
     "category": "System",
     "allowMultiple": false
   }

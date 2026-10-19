@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 
 # One cached frame shared by all lock outputs, including when OWE is paused.
 set -euo pipefail

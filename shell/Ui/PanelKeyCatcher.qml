@@ -34,6 +34,10 @@ Item {
   id: root
 
   property bool blocked: false
+  // Let a panel temporarily receive every key itself, e.g. while recording
+  // a shortcut. This prevents the shared Space/arrow navigation from
+  // consuming the key before the recorder sees it.
+  property bool captureKeys: false
   // Panels that let items be reordered set this, and Ctrl+Up/Down (or
   // Ctrl+k/j) then asks to move the current item instead of the cursor.
   property bool reorderable: false
@@ -51,7 +55,7 @@ Item {
   focus: true
   Keys.priority: Keys.BeforeItem
   Keys.onPressed: function(event) {
-    if (blocked) return
+    if (blocked || captureKeys) return
 
     if (event.key === Qt.Key_Escape) {
       closeRequested(); event.accepted = true; return

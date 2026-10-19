@@ -1,0 +1,16 @@
+// The helper only accepts a wallpaper in the active user's home directory or
+// Strata's packaged backgrounds. It writes one fixed greeter image, so this
+// authorizes automatic wallpaper synchronization without granting general root
+// command access. The palette helper accepts only validated hex colors and
+// updates fixed palette keys in the same system theme. The monitor helper
+// accepts only connector names and boolean states, publishing a fixed list.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec" &&
+        (action.lookup("program") === "/usr/bin/strata-greeter-background-install" ||
+         action.lookup("program") === "/usr/bin/strata-greeter-theme-install" ||
+         action.lookup("program") === "/usr/bin/strata-greeter-monitors-install" ||
+         action.lookup("program") === "/usr/bin/strata-main-monitor-install") &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

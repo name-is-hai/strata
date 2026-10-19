@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+if [[ -n ${STRATA_PATH:-} && -x $STRATA_PATH/shell/plugins/services/system-sounds/bin/strata-sounds ]]; then
+  exec "$STRATA_PATH/shell/plugins/services/system-sounds/bin/strata-sounds" "$@"
+fi
+
+if [[ -x /usr/share/strata/shell/plugins/services/system-sounds/bin/strata-sounds ]]; then
+  exec /usr/share/strata/shell/plugins/services/system-sounds/bin/strata-sounds "$@"
+fi
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+exec "$repo_root/shell/plugins/services/system-sounds/bin/strata-sounds" "$@"

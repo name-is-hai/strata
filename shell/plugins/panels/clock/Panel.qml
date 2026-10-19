@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import Quickshell
 import qs.Commons
 import qs.Ui
@@ -268,6 +269,7 @@ Panel {
 
       Flickable {
         id: calendarScroll
+        Controls.ScrollBar.vertical: PanelScrollBar {}
         anchors.fill: parent
         contentWidth: calendarColumn.width
         contentHeight: calendarColumn.implicitHeight

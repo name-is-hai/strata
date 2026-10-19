@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# strata:summary=Start or stop Strata casting discovery and sessions
+set -euo pipefail
+runtime_dir=${XDG_RUNTIME_DIR:?Desktop runtime is required}/strata-casting
+mkdir -p "$runtime_dir"
+exec 9>"$runtime_dir/control.lock"
+flock -w 30 9
+case "${1:-}" in
+ start)
+  # Descendants have their own lifetime and must not inherit our master lock.
+  strata-wireless-display-ctl scan-start 9>&-
+  ;;
+ stop)
+  strata-wireless-display-ctl scan-stop 9>&- || true
+  strata-wireless-display-ctl disconnect 9>&- || true
+  strata-castd --client --no-start disconnect >/dev/null 2>&1 9>&- || true
+  systemctl --user stop strata-castd.service 9>&- || true
+  ;;
+ *) echo 'Usage: strata-casting-control start|stop' >&2; exit 2 ;;
+esac

@@ -4,7 +4,7 @@
   "name": "Idle",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Quickshell-based idle locking and display wake handling.",
+  "description": "Idle locking, display-off, sleep, and separate AC/battery lid and power-button controls.",
   "kinds": [
     "service"
   ],

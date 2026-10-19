@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# strata:summary=Enable or disable the Strata Shortcut Guide
+# strata:args=[toggle|on|off|status|set <key> <value>]
+set -euo pipefail
+
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/strata"
+settings="$config_dir/shortcut-guide.json"
+action=${1:-toggle}
+case "$action" in toggle|on|off|status|set) ;; *) echo 'Usage: strata-shortcut-guide [toggle|on|off|status|set <key> <value>]' >&2; exit 2 ;; esac
+setting_key=${2:-}
+setting_value=${3:-null}
+if [[ $action == set ]]; then
+  case "$setting_key" in
+    enabled|showInFullscreen|promoterEnabled|guideSuperEnabled|guideShiftEnabled|guideCtrlEnabled|guideAltEnabled)
+      [[ $setting_value == true || $setting_value == false ]] || exit 2 ;;
+    guideDelayMs|guideTopOffset)
+      maximum=3000
+      [[ $setting_key == guideTopOffset ]] && maximum=320
+      jq -en --argjson value "$setting_value" --argjson maximum "$maximum" '$value | type == "number" and . >= 0 and . <= $maximum and floor == .' >/dev/null || exit 2 ;;
+    promoterPosition)
+      case "$setting_value" in center|bottom-center|bottom-right) setting_value="\"$setting_value\"" ;; *) exit 2 ;; esac ;;
+    *) echo 'Unknown Shortcut Guide setting' >&2; exit 2 ;;
+  esac
+fi
+
+if [[ $action == status ]]; then
+  if [[ ! -e $settings ]] || jq -e '.enabled != false' "$settings" >/dev/null; then echo on; else echo off; fi
+  exit
+fi
+
+mkdir -p "$config_dir"
+exec 9>"$config_dir/.shortcut-guide.lock"
+flock 9
+if [[ -L $settings ]]; then settings=$(readlink -f "$settings"); fi
+temporary=$(mktemp "$(dirname "$settings")/.shortcut-guide.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+if [[ -e $settings ]]; then
+  jq -e 'type == "object"' "$settings" >/dev/null
+  input="$settings"
+else
+  input=/dev/null
+fi
+jq -n --slurpfile saved "$input" --arg action "$action" --arg key "$setting_key" --argjson value "$setting_value" '
+  ($saved[0] // {}) |
+  if $action == "set" then .[$key] = $value
+  else .enabled = (if $action == "on" then true elif $action == "off" then false else (.enabled == false) end) end
+' >"$temporary"
+mv "$temporary" "$settings"
+trap - EXIT

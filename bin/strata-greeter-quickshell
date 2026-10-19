@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -u
+runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+wayland_display=${WAYLAND_DISPLAY:-}
+
+# Hyprland's start event can fire before its Wayland socket is ready. Wait for
+# the actual socket before starting Qt; otherwise Quickshell exits immediately
+# and greetd falls back to the text greeter.
+for ((attempt = 0; attempt < 60; attempt++)); do
+  if [[ -z $wayland_display ]]; then
+    for socket in "$runtime_dir"/wayland-*; do
+      [[ -S $socket ]] || continue
+      wayland_display=${socket##*/}
+      break
+    done
+  fi
+  if [[ -n $wayland_display && -S $runtime_dir/$wayland_display ]]; then
+    export WAYLAND_DISPLAY=$wayland_display
+    break
+  fi
+  wayland_display=
+  sleep 0.1
+done
+
+if [[ -z $wayland_display ]]; then
+  echo "Hyprland did not create a Wayland socket in $runtime_dir" >&2
+  status=1
+else
+  /usr/bin/hyprctl setcursor Win11OSX 26 || true
+  /usr/bin/qs --no-color -p /usr/share/strata/greeter
+  status=$?
+fi
+# Quickshell exits after greetd accepts start_session. Hyprland must then
+# release the VT; greetd will start the authenticated user session.
+/usr/bin/hyprctl dispatch 'hl.dsp.exit()' || true
+exit "$status"

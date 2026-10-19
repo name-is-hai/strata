@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.cast",
+  "name": "Cast",
+  "version": "0.1.8",
+  "author": "liberuum",
+  "license": "MIT",
+  "description": "Wireless display and local media casting with Screen and Media tabs",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Cast",
+    "description": "Cast media to DLNA, Chromecast and AirPlay devices from the Strata bar, with volume, boost and subtitles.",
+    "category": "Network",
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "discoveryEnabled": false,
+      "lastTab": "screen"
+    },
+    "schema": []
+  }
+}

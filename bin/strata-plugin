@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# strata:summary=Review, install and remove user shell plugins
+# strata:args=inspect <folder|https-git-url> | install <review-token> | discard <review-token> | remove <id> | list
+set -euo pipefail
+plugin_dir=$HOME/.config/strata/plugins
+cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/strata/plugin-installer
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+safe_id() { [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ && $1 != *..* && $1 != strata.* ]]; }
+report() {
+  local folder=$1 source=$2 token=${3:-} manifest id status=ready references notes kind key entry
+  manifest=$folder/manifest.json
+  [[ -f $manifest && ! -L $manifest ]] || fail 'No manifest.json found. Standalone scripts and desktop modifications need adapting into a shell plugin first.'
+  jq -e '
+    .schemaVersion == 1 and (.id|type=="string") and (.name|type=="string" and length>0)
+    and (.version|type=="string") and (.kinds|type=="array" and length>0)
+    and all(.kinds[]; .=="bar" or .=="bar-widget" or .=="service" or .=="panel" or .=="overlay" or .=="menu")
+    and (.entryPoints|type=="object" and length>0)
+    and all(.entryPoints[]; type=="string" and length>0 and (startswith("/")|not) and (contains("..")|not))
+  ' "$manifest" >/dev/null || fail 'Unsupported or invalid plugin manifest. Strata requires schemaVersion 1, supported kinds and relative entry points.'
+  id=$(jq -r .id "$manifest")
+  safe_id "$id" || fail 'Invalid plugin ID, or reserved strata.* namespace. Built-in plugins cannot be replaced by overwriting their files.'
+  [[ -z $(find "$folder" -type l -print -quit) ]] || fail 'This source contains symbolic links. Use a self-contained plugin folder without links.'
+  while IFS= read -r entry; do
+    [[ -f $folder/$entry ]] || fail "Missing entry point: $entry"
+  done < <(jq -r '.entryPoints[]' "$manifest")
+  for kind in $(jq -r '.kinds[]' "$manifest"); do
+    key=$kind; [[ $key != bar-widget ]] || key=barWidget
+    jq -e --arg key "$key" '.entryPoints[$key] | type == "string"' "$manifest" >/dev/null || fail "Missing entry point for $kind."
+  done
+  references=$(LC_ALL=C grep -rIlE --include='*.qml' --include='*.js' --include='*.sh' --include='*.json' \
+    --exclude=manifest.json 'omarchy[-.]|OMARCHY_PATH|/omarchy/' "$folder" | head -20 || true)
+  notes='Manifest and entry points are valid. Runtime compatibility has not been verified.'
+  if [[ -n $references || $id == omarchy.* ]]; then
+    status=adaptation
+    notes='References Omarchy commands, services or paths. Adaptation may be needed; installation will leave this plugin disabled.'
+  fi
+  jq -n --slurpfile manifest "$manifest" --arg token "$token" --arg source "$source" --arg status "$status" --arg notes "$notes" \
+    '{id:$manifest[0].id,name:$manifest[0].name,version:$manifest[0].version,kinds:$manifest[0].kinds,token:$token,source:$source,status:$status,notes:$notes}'
+}
+case ${1:---help} in
+  inspect)
+    source=${2:-}; [[ -n $source ]] || fail 'Enter a local plugin folder or an HTTPS Git repository URL.'
+    mkdir -p "$cache_dir"
+    stage=$(mktemp -d "$cache_dir/review-XXXXXXXX")
+    trap 'rm -rf -- "$stage"' EXIT
+    if [[ $source == https://* ]]; then
+      git -c protocol.allow=never -c protocol.https.allow=always -c core.hooksPath=/dev/null \
+        clone --depth 1 -- "$source" "$stage/repo" >&2
+      folder=$stage/repo
+    else
+      [[ -d $source ]] || fail 'Local source folder does not exist.'
+      folder=$(realpath -- "$source")
+    fi
+    # The manifest must identify the folder to install. Never execute install scripts.
+    [[ -f $folder/manifest.json ]] || fail 'No manifest.json at the source root. Enter the actual plugin folder; standalone Omarchy scripts need adapting first.'
+    [[ -z $(find "$folder" -path "$folder/.git" -prune -o ! -type f ! -type d -print -quit) ]] || fail 'Plugin folders must contain regular files and directories only.'
+    mkdir "$stage/plugin"
+    tar -C "$folder" --exclude=.git -cf - . | tar -C "$stage/plugin" -xf -
+    token=${stage##*/}
+    report "$stage/plugin" "$source" "$token" > "$stage/review.json"
+    cat "$stage/review.json"
+    trap - EXIT
+    ;;
+  install)
+    token=${2:-}; [[ $token =~ ^review-[a-zA-Z0-9]{8}$ ]] || fail 'Invalid review token. Check the source first.'
+    stage=$cache_dir/$token
+    [[ ! -L $stage && -f $stage/review.json && -d $stage/plugin ]] || fail 'Review not found. Check the source again.'
+    source=$(jq -r .source "$stage/review.json")
+    reviewed=$(report "$stage/plugin" "$source" "$token")
+    id=$(jq -r .id <<< "$reviewed")
+    mkdir -p "$plugin_dir"
+    [[ ! -e $plugin_dir/$id && ! -L $plugin_dir/$id ]] || fail 'That plugin is already installed. Remove it before installing a different copy.'
+    # A hidden staging folder is ignored by the registry until the final rename.
+    target_stage=$(mktemp -d "$plugin_dir/.install-XXXXXXXX")
+    trap 'rm -rf -- "$target_stage"' EXIT
+    cp -a "$stage/plugin/." "$target_stage/"
+    printf '%s\n' "$reviewed" > "$target_stage/.strata-install.json"
+    # Explicitly disable even if an older configuration references this ID.
+    reply=$(strata-shell shell setPluginEnabled "$id" false)
+    [[ $reply == ok ]] || fail "Could not disable plugin before installation: $reply"
+    mv -T -- "$target_stage" "$plugin_dir/$id"
+    trap - EXIT
+    rm -rf -- "$stage"
+    strata-shell -q shell rescanPlugins >/dev/null || true
+    jq -n --arg id "$id" '{id:$id,installed:true,enabled:false}'
+    ;;
+  discard)
+    token=${2:-}; [[ $token =~ ^review-[a-zA-Z0-9]{8}$ ]] || fail 'Invalid review token.'
+    [[ ! -L $cache_dir/$token ]] || fail 'Invalid review directory.'
+    rm -rf -- "$cache_dir/$token"
+    ;;
+  remove)
+    id=${2:-}; safe_id "$id" || fail 'Only user-installed plugins can be removed.'
+    target=$plugin_dir/$id
+    [[ ! -L $target && -d $target && -f $target/manifest.json ]] || fail 'User plugin not found.'
+    [[ $(jq -r .id "$target/manifest.json") == "$id" ]] || fail 'Plugin folder and manifest ID do not match.'
+    reply=$(strata-shell shell setPluginEnabled "$id" false)
+    [[ $reply == ok ]] || fail "Could not disable plugin before removal: $reply"
+    rm -rf -- "$target"
+    strata-shell -q shell rescanPlugins >/dev/null || true
+    jq -n --arg id "$id" '{id:$id,removed:true}'
+    ;;
+  list)
+    shopt -s nullglob
+    for path in "$plugin_dir"/*/.strata-install.json; do
+      [[ ! -L $path ]] && cat "$path"
+    done | jq -s .
+    ;;
+  -h|--help|help) printf 'Usage: strata-plugin inspect <folder|https-git-url>\n       strata-plugin install <review-token>\n       strata-plugin discard <review-token>\n       strata-plugin remove <id>\n       strata-plugin list\n\nInspection never runs install scripts. New plugins are installed disabled.\n' ;;
+  *) fail 'Unknown command. Use strata-plugin --help.' ;;
+esac

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# strata:summary=Use Strata editors for text and images, and Celluloid for videos
+# strata:examples=strata default files
+
+set -euo pipefail
+
+for desktop_id in strata-editor.desktop strata-image-editor.desktop imv.desktop io.github.celluloid_player.Celluloid.desktop; do
+  [[ -r /usr/share/applications/$desktop_id || -r ${XDG_DATA_HOME:-$HOME/.local/share}/applications/$desktop_id ]] || {
+    printf 'Missing desktop application: %s\n' "$desktop_id" >&2
+    exit 1
+  }
+done
+
+mapfile -t text_types < <(
+  {
+    sed -n '/^text\//p' /usr/share/mime/types
+    printf '%s\n' application/json application/ld+json application/xml \
+      application/toml application/yaml application/x-yaml application/javascript \
+      application/x-javascript application/x-shellscript application/x-perl \
+      application/x-php application/sql application/x-ruby application/x-python
+  } | sort -u
+)
+xdg-mime default strata-editor.desktop "${text_types[@]}"
+
+mapfile -t image_types < <(sed -n '/^image\//p' /usr/share/mime/types)
+mapfile -t video_types < <(sed -n '/^video\//p' /usr/share/mime/types)
+xdg-mime default imv.desktop "${image_types[@]}"
+image_editor_desktop=/usr/share/applications/strata-image-editor.desktop
+if [[ ! -r $image_editor_desktop ]]; then
+  image_editor_desktop=${XDG_DATA_HOME:-$HOME/.local/share}/applications/strata-image-editor.desktop
+fi
+mapfile -t editable_image_types < <(sed -n 's/^MimeType=//p' "$image_editor_desktop" | tr ';' '\n' | sed '/^$/d')
+xdg-mime default strata-image-editor.desktop "${editable_image_types[@]}"
+xdg-mime default io.github.celluloid_player.Celluloid.desktop "${video_types[@]}"
+printf 'File defaults set: Strata text editor, Strata Snip images, Celluloid videos.\n'

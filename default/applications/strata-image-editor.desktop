@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Strata Image Editor
+Comment=View and annotate images with Strata Snip
+Exec=strata-open-image %f
+TryExec=strata-open-image
+Icon=camera-photo
+Terminal=false
+Type=Application
+Categories=Graphics;Viewer;
+MimeType=image/png;image/x-png;image/jpeg;image/jpg;image/pjpeg;image/webp;image/bmp;image/x-bmp;image/tiff;image/tiff-fx;image/gif;image/svg+xml;image/svg+xml-compressed;image/x-icon;image/vnd.microsoft.icon;image/x-portable-bitmap;image/x-portable-graymap;image/x-portable-pixmap;image/x-xbitmap;image/x-xpixmap;
+StartupNotify=false

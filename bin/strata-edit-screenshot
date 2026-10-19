@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Open a saved screenshot in Strata Snip's annotation overlay. Notifications
+# call this stable Strata command on installed and development machines.
+set -euo pipefail
+
+if (($# != 1)) || [[ $1 != /* || ! -f $1 || -L $1 ]]; then
+  echo "Usage: strata-edit-screenshot <saved-image>" >&2
+  exit 2
+fi
+
+snip_bin=""
+if [[ -x "$HOME/.local/bin/strata-snip" ]]; then
+  snip_bin="$HOME/.local/bin/strata-snip"
+elif command -v strata-snip >/dev/null 2>&1; then
+  snip_bin=$(command -v strata-snip)
+fi
+
+if [[ -z $snip_bin ]]; then
+  echo "strata-edit-screenshot: Strata Snip is not installed" >&2
+  exit 1
+fi
+
+exec "$snip_bin" --file "$1" --editor overlay

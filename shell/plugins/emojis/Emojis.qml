@@ -159,6 +159,8 @@ Item {
   }
   OverlayWindow {
     id: panel
+    // Match the menu surface: avoid a parked 1x1-to-fullscreen transition.
+    parkWhenHidden: false
     shown: root.opened
     WlrLayershell.namespace: "strata-emojis"
 

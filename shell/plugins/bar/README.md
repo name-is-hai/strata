@@ -17,6 +17,15 @@ The bar config lives under the `bar:` key of [`~/.config/strata/shell.json`](../
 
 The bar is configured directly on the bar itself: drag empty bar space (or click-and-hold) to move the bar to another screen edge, double-left-click empty center-bar space to toggle transparency, and drag widgets to reorder them. The `strata bar position`, `strata bar transparent`, `strata bar move`, and `strata bar set` commands do the same from scripts. Enable or disable widgets with `strata plugin enable` and `strata plugin disable` (widget ids come from `strata plugin list`).
 
+Bar text and icon foregrounds prefer the configured theme text when it has
+sufficient contrast against the opaque bar surface, then try the other theme
+color and finally black or white if needed. In transparent mode, Strata samples the
+wallpaper strip behind each display's bar once and gives each shared bar
+widget a foreground for its own position. Bright and dark wallpaper areas can
+therefore show dark and light text at the same time. Custom widgets can use
+`bar.foregroundForItem(item)` for the same behavior; `bar.foreground` remains
+the fallback color. Recording and warning colors retain their meaning.
+
 Example `shell.json` (bar subtree only shown):
 
 ```json
@@ -67,7 +76,7 @@ Example `shell.json` (bar subtree only shown):
 | `strata.bluetooth` | Bluetooth icon + popup with device list, connect/disconnect, battery | left = popup · right = toggle radio |
 | `strata.monitor` | Brightness and laptop display controls | left = popup |
 
-The `strata.indicators` widget loads individual bar indicators from `indicators/`. Omit `items` (or set it to an empty array) to show all indicators in the default order, or set `items` to a subset such as `["Dnd", "NightLight"]`. Set `alwaysShow` to `true` to keep inactive indicators visible instead of revealing them only on hover. Multiple `strata.indicators` instances are allowed, so different sections can show different subsets.
+The `strata.indicators` widget loads individual bar indicators from `indicators/`. Omit `items` (or set it to an empty array) to show all indicators in the default order, or set `items` to a subset such as `["StayAwake", "NightLight"]`. Camera, microphone, and screen sharing appear only during access. Hovering reveals idle manual controls; `alwaysShow: true` keeps those manual controls visible. Multiple `strata.indicators` instances are allowed, so different sections can show different subsets.
 
 ## Orientation
 
@@ -150,7 +159,8 @@ Item {
 
 Widgets receive `bar` (the shell root), `moduleName` (string), and `settings` (object) injected at load time. The bar exposes:
 
-- `bar.foreground`, `bar.background`, `bar.urgent` — theme colors (live-updated)
+- `bar.foreground`, `bar.background`, `bar.urgent` — live-updated bar colors;
+  `bar.foreground` follows the contrast-aware bar foreground
 - `bar.fontFamily` — current monospace family
 - `bar.position` — `"top" | "bottom" | "left" | "right"`
 - `bar.vertical` — boolean shortcut

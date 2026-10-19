@@ -10,6 +10,7 @@ Item {
   property real maximum: 1
   property real step: 0.05
   property bool integer: false
+  property bool wheelEnabled: true
   property color trackColor: bar ? Style.selectedFillFor(bar.foreground, Color.accent) : "#333"
   property color fillColor: bar ? bar.foreground : Color.foreground
   property color knobColor: bar ? bar.foreground : Color.foreground
@@ -138,6 +139,10 @@ Item {
       root.liveValue = root.value
     }
     onWheel: function(wheel) {
+      if (!root.wheelEnabled) {
+        wheel.accepted = false
+        return
+      }
       var delta = wheel.angleDelta.y > 0 ? root.step : -root.step
       var next = Math.max(root.minimum, Math.min(root.maximum, root.liveValue + delta))
       if (root.integer) next = Math.round(next)

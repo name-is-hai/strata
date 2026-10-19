@@ -302,6 +302,11 @@ QtObject {
     return Math.max(1, Math.round(base))
   }
 
+  function barTokenUnscaledCanvas() {
+    var legacy = Number(barOverrides["icon-canvas"])
+    return isFinite(legacy) && legacy > 0 ? legacy : 16
+  }
+
   function boolToken(value, fallback) {
     if (value === undefined || value === null) return fallback
     var s = String(value).replace(/^\s+|\s+$/g, "").toLowerCase()
@@ -343,9 +348,25 @@ QtObject {
     readonly property int sizeHorizontal: root.barToken("size-horizontal", 26)
     readonly property int sizeVertical:   root.barToken("size-vertical",   28)
     readonly property int iconSlot:       root.barToken("icon-slot",       27)
-    readonly property int iconCanvas:     root.barToken("icon-canvas",     16)
-    readonly property int iconFont:       root.barToken("icon-font",       13)
+    // One visual size; retain the old property names for plugin compatibility.
+    // Older themes can still supply icon-canvas, but icon-font is derived.
+    readonly property int iconSize:       root.barToken("icon-size", root.barTokenUnscaledCanvas())
+    // Keep text and icons on one control, with the reference layout's smaller
+    // text height: a 12px icon square pairs with 9px visible digits.
+    readonly property int labelSize:      Math.max(1, Math.round(iconSize * 0.75))
+    readonly property int iconCanvas:     iconSize
+    readonly property int iconFont:       Math.max(1, Math.round(iconSize * 13 / 16))
     readonly property int statusSlot:     root.barToken("status-slot",     21)
+    // The icon canvas sets the common visual scale for bar content. Divide
+    // out normal text-size scaling so text-size changes still scale once.
+    readonly property real contentScale: Math.max(0.5,
+      iconCanvas / Math.max(1, 16 * root.fontScale))
+
+    function contentPx(value) {
+      var number = Number(value)
+      return Math.max(1, Math.round((isFinite(number) ? number : 1) * contentScale))
+    }
+
   }
 
   // Off with Hyprland's own animations, as `strata toggle animations` turns
@@ -416,7 +437,9 @@ QtObject {
       } else if (section === "bar") {
         if (key === "scale-with-font") {
           nextBarScaleWithFont = boolToken(raw, nextBarScaleWithFont)
-        } else if (key === "size-horizontal" || key === "size-vertical") {
+        } else if (key === "size-horizontal" || key === "size-vertical"
+                   || key === "icon-slot" || key === "icon-size" || key === "icon-canvas"
+                   || key === "icon-font" || key === "status-slot") {
           var b = parseInt(raw, 10)
           if (isFinite(b)) barOut[key] = b
         }

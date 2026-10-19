@@ -4,7 +4,7 @@
   "name": "Network",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "Wi-Fi list and connection state",
+  "description": "Wi-Fi list and connection state, plus a shortcut to network settings",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,20 @@
   },
   "barWidget": {
     "displayName": "Network",
-    "description": "Wi-Fi list and connection state",
+    "description": "Wi-Fi list and connection state, plus a shortcut to network settings",
     "category": "Network",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaults": {
+      "settingsCommand": "nm-connection-editor"
+    },
+    "schema": [
+      {
+        "key": "settingsCommand",
+        "type": "string",
+        "label": "Network settings app",
+        "defaultValue": "nm-connection-editor",
+        "description": "Command run by the settings button. Leave empty to hide it."
+      }
+    ]
   }
 }

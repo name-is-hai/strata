@@ -7,7 +7,13 @@ export MOZ_ENABLE_WAYLAND=1
 export ELECTRON_OZONE_PLATFORM_HINT=auto
 export QT_QPA_PLATFORM=wayland
 export SDL_VIDEODRIVER=wayland
-export GTK_IM_MODULE=fcitx
+export INPUT_METHOD=fcitx
 export QT_IM_MODULE=fcitx
 export SDL_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
+
+# Cursor theme for Hyprland and application fallback.
+export HYPRCURSOR_THEME=Win11OSX
+export HYPRCURSOR_SIZE=26
+export XCURSOR_THEME=Win11OSX
+export XCURSOR_SIZE=26

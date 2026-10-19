@@ -4,7 +4,7 @@
   "name": "Media",
   "version": "1.0.0",
   "author": "Strata",
-  "description": "MPRIS media control service",
+  "description": "Now-playing indicator and media panel with artwork, transport, seeking, and player selection",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,8 +16,14 @@
   },
   "barWidget": {
     "displayName": "Media",
-    "description": "MPRIS now-playing with playback controls",
+    "description": "Compact now-playing icon with playback, seek, and source controls",
     "category": "Media",
-    "allowMultiple": false
-  }
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "hideWhenPaused": false,
+      "panelWidth": 380
+    }
+  },
+  "license": "MIT"
 }

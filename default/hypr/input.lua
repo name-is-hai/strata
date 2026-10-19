@@ -1,7 +1,7 @@
 hl.config({
     input = {
         kb_layout = "us",
-        kb_options = "compose:caps",
+        kb_options = "",
         repeat_rate = 40,
         repeat_delay = 600,
         numlock_by_default = true,
@@ -18,5 +18,11 @@ hl.config({
         mouse_move_enables_dpms = true,
     },
 })
+
+local config_home = os.getenv("XDG_CONFIG_HOME") or ((os.getenv("HOME") or "") .. "/.config")
+pcall(dofile, config_home .. "/hypr/mouse.lua")
+
+-- Inert until the Shortcut Guide publishes its local allowlist.
+pcall(dofile, "/usr/share/strata/shell/plugins/services/shortcut-guide/bridge.lua")
 
 return true

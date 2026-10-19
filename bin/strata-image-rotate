@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# strata:summary=Rotate an image file clockwise by 90 degrees
+# strata:args=[image]
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Save a 90-degree clockwise rotation of an image.')
+    parser.add_argument('image', nargs='?')
+    args = parser.parse_args()
+    interactive = args.image is None
+    temporary = None
+    try:
+        image = args.image
+        if interactive:
+            result = subprocess.run(['zenity', '--file-selection', '--title=Choose an image to rotate'], text=True, stdout=subprocess.PIPE)
+            if result.returncode:
+                return 0
+            image = result.stdout.rstrip('\n')
+        source = Path(image).resolve(strict=True)
+        if not source.is_file():
+            raise ValueError('Choose an image file')
+        before = source.stat()
+        fd, temporary = tempfile.mkstemp(prefix='.strata-rotate-', suffix=source.suffix, dir=source.parent)
+        os.close(fd)
+        subprocess.run(['magick', str(source), '-auto-orient', '-rotate', '90', temporary], check=True, timeout=120)
+        shutil.copymode(source, temporary)
+        after = source.stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+            raise ValueError('Image changed during rotation; no changes saved')
+        os.replace(temporary, source)
+        print(source)
+        return 0
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'strata-image-rotate: {error}', file=sys.stderr)
+        if interactive:
+            subprocess.run(['zenity', '--error', '--no-markup', '--text=' + str(error)])
+        return 1
+    finally:
+        if temporary:
+            Path(temporary).unlink(missing_ok=True)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

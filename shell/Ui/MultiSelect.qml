@@ -500,6 +500,7 @@ Item {
 
             ListView {
               id: resultList
+              QQC.ScrollBar.vertical: PanelScrollBar {}
               anchors.fill: parent
               spacing: Style.spacing.labelGap
               clip: true
@@ -542,7 +543,7 @@ Item {
 
                 readonly property bool selected: root.isSelected(modelData.value)
 
-                width: resultList.width
+                width: Math.max(0, resultList.width - Style.space(16))
                 height: Math.max(root.popupRowHeight, rowContent.implicitHeight + Style.spacing.rowPaddingX)
                 color: index === resultList.currentIndex
                   ? Style.hoverFillFor(root.foreground, root.accent)

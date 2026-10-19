@@ -50,6 +50,26 @@ shell_ipc() {
   timeout 2 strata-shell "$@" >/dev/null 2>&1
 }
 
+# Keep Ghostty's named Strata theme in sync with the selected desktop theme.
+sync_ghostty_desktop_theme() {
+  local source="$CURRENT_THEME_PATH/ghostty.conf"
+  # Ghostty 1.2.3+ prefers config.ghostty over the legacy config file.
+  # Writing the preferred file prevents an existing user config from
+  # overriding Strata's selected palette.
+  local config="$HOME/.config/ghostty/config.ghostty"
+  local target="$HOME/.config/ghostty/themes/strata"
+
+  [[ -f $source ]] || return
+  mkdir -p "${target%/*}" "${config%/*}"
+  install -Dm644 "$source" "$target"
+
+  # A desktop-controlled terminal must have one authoritative theme entry.
+  # Preserve every other Ghostty preference, including font and key bindings.
+  touch "$config"
+  sed -i -E '/^[[:space:]]*theme[[:space:]]*=/d' "$config"
+  printf '\ntheme = strata\n' >>"$config"
+}
+
 is_video_path() {
   [[ ${1,,} =~ \.(mp4|m4v|mov|webm|mkv|avi)$ ]]
 }
@@ -182,6 +202,10 @@ set_theme_background() {
   fi
 
   new_background="$CHOSEN_THEME_BACKGROUND"
+  ln -nsf "$new_background" "$CURRENT_BACKGROUND_LINK"
+  # Publish the login wallpaper before the slower desktop reveal begins, so
+  # logging out immediately after a selection still shows the new wallpaper.
+  strata-greeter-background-sync "$new_background" || echo "Could not synchronize greeter background" >&2
   new_background_snapshot=""
   if [[ -n $PREPARED_BACKGROUND_SNAPSHOT && $PREPARED_BACKGROUND == "$new_background" ]]; then
     new_background_snapshot="$PREPARED_BACKGROUND_SNAPSHOT"
@@ -208,7 +232,6 @@ set_theme_background() {
     fi
   fi
 
-  ln -nsf "$new_background" "$CURRENT_BACKGROUND_LINK"
 }
 
 is_denied_installed_file() {
@@ -395,9 +418,13 @@ mv "$NEXT_THEME_PATH" "$CURRENT_THEME_PATH"
 
 # Store theme name for reference
 echo "$THEME_NAME" >"$CURRENT_THEME_NAME_PATH"
-
-# Make the running shell pick up the new palette immediately while the rest of
-# the theme hooks run.
+# The greeter is a separate user. Publish its palette as soon as the current
+# theme has swapped, before terminal/theme hooks or the background reveal.
+if [[ $THEME_HEADLESS != "1" ]]; then
+  strata-greeter-theme-sync || echo "Could not synchronize greeter colors" >&2
+fi
+# Publish the new login wallpaper and update the running shell before slower
+# terminal and application theme hooks run.
 colors_payload=$([[ -f $CURRENT_THEME_PATH/colors.toml ]] && base64 -w 0 "$CURRENT_THEME_PATH/colors.toml")
 shell_payload=$([[ -f $CURRENT_THEME_PATH/shell.toml ]] && base64 -w 0 "$CURRENT_THEME_PATH/shell.toml")
 if [[ $THEME_HEADLESS == "1" ]]; then
@@ -410,6 +437,8 @@ elif [[ $STRATA_THEME_SKIP_BACKGROUND == "1" ]]; then
 else
   set_theme_background
 fi
+sync_ghostty_desktop_theme
+strata-theme-set-btop "$CURRENT_THEME_PATH"
 
 # The shared staging/current symlinks are updated and the shell has accepted
 # the transition. Let another theme selection queue only behind that critical
@@ -424,7 +453,6 @@ post_theme_commands=(
   strata-theme-set-foot
   strata-theme-set-tmux
   strata-theme-set-gnome
-  strata-theme-set-browser
   strata-theme-set-vscode
   strata-theme-set-obsidian
   strata-theme-set-keyboard

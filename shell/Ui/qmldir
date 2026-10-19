@@ -1,7 +1,9 @@
 module qs.Ui
+singleton FontInk 1.0 FontInk.qml
 
 BarIndicator 1.0 BarIndicator.qml
 BarIconButton 1.0 BarIconButton.qml
+BarLabelMetrics 1.0 BarLabelMetrics.qml
 BarWidget 1.0 BarWidget.qml
 BackgroundMedia 1.0 BackgroundMedia.qml
 BorderOverlay 1.0 BorderOverlay.qml
@@ -12,6 +14,8 @@ ConfirmDialog 1.0 ConfirmDialog.qml
 CursorSurface 1.0 CursorSurface.qml
 Dropdown 1.0 Dropdown.qml
 KeyboardPanel 1.0 KeyboardPanel.qml
+LockPowerActions 1.0 LockPowerActions.qml
+LockScreenView 1.0 LockScreenView.qml
 MultiSelect 1.0 MultiSelect.qml
 NumberField 1.0 NumberField.qml
 OpticalGlyph 1.0 OpticalGlyph.qml
@@ -21,6 +25,7 @@ PanelActionButton 1.0 PanelActionButton.qml
 PanelController 1.0 PanelController.qml
 PanelKeyCatcher 1.0 PanelKeyCatcher.qml
 PanelHero 1.0 PanelHero.qml
+PanelHeaderSurface 1.0 PanelHeaderSurface.qml
 PanelSectionHeader 1.0 PanelSectionHeader.qml
 PanelSeparator 1.0 PanelSeparator.qml
 PanelSlider 1.0 PanelSlider.qml
@@ -30,7 +35,9 @@ PointerMoveGate 1.0 PointerMoveGate.qml
 ScreenMoveRemap 1.0 ScreenMoveRemap.qml
 PopupCard 1.0 PopupCard.qml
 SearchableDropdown 1.0 SearchableDropdown.qml
+SpeedTestOverlay 1.0 SpeedTestOverlay.qml
 TextField 1.0 TextField.qml
 Toggle 1.0 Toggle.qml
 ToggleSwitch 1.0 ToggleSwitch.qml
 WidgetButton 1.0 WidgetButton.qml
+PanelScrollBar 1.0 PanelScrollBar.qml

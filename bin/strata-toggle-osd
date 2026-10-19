@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# strata:summary=Enable or disable on-screen status popups
+# strata:args=[toggle|on|off|status]
+set -euo pipefail
+action=${1:-toggle}
+case "$action" in
+  toggle|on|off|status) ;;
+  *) echo 'Usage: strata-toggle-osd [toggle|on|off|status]' >&2; exit 2 ;;
+esac
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/strata"
+settings="$config_dir/osd.json"
+if [[ $action == status ]]; then
+  if [[ ! -e $settings ]] || jq -e '.enabled != false' "$settings" >/dev/null; then echo on; else echo off; fi
+  exit
+fi
+mkdir -p "$config_dir"
+exec 9>"$config_dir/.osd.lock"
+flock 9
+if [[ -L $settings ]]; then settings=$(readlink -f "$settings"); fi
+temporary=$(mktemp "$(dirname "$settings")/.osd.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+input=/dev/null
+if [[ -e $settings ]]; then
+  jq -e 'type == "object"' "$settings" >/dev/null
+  input="$settings"
+fi
+jq -n --slurpfile saved "$input" --arg action "$action" '
+  ($saved[0] // {}) | .enabled =
+    (if $action == "on" then true elif $action == "off" then false else (.enabled == false) end)
+' >"$temporary"
+mv "$temporary" "$settings"
+trap - EXIT

@@ -2,15 +2,19 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Controls
 import qs.Commons
 import qs.Ui
 import "ClipboardHistory.js" as ClipboardHistory
+import "ClipboardPlacement.js" as ClipboardPlacement
 
 Item {
   id: root
 
   property string strataPath: Quickshell.env("STRATA_PATH")
   property bool opened: false
+  property bool openPending: false
+  property var popupPosition: null
   property string filterText: ""
   property int selectedIndex: 0
   property bool cursorActive: false
@@ -31,31 +35,50 @@ Item {
   property color selectedText: Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
-  property int contentMargin: Style.spacing.panelPadding
+  // Keep the compact picker geometry consistent across theme panel padding.
+  property int contentMargin: Style.space(12)
+  readonly property int listPaintInset: Math.max(1, Style.normalBorderWidth)
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
-  property int cardWidth: Math.min(Style.space(875), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(600), panel.height - Style.gapsOut * 2)
+  property int cardWidth: Math.max(1, Math.min(Style.space(320), panel.width - Style.gapsOut * 2))
+  property int cardHeight: Math.max(1, Math.min(Style.space(410), panel.height - Style.gapsOut * 2))
   property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
   property int historyLimit: 500
 
   function open(payloadJson) {
-    root.opened = true
+    root.openPending = true
+    if (!positionProc.running) positionProc.running = true
+  }
+
+  function showAtCursor(raw) {
+    if (!root.openPending) return
+    root.openPending = false
+    root.popupPosition = ClipboardPlacement.parsePosition(raw)
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
     root.disarmPointer()
     root.rebuildDisplay()
+    root.opened = true
+    if (root.popupPosition) {
+      for (var i = 0; i < Quickshell.screens.length; i++) {
+        if (Quickshell.screens[i].name === root.popupPosition.name) {
+          panel.targetScreen = Quickshell.screens[i]
+          break
+        }
+      }
+    }
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function close() {
+    root.openPending = false
     root.cancelClearHistory()
     root.opened = false
   }
 
   function toggle() {
-    if (root.opened) root.close()
+    if (root.opened || root.openPending) root.close()
     else root.open("{}")
   }
 
@@ -73,7 +96,7 @@ Item {
   }
 
   function saveHistory() {
-    historyFile.setText(JSON.stringify(root.history.slice(0, root.historyLimit), null, 2) + "\n")
+    historyFile.setText(JSON.stringify(ClipboardHistory.trimHistory(root.history, root.historyLimit), null, 2) + "\n")
   }
 
   function addClipboardEntry(entry) {
@@ -102,7 +125,7 @@ Item {
   }
 
   function confirmClearHistory() {
-    root.history = ClipboardHistory.clearHistory()
+    root.history = ClipboardHistory.clearHistory(root.history)
     root.saveHistory()
     root.selectedIndex = 0
     root.cursorActive = false
@@ -130,6 +153,22 @@ Item {
     root.rebuildDisplay()
   }
 
+  function togglePinIndex(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var historyIndex = displayModel.get(index).historyIndex
+    root.history = ClipboardHistory.togglePinAt(root.history, historyIndex)
+    root.saveHistory()
+    root.disarmPointer()
+    root.rebuildDisplay()
+    // Keep keyboard selection on the item that moved to/from the pinned group.
+    for (var i = 0; i < displayModel.count; i++) {
+      if (displayModel.get(i).historyIndex === historyIndex) {
+        root.selectedIndex = i
+        break
+      }
+    }
+  }
+
   function rebuildDisplay() {
     var rows = ClipboardHistory.displayRows(root.history, root.filterText, 50)
 
@@ -138,6 +177,7 @@ Item {
       var row = rows[i]
       displayModel.append({
         entryType: row.entryType,
+        pinned: row.pinned,
         fullText: row.fullText,
         previewText: row.previewText,
         previewImage: row.previewImage ? Util.fileUrl(row.previewImage) : "",
@@ -212,24 +252,37 @@ Item {
     root.openSelected(row)
   }
 
-  function applySelected(row) {
-    if (!row) return
-    root.opened = false
-    if (row.entryType === "image") {
-      Quickshell.execDetached([root.strataPath + "/bin/strata-clipboard-paste-file", row.mime, row.path])
-    } else if (row.fullText) {
-      Quickshell.execDetached([root.strataPath + "/bin/strata-clipboard-paste-text", "--shift-insert", "--history-index", String(row.historyIndex)])
+  function transferSelected(row, copyOnly) {
+    if (!row || pasteProc.running) return
+    // Resolve the complete entry now, before clipboard capture or a file reload
+    // can reorder history. Never send a mutable history index to the helper.
+    var entry = root.history[row.historyIndex]
+    if (!entry) return
+    if (entry.type === "image") {
+      root.opened = false
+      var args = [root.strataPath + "/bin/strata-clipboard-paste-file"]
+      if (copyOnly) args.push("--copy-only")
+      args.push(entry.mime || "image/png", entry.path)
+      Quickshell.execDetached(args)
+    } else if (entry.type === "text" && entry.text) {
+      pasteProc.payload = entry.text
+      pasteProc.command = [root.strataPath + "/bin/strata-clipboard-paste-text",
+        copyOnly ? "--copy-only" : "--paste", "--stdin"]
+      root.opened = false
+      pasteProc.stdinEnabled = true
+      pasteProc.running = true
+      pasteProc.write(pasteProc.payload)
+      pasteProc.stdinEnabled = false
+      pasteProc.payload = ""
     }
   }
 
+  function applySelected(row) {
+    root.transferSelected(row, false)
+  }
+
   function copySelected(row) {
-    if (!row) return
-    root.opened = false
-    if (row.entryType === "image") {
-      Quickshell.execDetached([root.strataPath + "/bin/strata-clipboard-paste-file", "--copy-only", row.mime, row.path])
-    } else if (row.fullText) {
-      Quickshell.execDetached([root.strataPath + "/bin/strata-clipboard-paste-text", "--copy-only", "--history-index", String(row.historyIndex)])
-    }
+    root.transferSelected(row, true)
   }
 
   function openSelected(row) {
@@ -241,6 +294,22 @@ Item {
   Component.onCompleted: initProc.running = true
 
   ListModel { id: displayModel }
+
+  Process {
+    id: pasteProc
+    property string payload: ""
+  }
+
+  Process {
+    id: positionProc
+    command: ["hyprctl", "-j", "--batch", "cursorpos; monitors"]
+    stdout: StdioCollector {
+      onStreamFinished: root.showAtCursor(text)
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.showAtCursor("")
+    }
+  }
 
   PointerMoveGate {
     id: pointerGate
@@ -313,13 +382,10 @@ Item {
 
   OverlayWindow {
     id: panel
+    // Keep the input surface ready; only the cursor-anchored card is painted.
+    parkWhenHidden: false
     shown: root.opened
     WlrLayershell.namespace: "strata-clipboard"
-
-    Rectangle {
-      anchors.fill: parent
-      color: root.scrim
-    }
 
     MouseArea {
       anchors.fill: parent
@@ -331,7 +397,12 @@ Item {
       width: root.cardWidth
       height: root.cardHeight
       radius: root.cornerRadius
-      anchors.centerIn: parent
+      x: root.popupPosition
+        ? ClipboardPlacement.axisPosition(root.popupPosition.x, width, panel.width, Style.gapsOut, Style.space(12))
+        : (panel.width - width) / 2
+      y: root.popupPosition
+        ? ClipboardPlacement.axisPosition(root.popupPosition.y, height, panel.height, Style.gapsOut, Style.space(12))
+        : (panel.height - height) / 2
       color: root.background
       borderSpec: root.borderSpec
       padding: root.contentMargin
@@ -354,6 +425,9 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.filterText) root.setFilter("")
             else root.close()
+            event.accepted = true
+          } else if (event.key === Qt.Key_P && (event.modifiers & Qt.ControlModifier)) {
+            root.togglePinIndex(root.selectedIndex)
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
@@ -398,7 +472,7 @@ Item {
           anchors.fill: parent
           opened: root.clearConfirmOpen
           z: 10
-          message: "Delete entire clipboard history?"
+          message: "Delete unpinned clipboard history? Pinned items will be kept."
           confirmText: "Delete"
           background: root.background
           foreground: root.foreground
@@ -413,194 +487,269 @@ Item {
       }
 
       Column {
+        id: content
         anchors.fill: parent
-        anchors.topMargin: card.contentTopInset
-        anchors.rightMargin: card.contentRightInset
-        anchors.bottomMargin: card.contentBottomInset
-        anchors.leftMargin: card.contentLeftInset
+        anchors.topMargin: Math.max(root.contentMargin, card.borderTop)
+        anchors.rightMargin: Math.max(root.contentMargin, card.borderRight)
+        anchors.bottomMargin: Math.max(root.contentMargin, card.borderBottom)
+        anchors.leftMargin: Math.max(root.contentMargin, card.borderLeft)
         spacing: root.contentSpacing
 
-        Rectangle {
-          width: parent.width
+        Item {
+          x: root.listPaintInset
+          width: Math.max(0, parent.width - root.listPaintInset * 2)
           height: root.headerHeight
-          radius: root.cornerRadius
-          color: "transparent"
 
           Text {
-            textFormat: Text.PlainText
             anchors.left: parent.left
+            anchors.right: clearButton.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Clipboard history"
+            textFormat: Text.PlainText
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.heading
+            font.bold: true
+            elide: Text.ElideRight
+          }
+
+          Button {
+            id: clearButton
+            anchors.right: closeButton.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Clear"
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            foreground: root.foreground
+            enabled: root.history.length > 0
+            opacity: enabled ? 1 : 0.4
+            onClicked: root.requestClearHistory()
+          }
+
+          Button {
+            id: closeButton
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
+            iconText: "×"
+            tooltipText: "Close (Esc)"
+            foreground: root.foreground
+            onClicked: root.close()
+          }
+        }
+
+        Rectangle {
+          x: root.listPaintInset
+          width: Math.max(0, parent.width - root.listPaintInset * 2)
+          height: root.headerHeight
+          radius: root.cornerRadius
+          color: Util.alpha(root.foreground, 0.06)
+          border.width: Style.normalBorderWidth
+          border.color: Util.alpha(root.border, 0.3)
+
+          Text {
+            anchors.fill: parent
+            anchors.margins: Style.space(10)
             text: root.filterText || "Search clipboard…"
+            textFormat: Text.PlainText
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
+            font.pixelSize: Style.font.body
+            verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+          }
+          MouseArea {
+            anchors.fill: parent
+            onClicked: keyCatcher.forceActiveFocus()
           }
         }
 
         Item {
           width: parent.width
-          height: parent.height - root.headerHeight - root.contentSpacing
+          height: Math.max(0, content.height - root.headerHeight * 2 - footer.height - content.spacing * 3)
 
-          Row {
+          ListView {
+            id: resultList
             anchors.fill: parent
-            spacing: 0
+            // Delegates paint inside this clip, including their border pixels.
+            pixelAligned: true
+            model: displayModel
+            clip: true
+            spacing: Style.space(8)
+            boundsBehavior: Flickable.StopAtBounds
+            topMargin: root.listPaintInset
+            bottomMargin: root.listPaintInset
+            ScrollBar.vertical: PanelScrollBar {
+              policy: ScrollBar.AsNeeded
+              width: Style.space(6)
+              parent: resultList.parent
+              anchors.top: resultList.top
+              anchors.bottom: resultList.bottom
+              anchors.right: parent.right
+              anchors.rightMargin: -root.contentMargin + Style.space(2)
+            }
 
-            Item {
-              width: parent.width / 2
-              height: parent.height
-              clip: true
+            delegate: Item {
+              id: row
+              required property int index
+              required property bool pinned
+              required property string entryType
+              required property string previewText
+              required property string fullText
+              required property string previewImage
+              readonly property bool hasCursor: root.cursorActive && index === root.selectedIndex
 
-              ListView {
-                id: resultList
-                anchors.fill: parent
-                anchors.rightMargin: root.contentMargin
-                model: displayModel
-                clip: true
-                spacing: Style.space(4)
-                boundsBehavior: Flickable.StopAtBounds
+              width: ListView.view.width
+              height: previewImage ? Style.space(104) : Style.space(78)
 
-                delegate: Rectangle {
-                  id: row
-                  required property int index
-                  required property string entryType
-                  required property string previewText
-                  required property string fullText
-                  required property string previewImage
+              Rectangle {
+                id: rowSurface
+                x: root.listPaintInset
+                width: Math.max(0, row.width - root.listPaintInset * 2)
+                height: row.height
+                radius: root.cornerRadius
+                color: row.hasCursor ? root.selectedBackground : Util.alpha(root.foreground, 0.045)
+                border.width: Style.normalBorderWidth
+                border.color: row.hasCursor ? root.border : Util.alpha(root.border, 0.22)
 
-                  readonly property bool hasCursor: root.cursorActive && index === root.selectedIndex
-
-                  width: ListView.view.width
-                  height: root.rowHeight
-                  radius: root.cornerRadius
-                  color: hasCursor ? root.selectedBackground : "transparent"
-
-                  Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: Style.space(12)
-                    anchors.rightMargin: Style.space(12)
-                    anchors.topMargin: Style.space(8)
-                    anchors.bottomMargin: Style.space(8)
-                    spacing: Style.space(10)
-
-                    Image {
-                      visible: parent.parent.previewImage.length > 0
-                      width: visible ? parent.height : 0
-                      height: parent.height
-                      source: parent.parent.previewImage
-                      fillMode: Image.PreserveAspectFit
-                      asynchronous: true
-                      smooth: true
-                    }
-
-                    Text {
-                      textFormat: Text.PlainText
-                      width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
-                      height: parent.height
-                      text: parent.parent.previewText
-                      color: parent.parent.hasCursor ? root.selectedText : root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.title
-                      opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0
-                      elide: Text.ElideRight
-                      wrapMode: Text.NoWrap
-                      verticalAlignment: Text.AlignVCenter
-                    }
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onPositionChanged: function(mouse) { root.selectFromPointer(row.index, rowSurface, mouse) }
+                  onClicked: {
+                    root.cursorActive = true
+                    root.selectedIndex = row.index
+                    root.activateIndex(row.index)
                   }
+                }
 
-                  MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onPositionChanged: function(mouse) {
-                      root.selectFromPointer(row.index, row, mouse)
-                    }
-                    onClicked: {
-                      root.cursorActive = true
-                      root.selectedIndex = row.index
-                      root.activateIndex(row.index)
-                    }
-                  }
+                Text {
+                  id: entryLabel
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(12)
+                  anchors.top: parent.top
+                  anchors.topMargin: Style.space(8)
+                  anchors.right: pinButton.left
+                  anchors.rightMargin: Style.space(4)
+                  height: copyButton.height
+                  text: row.entryType === "image" ? "Image" : row.entryType === "file" ? "Files" : "Text"
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  opacity: 0.65
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  verticalAlignment: Text.AlignVCenter
+                  elide: Text.ElideRight
+                }
+
+                Button {
+                  id: pinButton
+                  anchors.right: copyButton.left
+                  anchors.top: copyButton.top
+                  iconText: row.pinned ? "󰐃" : "󰐂"
+                  iconSize: Style.font.body
+                  verticalPadding: Style.space(4)
+                  horizontalPadding: Style.space(6)
+                  active: row.pinned
+                  foreground: row.hasCursor ? root.selectedText : root.foreground
+                  tooltipText: row.pinned ? "Unpin (Ctrl+P)" : "Pin (Ctrl+P)"
+                  onClicked: root.togglePinIndex(row.index)
+                }
+
+                Button {
+                  id: copyButton
+                  anchors.right: deleteButton.left
+                  anchors.top: parent.top
+                  anchors.topMargin: Style.space(4)
+                  iconText: "󰆏"
+                  iconSize: Style.font.body
+                  verticalPadding: Style.space(4)
+                  horizontalPadding: Style.space(6)
+                  foreground: row.hasCursor ? root.selectedText : root.foreground
+                  tooltipText: "Copy without pasting (Shift+Enter)"
+                  onClicked: root.copyIndex(row.index)
+                }
+
+                Button {
+                  id: deleteButton
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(4)
+                  anchors.top: copyButton.top
+                  iconText: "×"
+                  iconSize: Style.font.body
+                  verticalPadding: Style.space(4)
+                  horizontalPadding: Style.space(6)
+                  foreground: row.hasCursor ? root.selectedText : root.foreground
+                  tooltipText: "Delete item (Delete)"
+                  onClicked: root.removeDisplayIndex(row.index)
+                }
+
+                Text {
+                  visible: !row.previewImage
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: copyButton.bottom
+                  anchors.bottom: parent.bottom
+                  anchors.margins: Style.space(12)
+                  anchors.topMargin: Style.space(4)
+                  text: row.fullText
+                  textFormat: Text.PlainText
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  wrapMode: Text.WrapAnywhere
+                  elide: Text.ElideRight
+                  maximumLineCount: 2
+                }
+
+                Image {
+                  visible: row.previewImage.length > 0
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: copyButton.bottom
+                  anchors.bottom: parent.bottom
+                  anchors.margins: Style.space(12)
+                  anchors.topMargin: Style.space(4)
+                  source: row.previewImage
+                  sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+                  sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+                  fillMode: Image.PreserveAspectFit
+                  horizontalAlignment: Image.AlignLeft
+                  asynchronous: true
+                  smooth: true
                 }
               }
             }
-
-            Item {
-              width: parent.width / 2
-              height: parent.height
-              clip: true
-
-              property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
-
-              Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Style.normalBorderWidth
-                color: Util.alpha(root.border, 0.28)
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                visible: parent.activeRow && !parent.activeRow.previewImage
-                anchors.fill: parent
-                anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
-                text: parent.activeRow ? parent.activeRow.fullText : ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                wrapMode: Text.WrapAnywhere
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignTop
-              }
-
-              Image {
-                visible: parent.activeRow && parent.activeRow.previewImage
-                anchors.fill: parent
-                anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
-                source: parent.activeRow ? parent.activeRow.previewImage : ""
-                fillMode: Image.PreserveAspectFit
-                verticalAlignment: Image.AlignTop
-                asynchronous: true
-                smooth: true
-              }
-            }
           }
 
-          Column {
-            anchors.centerIn: parent
-            spacing: Style.space(8)
+          Text {
+            anchors.fill: parent
+            anchors.margins: Style.space(12)
             visible: displayModel.count === 0
-
-            Text {
-              text: "󰅌"
-              color: root.selectedText
-              opacity: 0.8
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.displayLarge
-              horizontalAlignment: Text.AlignHCenter
-              width: parent.width
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              text: root.history.length === 0 ? "Clipboard is empty" : "No matches for “" + root.filterText + "”"
-              color: root.foreground
-              opacity: 0.7
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              horizontalAlignment: Text.AlignHCenter
-              width: parent.width
-            }
+            text: root.history.length === 0 ? "Your clipboard is empty.\nCopied text and images will appear here." : "No matching items"
+            textFormat: Text.PlainText
+            color: root.foreground
+            opacity: 0.65
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.WordWrap
           }
+        }
+
+        Text {
+          id: footer
+          width: parent.width
+          height: Style.font.caption * 2
+          text: "Enter paste · Ctrl+P pin"
+          color: root.foreground
+          opacity: 0.55
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          elide: Text.ElideRight
         }
       }
     }

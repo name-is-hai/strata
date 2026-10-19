@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Search home-directory filenames for the Strata menu's explicit ~ prefix.
+# This helper never interprets the query as a command or searches caches.
+set -u
+
+query=${1:-}
+if [[ ${#query} -lt 2 ]]; then
+  printf '[]\n'
+  exit 0
+fi
+
+timeout 2s find "$HOME" -maxdepth 6 \
+  \( -type d \( -name .cache -o -name .git -o -name node_modules -o -name .local -o -name .cargo -o -name .rustup \) -prune \) -o \
+  \( -mindepth 1 \( -type f -o -type d \) -iname "*$query*" -print0 \) 2>/dev/null |
+  head -z -n 40 |
+  jq -Rs 'split("\u0000") | .[:-1]'

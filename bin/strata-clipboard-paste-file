@@ -23,11 +23,11 @@ fi
 
 [[ -r $path ]] || exit 1
 
-wl-copy --type "$mime" < "$path"
+wl-copy --type "$mime" < "$path" || exit 1
 
 if [[ $copy_only == "true" ]]; then
   exit
 fi
 
 sleep 0.15
-wtype -M shift -k Insert -m shift 2>/dev/null || true
+exec "$(dirname -- "$(readlink -f -- "$0")")/strata-clipboard-send-paste"

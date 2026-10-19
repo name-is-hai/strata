@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Root-owned systemd sleep drop-in writer, adapted from lgse/sandman (MIT).
+# This program is installed by strata-config; never run a user-owned script
+# through pkexec to edit /etc.
+set -euo pipefail
+
+CONFIG=/etc/systemd/sleep.conf.d/90-strata-idle.conf
+[[ $EUID -eq 0 ]] || { echo 'Administrator authorization is required.' >&2; exit 1; }
+[[ $# -eq 1 && $1 =~ ^[0-9]+$ ]] || { echo 'Expected seconds.' >&2; exit 2; }
+seconds=$((10#$1))
+(( seconds <= 604800 )) || { echo 'Timeout is too large.' >&2; exit 2; }
+
+if (( seconds == 0 )); then
+  rm -f -- "$CONFIG"
+  exit 0
+fi
+
+install -d -m 755 /etc/systemd/sleep.conf.d
+temp=$(mktemp /etc/systemd/sleep.conf.d/.90-strata-idle.XXXXXX)
+trap 'rm -f -- "$temp"' EXIT
+printf '[Sleep]\nHibernateDelaySec=%ss\nHibernateOnACPower=yes\n' "$seconds" >"$temp"
+chmod 644 "$temp"
+mv -f -- "$temp" "$CONFIG"

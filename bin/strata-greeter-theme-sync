@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# Publish the active lock palette and typography to the Strata greeter.
+# strata:hidden=true
+set -euo pipefail
+shopt -s extglob
+
+destination=/usr/share/strata/greeter/theme.conf
+state_home=${XDG_STATE_HOME:-$HOME/.local/state}
+theme=$state_home/strata/current/theme
+[[ -f $theme/colors.toml ]] || exit 0
+[[ $# == 0 || ( $# == 1 && $1 == --print ) ]] || {
+  echo 'Usage: strata-greeter-theme-sync [--print]' >&2
+  exit 64
+}
+
+declare -A colors=() tokens=() desired=() installed=() base=()
+read_toml() {
+  local path=$1 target=$2 section= line key value quote
+  [[ -f $path ]] || return 0
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line =~ ^[[:space:]]*\[([A-Za-z0-9_-]+)\][[:space:]]*$ ]]; then
+      section=${BASH_REMATCH[1]}
+      continue
+    fi
+    [[ $line =~ ^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=[[:space:]]*(.*)$ ]] || continue
+    key=${BASH_REMATCH[1]}
+    value=${BASH_REMATCH[2]}
+    value=${value##+([[:space:]])}
+    if [[ ${value:0:1} == '"' || ${value:0:1} == "'" ]]; then
+      quote=${value:0:1}
+      value=${value:1}
+      value=${value%%"$quote"*}
+    else
+      value=${value%%#*}
+      value=${value%%+([[:space:]])}
+    fi
+    if [[ $target == colors && -z $section ]]; then
+      colors[$key]=$value
+    elif [[ $target == tokens && -n $section ]]; then
+      tokens[$section.$key]=$value
+    fi
+  done < "$path"
+}
+
+read_toml "$theme/colors.toml" colors
+read_toml "$theme/shell.toml" tokens
+read_toml "$HOME/.config/strata/shell.toml" tokens
+
+base[background]=${colors[background]:-${colors[color0]:-#101315}}
+base[foreground]=${colors[foreground]:-${colors[color7]:-#cacccc}}
+base[accent]=${colors[accent]:-${colors[color4]:-#cacccc}}
+base[urgent]=${colors[color1]:-${colors[red]:-#a55555}}
+
+resolve_color() {
+  local value=$1 fallback=$2 token role i
+  for ((i = 0; i < 20; i++)); do
+    token=${value%% *}
+    if [[ $token == transparent ]]; then
+      COLOR='#00000000'
+      return 0
+    elif [[ $token =~ ^#[[:xdigit:]]{6}$ ]]; then
+      COLOR="#ff${token:1}"
+      COLOR=${COLOR,,}
+      return 0
+    elif [[ $token =~ ^#[[:xdigit:]]{8}$ ]]; then
+      COLOR="#${token:7:2}${token:1:6}"
+      COLOR=${COLOR,,}
+      return 0
+    fi
+    role=${token,,}
+    [[ $role == text ]] && role=foreground
+    if [[ $role =~ ^[a-z][a-z0-9.-]*$ && -v tokens[$role] ]]; then
+      value=${tokens[$role]}
+    elif [[ $role =~ ^[a-z][a-z0-9.-]*$ && -v base[$role] ]]; then
+      value=${base[$role]}
+    else
+      value=$fallback
+    fi
+  done
+  COLOR='#ff101315'
+}
+
+alpha_hex() {
+  local raw=$1 fallback=$2 whole fraction scaled
+  [[ $raw =~ ^([0-9]*)([.]([0-9]+))?$ ]] || raw=$fallback
+  [[ $raw =~ ^([0-9]*)([.]([0-9]+))?$ ]]
+  whole=${BASH_REMATCH[1]:-0}
+  fraction=${BASH_REMATCH[3]:-0}
+  fraction=${fraction}000
+  scaled=$(( 10#$whole * 1000 + 10#${fraction:0:3} ))
+  (( scaled > 1000 )) && scaled=1000
+  printf -v ALPHA '%02x' "$(( (scaled * 255 + 500) / 1000 ))"
+}
+
+get_color() {
+  local key=$1 fallback=$2 alpha_key=${3:-} alpha_fallback=${4:-1}
+  resolve_color "${tokens[$key]:-$fallback}" "$fallback"
+  if [[ -n $alpha_key ]]; then
+    alpha_hex "${tokens[$alpha_key]:-$alpha_fallback}" "$alpha_fallback"
+    COLOR="#$ALPHA${COLOR:3}"
+  fi
+}
+
+font_size() {
+  local raw=$1 fallback=$2 whole fractional digit
+  if [[ ! $raw =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    FONT_SIZE=$fallback
+    return
+  fi
+  whole=${raw%%.*}
+  fractional=${raw#*.}
+  digit=0
+  [[ $raw == *.* ]] && digit=${fractional:0:1}
+  FONT_SIZE=$(( 10#$whole + (digit >= 5) ))
+  (( FONT_SIZE < 1 )) && FONT_SIZE=1
+  (( FONT_SIZE > 999 )) && FONT_SIZE=999
+  return 0
+}
+
+get_color lock.text foreground
+desired[paletteForeground]=$COLOR
+if [[ -v tokens[lock.placeholder] ]]; then
+  get_color lock.placeholder foreground
+else
+  get_color lock.text foreground unused .66
+fi
+desired[palettePlaceholder]=$COLOR
+resolve_color background '#101315'
+desired[paletteBackground]=$COLOR
+get_color lock.background background lock.background-alpha .8
+desired[paletteFieldSurface]=$COLOR
+get_color controls.hover-cursor-color foreground controls.hover-cursor-fill-alpha .08
+desired[paletteHoverSurface]=$COLOR
+get_color lock.border foreground lock.border-alpha 1
+desired[paletteBorder]=$COLOR
+get_color lock.border-active accent lock.border-alpha 1
+desired[paletteBorderActive]=$COLOR
+get_color lock.border-error urgent lock.border-alpha 1
+desired[paletteBorderError]=$COLOR
+get_color lock.text-error urgent
+desired[paletteError]=$COLOR
+get_color lock.selection accent lock.selection-alpha .45
+desired[paletteSelection]=$COLOR
+
+# The lock field can have a gradient and a theme-specified width. The old
+# greeter flattened it to one color and always painted a 3px border.
+gradient_raw=${tokens[lock.border-active]:-accent}
+for ((i = 0; i < 10; i++)); do
+  [[ $gradient_raw =~ ^[a-z][a-z0-9.-]*$ && -v tokens[$gradient_raw] ]] || break
+  gradient_raw=${tokens[$gradient_raw]}
+done
+read -r gradient_start gradient_end gradient_angle _ <<< "$gradient_raw"
+if [[ -z ${gradient_end:-} || $gradient_end == *deg ]]; then
+  gradient_end=$gradient_start
+  gradient_angle=0deg
+fi
+resolve_color "$gradient_end" accent
+alpha_hex "${tokens[lock.border-alpha]:-1}" 1
+desired[paletteBorderActiveEnd]="#$ALPHA${COLOR:3}"
+border_width=${tokens[lock.border-active-width]:-${tokens[lock.border-width]:-3}}
+[[ $border_width =~ ^[0-9]{1,3}$ ]] || border_width=3
+desired[borderWidth]=$border_width
+[[ ${gradient_angle:-} =~ ^[0-9]{1,3}deg$ ]] || gradient_angle=0deg
+desired[borderAngle]=${gradient_angle%deg}
+
+get_color controls.normal-color foreground controls.normal-border-alpha .4
+desired[paletteControlNormalBorder]=$COLOR
+get_color controls.hover-cursor-color foreground controls.hover-cursor-border-alpha .25
+desired[paletteControlHoverBorder]=$COLOR
+get_color controls.focus-color foreground controls.focus-border-alpha .25
+desired[paletteControlFocusBorder]=$COLOR
+get_color controls.focus-color foreground controls.focus-fill-alpha .08
+desired[paletteControlFocusFill]=$COLOR
+get_color controls.pressed-color foreground controls.pressed-fill-alpha .22
+desired[paletteControlPressedFill]=$COLOR
+control_border_width=${tokens[controls.normal-border-width]:-1}
+[[ $control_border_width =~ ^[0-9]{1,3}$ ]] || control_border_width=1
+desired[controlBorderWidth]=$control_border_width
+
+font_size "${tokens[font.base-size]:-12}" 12
+base_size=$FONT_SIZE
+font_size "${tokens[font.heading]:-}" "$(( (base_size * 1333 + 500) / 1000 ))"
+desired[fontHeading]=$FONT_SIZE
+font_size "${tokens[font.body]:-}" "$base_size"
+desired[fontBody]=$FONT_SIZE
+font_size "${tokens[font.icon]:-}" "$(( (base_size * 1167 + 500) / 1000 ))"
+desired[fontIcon]=$FONT_SIZE
+
+spacing_scale=${tokens[spacing.scale]:-1}
+[[ $spacing_scale =~ ^([0-9]+)([.]([0-9]+))?$ ]] || spacing_scale=1
+[[ $spacing_scale =~ ^([0-9]+)([.]([0-9]+))?$ ]]
+spacing_whole=${BASH_REMATCH[1]}
+spacing_fraction=${BASH_REMATCH[3]:-0}000
+spacing_milli=$(( 10#$spacing_whole * 1000 + 10#${spacing_fraction:0:3} ))
+if [[ ${tokens[spacing.scale-with-font]:-true} != false ]]; then
+  spacing_milli=$(( (spacing_milli * base_size + 6) / 12 ))
+fi
+spacing_token() {
+  local key=$1 fallback=$2
+  if [[ -v tokens[spacing.$key] ]]; then
+    if [[ ${tokens[spacing.$key]} == 0 ]]; then
+      SPACING=0
+    else
+      font_size "${tokens[spacing.$key]}" 0
+      SPACING=$FONT_SIZE
+    fi
+  else
+    SPACING=$(( (fallback * spacing_milli + 500) / 1000 ))
+    (( SPACING < 1 )) && SPACING=1
+  fi
+  (( SPACING > 999 )) && SPACING=999
+  return 0
+}
+spacing_token xxl 12; desired[spacingXxl]=$SPACING
+spacing_token sm 4; desired[spacingSm]=$SPACING
+spacing_token md 6; desired[spacingMd]=$SPACING
+spacing_token control-gap 8; desired[controlGap]=$SPACING
+font_family=$(fc-match -f '%{family}' monospace)
+font_family=${font_family%%,*}
+desired[fontFamily]=${font_family:-monospace}
+desired[cornerRadius]=0
+if [[ -f $theme/hyprland.conf ]]; then
+  while IFS= read -r line; do
+    if [[ $line =~ ^[[:space:]]*rounding[[:space:]]*=[[:space:]]*([0-9]+) ]]; then
+      radius=$((10#${BASH_REMATCH[1]}))
+      (( radius > 999 )) && radius=999
+      desired[cornerRadius]=$radius
+      break
+    fi
+  done < "$theme/hyprland.conf"
+fi
+
+keys=(paletteBackground paletteForeground palettePlaceholder paletteFieldSurface
+      paletteHoverSurface paletteBorder paletteBorderActive paletteBorderError
+      paletteError paletteSelection paletteBorderActiveEnd borderWidth borderAngle
+      paletteControlNormalBorder paletteControlHoverBorder paletteControlFocusBorder
+      paletteControlFocusFill paletteControlPressedFill controlBorderWidth
+      fontFamily fontHeading fontBody fontIcon spacingXxl spacingSm spacingMd
+      controlGap cornerRadius)
+if [[ ${1:-} == --print ]]; then
+  for key in "${keys[@]}"; do printf '%s=%s\n' "$key" "${desired[$key]}"; done
+  exit 0
+fi
+
+if [[ -f $destination ]]; then
+  section=
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line =~ ^[[:space:]]*\[([^]]+)\][[:space:]]*$ ]]; then
+      section=${BASH_REMATCH[1]}
+    elif [[ $section == General && $line =~ ^[[:space:]]*([A-Za-z]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      installed[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    fi
+  done < "$destination"
+fi
+same=true
+arguments=()
+for key in "${keys[@]}"; do
+  arguments+=("$key=${desired[$key]}")
+  [[ ${installed[$key]:-} == "${desired[$key]}" ]] || same=false
+done
+if [[ $same != true ]]; then
+  pkexec /usr/bin/strata-greeter-theme-install "${arguments[@]}"
+fi
+pkexec /usr/bin/strata-greeter-theme-install --sync-files "$state_home"

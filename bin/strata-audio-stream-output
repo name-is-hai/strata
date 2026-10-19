@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# strata:summary=Route one application audio stream to an output device
+# strata:args=<stream-id> <stream-name> <sink-name|default>
+
+set -euo pipefail
+
+stream_id=${1:-}
+stream_name=${2:-}
+sink_name=${3:-}
+
+if [[ ! $stream_id =~ ^[0-9]+$ || -z $stream_name || -z $sink_name ]]; then
+  echo "Usage: strata-audio-stream-output <stream-id> <stream-name> <sink-name|default>" >&2
+  exit 2
+fi
+
+# Node ids can be reused after an application closes. Check both the id and
+# name immediately before changing metadata, and only accept a real audio sink.
+graph=$(pw-dump)
+jq -e --argjson id "$stream_id" --arg name "$stream_name" '
+  any(.[]; .type == "PipeWire:Interface:Node" and .id == $id
+    and .info.props."node.name" == $name
+    and .info.props."media.class" == "Stream/Output/Audio")
+' >/dev/null <<<"$graph" || exit 1
+
+if [[ $sink_name == default ]]; then
+  pw-metadata -n default -d "$stream_id" target.object
+  exit
+fi
+
+jq -e --arg name "$sink_name" '
+  any(.[]; .type == "PipeWire:Interface:Node"
+    and .info.props."node.name" == $name
+    and .info.props."media.class" == "Audio/Sink")
+' >/dev/null <<<"$graph" || exit 1
+
+# WirePlumber moves the stream when target.object changes and, by default,
+# remembers the chosen target and stream volume for the next app launch.
+pw-metadata -n default "$stream_id" target.object "$sink_name" Spa:String

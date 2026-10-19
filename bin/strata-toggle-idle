@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# strata:summary=Toggle automatic suspend while preserving normal idle locking
+# strata:summary=Toggle automatic sleep prevention while allowing manual suspend
 # strata:group=toggle
 # strata:args=[toggle|stay-awake|allow-idle|status]
 # strata:examples=strata toggle idle | strata toggle idle stay-awake | strata-toggle-idle --status
@@ -13,16 +13,22 @@ stay_awake_enabled() {
   [[ -f $STATE_FILE ]]
 }
 
+inhibitor_active() {
+  systemctl --user is-active --quiet "$INHIBITOR_UNIT" 2>/dev/null
+}
+
 print_status() {
-  if stay_awake_enabled; then
-    printf '{"enabled":true,"class":"enabled","tooltip":"Allow automatic suspend"}\n'
+  if inhibitor_active; then
+    printf '{"enabled":true,"requested":true,"failed":false,"class":"enabled","tooltip":"Allow automatic sleep"}\n'
+  elif stay_awake_enabled; then
+    printf '{"enabled":false,"requested":true,"failed":true,"class":"failed","tooltip":"Stay Awake failed; click to retry"}\n'
   else
-    printf '{"enabled":false,"class":"disabled","tooltip":"Stay Awake"}\n'
+    printf '{"enabled":false,"requested":false,"failed":false,"class":"disabled","tooltip":"Prevent automatic sleep"}\n'
   fi
 }
 
 print_idle_state() {
-  if stay_awake_enabled; then
+  if inhibitor_active; then
     printf 'disabled\n'
   else
     printf 'enabled\n'
@@ -34,7 +40,8 @@ sync_inhibitor() {
   stay_awake_enabled && action=start
 
   if ! systemctl --user daemon-reload >/dev/null 2>&1 || \
-      ! systemctl --user "$action" "$INHIBITOR_UNIT"; then
+      ! systemctl --user "$action" "$INHIBITOR_UNIT" || \
+      { [[ $action == start ]] && ! inhibitor_active; }; then
     echo "Unable to ${action} the Strata Stay Awake inhibitor." >&2
     return 1
   fi
@@ -43,17 +50,18 @@ sync_inhibitor() {
 apply_state() {
   case "$1" in
     stay-awake)
-      systemctl --user daemon-reload >/dev/null 2>&1
-      if ! systemctl --user start "$INHIBITOR_UNIT"; then
+      mkdir -p "$STATE_DIR"
+      touch "$STATE_FILE"
+      if ! systemctl --user daemon-reload >/dev/null 2>&1 || \
+          ! systemctl --user start "$INHIBITOR_UNIT" || \
+          ! inhibitor_active; then
         echo "Unable to enable Stay Awake." >&2
         return 1
       fi
-      mkdir -p "$STATE_DIR"
-      touch "$STATE_FILE"
       ;;
     allow-idle)
-      systemctl --user daemon-reload >/dev/null 2>&1
-      if ! systemctl --user stop "$INHIBITOR_UNIT"; then
+      if ! systemctl --user daemon-reload >/dev/null 2>&1 || \
+          ! systemctl --user stop "$INHIBITOR_UNIT"; then
         echo "Unable to allow normal idle behavior." >&2
         return 1
       fi
@@ -68,7 +76,7 @@ apply_state() {
 
 case "${1:-toggle}" in
   toggle)
-    if stay_awake_enabled; then
+    if inhibitor_active; then
       apply_state allow-idle
     else
       apply_state stay-awake

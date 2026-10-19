@@ -20,6 +20,10 @@ Item {
 
   property string label: ""
   property string value: ""
+  // Bound settings must remain owned by their model. Assigning value during
+  // selection would remove that binding and leave a stale choice on context
+  // changes (for example, switching between AC and battery settings).
+  property bool updateValueOnSelection: true
   property var options: []
 
   property color foreground: Color.popups.text
@@ -171,6 +175,7 @@ Item {
 
         contentItem: ListView {
           id: optionList
+          ScrollBar.vertical: PanelScrollBar {}
           spacing: Style.spacing.labelGap
 
           Keys.priority: Keys.BeforeItem
@@ -201,7 +206,7 @@ Item {
           function selectCurrent() {
             if (currentIndex < 0 || currentIndex >= root.options.length) return
             var v = root.optionValue(root.options[currentIndex])
-            root.value = v
+            if (root.updateValueOnSelection) root.value = v
             root.changed(v)
             popup.close()
           }
@@ -209,7 +214,7 @@ Item {
           delegate: Rectangle {
             required property var modelData
             required property int index
-            width: optionList.width
+            width: Math.max(0, optionList.width - Style.space(16))
             height: root.popupRowHeight
             color: index === optionList.currentIndex
               ? Style.hoverFillFor(root.foreground, root.accent)

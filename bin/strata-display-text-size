@@ -150,8 +150,15 @@ set_terminal_size() {
     pkill -USR1 kitty 2>/dev/null || true
   fi
 
-  if [[ -f ~/.config/ghostty/config ]]; then
-    sed -i -E "s/^font-size = .*/font-size = $pt/" ~/.config/ghostty/config
+  # Ghostty 1.2.3+ loads config.ghostty before the legacy config filename.
+  local ghostty_config="$HOME/.config/ghostty/config.ghostty"
+  if [[ -f $ghostty_config ]] || [[ -f ~/.config/ghostty/config ]] || strata-cmd-present ghostty; then
+    mkdir -p "$(dirname "$ghostty_config")"
+    if grep -qE '^font-size = ' "$ghostty_config" 2>/dev/null; then
+      sed -i -E "s/^font-size = .*/font-size = $pt/" "$ghostty_config"
+    else
+      printf '\nfont-size = %s\n' "$pt" >>"$ghostty_config"
+    fi
     pkill -SIGUSR2 ghostty 2>/dev/null || true
   fi
 
@@ -178,7 +185,9 @@ set_terminal_size() {
 
 # Report the current terminal point size from whichever config we find first.
 term_current_pt() {
-  if [[ -f ~/.config/ghostty/config ]]; then
+  if [[ -f ~/.config/ghostty/config.ghostty ]]; then
+    grep -oP '^font-size = \K[0-9.]+' ~/.config/ghostty/config.ghostty | head -1
+  elif [[ -f ~/.config/ghostty/config ]]; then
     grep -oP '^font-size = \K[0-9.]+' ~/.config/ghostty/config | head -1
   elif [[ -f ~/.config/alacritty/alacritty.toml ]]; then
     grep -oP '^size[[:space:]]*=[[:space:]]*\K[0-9.]+' ~/.config/alacritty/alacritty.toml | head -1

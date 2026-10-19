@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# strata:summary=Save wallpaper position, crop, and zoom per monitor and image
+# strata:args=<save> <json>
+set -euo pipefail
+[[ ${1:-} == save ]] || { echo 'Usage: strata-background-placement save <json>' >&2; exit 2; }
+entry=$(jq -ce '
+  select(type == "object") |
+  select((.monitor | type) == "string" and (.monitor | length) > 0) |
+  select((.path | type) == "string" and (.path | startswith("/"))) |
+  select(.mode == "fill" or .mode == "fit" or .mode == "stretch" or .mode == "center") |
+  select(all(.x,.y; type == "number" and . >= 0 and . <= 1)) |
+  select((.zoom | type) == "number" and .zoom >= 1 and .zoom <= 3) |
+  {monitor,path,mode,x,y,zoom}' <<<"${2:-}") || { echo 'Invalid background placement' >&2; exit 2; }
+destination=${XDG_CONFIG_HOME:-$HOME/.config}/strata/backgrounds.json
+mkdir -p "$(dirname "$destination")"
+exec {placement_lock}>"$destination.lock"
+flock "$placement_lock"
+current='{"version":1,"placements":{}}'
+if [[ -f $destination ]]; then current=$(jq -ce 'select(.version == 1 and (.placements | type) == "object")' "$destination") || { echo 'Invalid existing background placement file' >&2; exit 1; }; fi
+temporary=$(mktemp "$destination.XXXXXX")
+trap 'rm -f -- "$temporary"' EXIT
+jq --argjson entry "$entry" '.placements[$entry.monitor][$entry.path] = ($entry | {mode,x,y,zoom})' <<<"$current" >"$temporary"
+mv "$temporary" "$destination"

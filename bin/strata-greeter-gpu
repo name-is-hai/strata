@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Print a greeter-only DRM order for closed-lid startup. Resolve connector to
+# card on every boot: neither GPU vendors nor changing card numbers are pinned.
+set -euo pipefail
+
+drm=${STRATA_DRM_PATH:-/sys/class/drm}
+dri=${STRATA_DRI_PATH:-/dev/dri}
+lid=${STRATA_LID_PATH:-/proc/acpi/button/lid}
+main=${1:-}
+closed=false
+for state in "$lid"/*/state; do
+  [[ -r $state ]] || continue
+  if [[ $(< "$state") == *closed* ]]; then closed=true; break; fi
+done
+$closed || exit 0
+
+primary=
+for status in "$drm"/card*-*/status; do
+  [[ -r $status && $(< "$status") == connected ]] || continue
+  connector=${status%/status}
+  connector=${connector##*/}
+  card=${connector%%-*}
+  name=${connector#*-}
+  [[ $card =~ ^card[0-9]+$ && -e $dri/$card ]] || continue
+  [[ $name =~ ^(eDP|LVDS|DSI)- ]] && continue
+  [[ -n $primary ]] || primary=$card
+  if [[ $name == "$main" ]]; then primary=$card; break; fi
+done
+[[ -n $primary ]] || exit 0
+
+devices=$dri/$primary
+for node in "$dri"/card*; do
+  card=${node##*/}
+  [[ $card =~ ^card[0-9]+$ && -e $node && $card != "$primary" ]] || continue
+  devices+=:$node
+done
+printf '%s\n' "$devices"

@@ -1,7 +1,8 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 
-Item {
+PanelHeaderSurface {
   id: root
 
   property Component iconComponent: null
@@ -13,32 +14,53 @@ Item {
   property real iconSize: Style.font.display
   property real iconOpacity: 1.0
   property alias metaOpacity: metaText.opacity
+  headerForeground: foreground
+
+  // Older plugins place their hero in a scrolling Column. Leave the source
+  // object in place for bindings, but let KeyboardPanel render it in its
+  // fixed header slot. Explicit panelHeader assignments take precedence.
+  property bool autoDock: true
+  property var _headerHost: null
+  readonly property var _headerWindow: root.QsWindow.window
+  readonly property bool headerDocked: _headerHost !== null
+    && _headerHost.autoDockHeaders && !_headerHost.panelHeader
+    && _headerHost.automaticHeaderSource === root
+  readonly property real naturalHeight: Math.max(Style.space(58), heroLabels.implicitHeight + Style.space(20), trailingLoader.implicitHeight + Style.space(20))
+
+  function syncHeaderHost() {
+    if (_headerHost && typeof _headerHost.releaseAutomaticHeader === "function")
+      _headerHost.releaseAutomaticHeader(root)
+    _headerHost = null
+    var window = root._headerWindow
+    if (autoDock && window && typeof window.registerAutomaticHeader === "function"
+        && window.registerAutomaticHeader(root)) _headerHost = window
+  }
+  on_HeaderWindowChanged: Qt.callLater(syncHeaderHost)
+  onAutoDockChanged: Qt.callLater(syncHeaderHost)
+  Component.onCompleted: Qt.callLater(syncHeaderHost)
+  Component.onDestruction: {
+    if (_headerHost && typeof _headerHost.releaseAutomaticHeader === "function")
+      _headerHost.releaseAutomaticHeader(root)
+  }
+  visible: !headerDocked
 
   // Optional control pinned to the trailing edge of the hero — a ToggleSwitch,
   // a small button. The hero centers it against the labels and reserves the
   // space itself, so callers never do the geometry.
   property Component trailingControl: null
 
-  readonly property color dim: Qt.darker(foreground, 1.4)
+  readonly property color dim: Util.alpha(foreground, 0.6)
   readonly property real trailingInset: trailingLoader.item && trailingLoader.item.visible ? trailingLoader.width + Style.space(12) : 0
 
   width: parent ? parent.width : implicitWidth
-  implicitHeight: Math.max(iconLoader.implicitHeight, heroLabels.implicitHeight, trailingLoader.implicitHeight)
-
-  Loader {
-    id: iconLoader
-    sourceComponent: root.iconComponent
-    anchors.left: parent.left
-    anchors.verticalCenter: parent.verticalCenter
-    opacity: root.iconOpacity
-  }
+  implicitHeight: headerDocked ? 0 : naturalHeight
 
   Column {
     id: heroLabels
-    anchors.left: iconLoader.right
-    anchors.leftMargin: Style.space(14)
+    anchors.left: parent.left
+    anchors.leftMargin: Style.space(16)
     anchors.right: parent.right
-    anchors.rightMargin: root.trailingInset
+    anchors.rightMargin: root.trailingInset + Style.space(12)
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(2)
 
@@ -54,7 +76,7 @@ Item {
         width: Math.min(implicitWidth, Math.max(0, parent.width - (detailPill.visible ? detailPill.implicitWidth + Style.space(8) : 0)))
         color: root.foreground
         font.family: root.fontFamily
-        font.pixelSize: Style.font.title
+        font.pixelSize: Style.font.body
         font.bold: true
         elide: Text.ElideRight
       }
@@ -64,25 +86,23 @@ Item {
         height: 1
       }
 
-      BorderSurface {
+      Item {
         id: detailPill
         visible: root.detail !== ""
-        implicitWidth: detailText.implicitWidth + Style.space(10)
-        implicitHeight: detailText.implicitHeight + Style.space(4)
+        implicitWidth: Math.min(detailText.implicitWidth, parent.width * 0.45)
+        implicitHeight: detailText.implicitHeight
         anchors.verticalCenter: parent.verticalCenter
-        color: "transparent"
-        borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-        radius: Style.cornerRadius
 
         Text {
           id: detailText
           textFormat: Text.PlainText
           anchors.centerIn: parent
+          width: parent.width
           text: root.detail
           color: root.dim
           font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          font.bold: true
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
         }
       }
     }
@@ -91,21 +111,21 @@ Item {
       id: metaText
       textFormat: Text.PlainText
       width: parent.width
-      text: root.meta.toUpperCase()
+      text: root.meta
       visible: text !== ""
       color: root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
-      font.bold: true
-      font.letterSpacing: 1.2
       elide: Text.ElideRight
     }
   }
 
   Loader {
     id: trailingLoader
+    active: !root.headerDocked
     sourceComponent: root.trailingControl
     anchors.right: parent.right
+    anchors.rightMargin: Style.space(12)
     anchors.verticalCenter: parent.verticalCenter
   }
 }

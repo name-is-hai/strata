@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.system-update",
+  "name": "Strata updates",
+  "version": "1.0.0",
+  "author": "Strata",
+  "description": "Checks for newer packages published in the Strata repository",
+  "kinds": ["service", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {"service": "Service.qml", "barWidget": "BarWidget.qml"},
+  "barWidget": {
+    "displayName": "Strata updates",
+    "description": "Appears when a newer Strata package is available; click to review updates",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}

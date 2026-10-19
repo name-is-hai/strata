@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# strata:summary=Install the selected Strata palette as Btop's active theme.
+set -euo pipefail
+
+THEME_PATH="${1:-$HOME/.local/state/strata/current/theme}"
+SOURCE="$THEME_PATH/btop.theme"
+CONFIG_DIR="$HOME/.config/btop"
+CONFIG="$CONFIG_DIR/btop.conf"
+TARGET="$CONFIG_DIR/themes/strata.theme"
+
+[[ -f $SOURCE ]] || exit 0
+mkdir -p "${TARGET%/*}"
+install -Dm644 "$SOURCE" "$TARGET"
+touch "$CONFIG"
+
+# Keep all user preferences and replace only Btop's selected color theme.
+if grep -qE '^[[:space:]]*color_theme[[:space:]]*=' "$CONFIG"; then
+  sed -i -E 's|^[[:space:]]*color_theme[[:space:]]*=.*$|color_theme = "strata"|' "$CONFIG"
+else
+  printf '\ncolor_theme = "strata"\n' >>"$CONFIG"
+fi

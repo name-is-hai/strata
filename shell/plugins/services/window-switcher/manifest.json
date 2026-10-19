@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.window-switcher",
+  "name": "Window switcher",
+  "version": "1.0.0",
+  "author": "Strata",
+  "description": "Alt+Tab and touchpad window previews in recent-focus order",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" }
+}

@@ -3,7 +3,12 @@
 # strata:summary=Apply the current theme color to Chromium, Chrome, Edge, and Brave
 # strata:hidden=true
 
-source "$STRATA_PATH/install/helpers/browser-policy.sh"
+# Browser policy support is optional. Older installations did not ship this
+# helper, and a missing browser-color refresh must never make a theme switch
+# look like it failed.
+browser_policy_helper="$STRATA_PATH/install/helpers/browser-policy.sh"
+[[ -r $browser_policy_helper ]] || exit 0
+source "$browser_policy_helper"
 
 CHROMIUM_THEME=$HOME/.local/state/strata/current/theme/chromium.theme
 THEME_HEX_COLOR=$BROWSER_POLICY_DEFAULT_COLOR

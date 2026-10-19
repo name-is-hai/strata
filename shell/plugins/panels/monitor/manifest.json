@@ -1,20 +1,14 @@
 {
   "schemaVersion": 1,
   "id": "strata.monitor",
-  "name": "Display",
-  "version": "1.0.0",
+  "name": "Display Layout",
+  "version": "1.1.0",
   "author": "Strata",
-  "description": "Brightness slider and laptop display controls",
+  "description": "Drag, arrange, rotate, apply, and save connected display layouts",
   "kinds": [
-    "bar-widget"
+    "panel"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
-  },
-  "barWidget": {
-    "displayName": "Display",
-    "description": "Brightness slider and laptop display controls",
-    "category": "System",
-    "allowMultiple": false
+    "panel": "Panel.qml"
   }
 }

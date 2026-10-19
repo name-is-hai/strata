@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Temporarily recover a disabled laptop panel when no usable output remains.
+# strata:hidden=true
+set -euo pipefail
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+state=$runtime/strata-monitor-fallback.json
+exec 9>"$runtime/strata-monitor-fallback.lock"
+flock -n 9 || exit 0
+# Coalesce the remove/add/layout events from one connector change.
+sleep 0.1
+monitors=$(hyprctl monitors all -j)
+active=$(jq -c '[.[] | select(.name != "FALLBACK" and .disabled != true and .width > 0 and .height > 0)]' <<<"$monitors")
+
+if [[ -f $state ]]; then
+  # Restore from the actual personal config, including any edits made while
+  # undocked. Never rewrite monitors.lua or remove a manual-disable toggle.
+  if jq -e 'any(.[]; (.name | test("^(eDP|LVDS|DSI)-") | not))' <<<"$active" >/dev/null; then
+    rm -f -- "$state"
+    hyprctl reload >/dev/null
+    exit 0
+  fi
+fi
+[[ $(jq 'length' <<<"$active") == 0 ]] || exit 0
+name=$(jq -r '[.[] | select((.name | test("^(eDP|LVDS|DSI)-")) and .disabled == true)][0].name // empty' <<<"$monitors")
+[[ $name =~ ^[A-Za-z0-9._-]+$ ]] || exit 0
+temporary=$(mktemp "$runtime/.strata-monitor-fallback.XXXXXX")
+trap 'rm -f -- "$temporary"' EXIT
+jq -cn --arg name "$name" '{name:$name,disabled:true}' >"$temporary"
+mv -f -- "$temporary" "$state"
+if ! hyprctl eval "hl.monitor({ output = \"$name\", disabled = false, mode = \"preferred\", position = \"auto\", scale = \"auto\" })" >/dev/null; then
+  rm -f -- "$state"
+  exit 1
+fi
+# Only the newly recovered panel needs waking, not other locked/blank outputs.
+hyprctl dispatch "hl.dsp.dpms({ action = \"enable\", monitor = \"$name\" })" >/dev/null

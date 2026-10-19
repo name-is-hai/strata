@@ -1,23 +1,26 @@
 local md = require("default.hypr.helpers")
+local desktops = require("default.hypr.workspaces")
 
 for workspace = 1, 10 do
     local key = "code:" .. tostring(workspace + 9)
-    md.bind("SUPER + " .. key, "Workspace " .. workspace, hl.dsp.focus({ workspace = tostring(workspace) }))
+    md.bind("SUPER + " .. key, "Workspace " .. workspace, function() desktops.select(workspace) end)
     md.bind("SUPER + SHIFT + " .. key, "Move to workspace " .. workspace,
-        hl.dsp.window.move({ workspace = tostring(workspace) }))
+        function() desktops.move(workspace, true) end)
     md.bind("SUPER + SHIFT + ALT + " .. key, "Move silently to workspace " .. workspace,
-        hl.dsp.window.move({ workspace = tostring(workspace), follow = false }))
+        function() desktops.move(workspace, false) end)
 end
 
-md.bind("SUPER + TAB", "Next workspace", hl.dsp.focus({ workspace = "e+1" }))
-md.bind("SUPER + SHIFT + TAB", "Previous workspace", hl.dsp.focus({ workspace = "e-1" }))
-md.bind("SUPER + CTRL + TAB", "Former workspace", hl.dsp.focus({ workspace = "previous" }))
-md.bind("SUPER + mouse_down", "Next workspace", hl.dsp.focus({ workspace = "e+1" }))
-md.bind("SUPER + mouse_up", "Previous workspace", hl.dsp.focus({ workspace = "e-1" }))
+-- Cycle only the workspaces that belong to the monitor under focus. This
+-- keeps each display's workspace loop independent on multi-monitor setups.
+md.bind("SUPER + TAB", "Next workspace on this monitor", function() desktops.cycle(1) end)
+md.bind("SUPER + SHIFT + TAB", "Previous workspace on this monitor", function() desktops.cycle(-1) end)
+md.bind("SUPER + CTRL + TAB", "Former workspace on this monitor", function() desktops.previous() end)
+md.bind("SUPER + mouse_down", "Next workspace on this monitor", function() desktops.cycle(1) end)
+md.bind("SUPER + mouse_up", "Previous workspace on this monitor", function() desktops.cycle(-1) end)
 
 for _, direction in ipairs({ "left", "right", "up", "down" }) do
     md.bind("SUPER + SHIFT + ALT + " .. direction, "Move workspace " .. direction,
-        hl.dsp.workspace.move({ monitor = direction }))
+        function() desktops.transfer_active(direction) end)
 end
 
 md.bind("SUPER + S", "Toggle scratchpad", hl.dsp.workspace.toggle_special("scratchpad"))

@@ -54,10 +54,12 @@ Requires:       hypridle%{?_isa} = %{hypridle_version}-%{release}
 Requires:       hyprlock%{?_isa} = %{hyprlock_version}-%{release}
 Requires:       hyprsunset%{?_isa} = %{hyprsunset_version}-%{release}
 Requires:       hyprpicker%{?_isa} = %{hyprpicker_version}-%{release}
+Requires:       hyprcursor >= 0.1.11
+Requires:       hyprlang
 
 %description
 Meta-package for the tagged Hyprland idle daemon, lock screen, blue-light
-filter, and color picker used by My Distro.
+filter, color picker, and Hyprcursor theme tools used by Strata.
 
 %package -n hypridle
 Version:        %{hypridle_version}

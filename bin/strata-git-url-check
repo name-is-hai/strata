@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# strata:summary=Check that a git URL names a repository, not a transport helper
+# strata:args=<git-url>
+# strata:hidden=true
+
+set -euo pipefail
+
+# Git invokes remote helpers for `<helper>::<address>` and for an unrecognised
+# `<scheme>://` URL. Themes only need Git's built-in transports, so reject the
+# helper form and allowlist the URL schemes Git handles itself.
+transports=(ssh git git+ssh ssh+git http https ftp ftps file)
+
+fail() {
+  echo "strata-git-url-check: $*" >&2
+  exit 1
+}
+
+url="${1-}"
+[[ -n $url ]] || fail "a git URL is required"
+
+if [[ $url == -* || $url =~ ^[A-Za-z0-9][A-Za-z0-9+.-]*:: ]]; then
+  fail "'$url' names a git option or transport helper, not a repository."
+fi
+
+if [[ $url =~ ^([A-Za-z0-9][A-Za-z0-9+.-]*):// ]]; then
+  scheme="${BASH_REMATCH[1]}"
+  for transport in "${transports[@]}"; do
+    [[ $scheme == "$transport" ]] && exit 0
+  done
+  fail "'$url' uses the unsupported '$scheme' transport."
+fi

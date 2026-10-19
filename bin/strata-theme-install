@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# strata:summary=Install a theme from a git repository
+# strata:args=[git-repo-url]
+# strata:examples=strata theme install https://github.com/example/strata-example-theme.git
+# strata:examples=strata theme install git@github.com:example/strata-example-theme.git
+
+set -euo pipefail
+
+if [[ -z ${1-} ]]; then
+  echo "See https://github.com/topics/omarchy-theme"
+  repo_url=$(gum input --placeholder="Git repo URL (https or git@host:org/repo.git)" --header="")
+else
+  repo_url="$1"
+fi
+
+[[ -n $repo_url ]] || exit 130
+strata-git-url-check "$repo_url"
+
+themes_dir="$HOME/.config/strata/themes"
+repo_path="$repo_url"
+# For scp-style SSH URLs, basename must see the path after `host:`.
+[[ $repo_path != *"://" && $repo_path == *:* && ${repo_path%%:*} != */* ]] && repo_path="${repo_path#*:}"
+theme_name=$(basename -- "$repo_path" .git | sed -E 's/^omarchy-//; s/^strata-//; s/-theme$//' | tr '[:upper:]' '[:lower:]')
+
+# This name becomes a directory and is passed to strata-theme-set. Keep the
+# same conservative character set Omarchy uses before replacing anything.
+if ! (LC_ALL=C; [[ $theme_name =~ ^[a-z0-9_][a-z0-9._+-]*$ ]]); then
+  echo "Error: '$repo_url' does not give a usable theme name." >&2
+  exit 1
+fi
+
+theme_path="$themes_dir/$theme_name"
+mkdir -p "$themes_dir"
+
+if [[ -d $theme_path ]]; then
+  rm -rf -- "$theme_path"
+fi
+
+if ! git clone -- "$repo_url" "$theme_path"; then
+  echo "Error: failed to clone theme repository." >&2
+  exit 1
+fi
+
+# strata-theme-set treats a cloned theme as untrusted: it stages colors and
+# assets but excludes executable Lua and terminal/editor configuration files.
+exec strata-theme-set "$theme_name"

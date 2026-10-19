@@ -1,0 +1,12 @@
+[package]
+name = "waycast-net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+zbus = { workspace = true }
+tokio = { workspace = true, features = ["time", "macros", "sync"] }
+thiserror.workspace = true
+tracing.workspace = true
+futures-util.workspace = true
+zvariant.workspace = true

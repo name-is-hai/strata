@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 
 # Captures the current clipboard as a JSON entry on stdout. In watch mode,
 # wl-paste invokes this with the payload on stdin and the mime as $1. Without
@@ -52,7 +52,9 @@ emit_text() {
   tmp=$(mktemp --tmpdir="$STATE_DIR" clipboard.XXXXXX) || return 0
   read_copy "$@" || return
 
-  perl -MEncode=decode,FB_CROAK,LEAVE_SRC -MJSON::PP=encode_json -0777 -e '
+  # Encode ships with the text decoder; jq already handles JSON elsewhere in
+  # this script. Avoid the optional JSON::PP module, which minimal installs lack.
+  perl -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -0777 -e '
     my $raw = <STDIN>;
     exit unless length $raw;
 
@@ -94,8 +96,8 @@ emit_text() {
       $text = undef;
     }
     $text = decode("UTF-8", $raw) unless defined $text;
-    print "{\"type\":\"text\",\"text\":", encode_json($text), "}\n";
-  ' <"$tmp"
+    print encode("UTF-8", $text);
+  ' <"$tmp" | jq -Rsc '{type:"text", text:.}'
 }
 
 case "${1:-}" in

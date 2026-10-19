@@ -1,0 +1,97 @@
+#!/bin/bash
+# Shared by index.sh, thumbs.sh and apply.sh — sourced, never executed.
+#
+# Trust model: an installed theme is untrusted input (anyone can
+# `strata theme install` a hostile repo), and so is anything in a writable
+# directory, our own cache included. Nothing in this plugin decides trust on a
+# pathname and then opens that pathname again. Bytes reach a parser only
+# through read_bounded(), which opens once and verifies the object it opened.
+
+MAX_THEMES=512
+MAX_BACKGROUNDS=200
+MAX_DIR_ENTRIES=4096        # readdir entries examined per directory, before sorting
+MAX_NAME_BYTES=64
+MAX_PATH_BYTES=512
+MAX_TOML_BYTES=32768        # colors.toml / shell.toml are hundreds of bytes to a few KB
+MAX_PALETTE_BYTES=16384     # strata-theme-color --all is ~60 short lines
+MAX_IMAGE_BYTES=67108864    # 64 MB — 4K PNG wallpapers run 10–30 MB
+MAX_PIXELS=50000000         # 50 MP — 8K is 33 MP
+MAX_INDEX_BYTES=8388608     # an index.json above this is refused, not parsed
+LOADERS='^(jpegload|pngload|webpload|gifload)$'
+NAME_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+
+# Animated backgrounds. A clip is a wallpaper that moves, so it is bounded like
+# one and then some: it is handed to a decoder that runs for as long as the
+# preview is open, not for the length of one thumbnail call. The ceilings are
+# producer-side, checked on the snapshot, before MediaPlayer ever sees a path.
+MAX_VIDEO_BYTES=134217728   # 128 MB — yamz8's 720p teasers are 0.6–1.3 MB
+MAX_VIDEO_SECONDS=120       # a background that moves, not a film
+MAX_VIDEO_WIDTH=7680
+MAX_VIDEO_HEIGHT=4320
+# ffprobe format/codec allowlist. Containers ffmpeg reports as a comma list,
+# matched whole — "mov,mp4,m4a,3gp,3g2,mj2" is one string, not six.
+VIDEO_FORMATS='^(mov,mp4,m4a,3gp,3g2,mj2|matroska,webm)$'
+VIDEO_CODECS='^(h264|hevc|vp8|vp9|av1)$'
+
+SWATCH_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/strata/swatch
+SWATCH_THUMBS=$SWATCH_CACHE/thumbs
+SWATCH_INDEX=$SWATCH_CACHE/index.json
+
+# A theme name becomes a cache filename and an strata-theme-set argument.
+valid_name() {
+  [[ ${#1} -le $MAX_NAME_BYTES && $1 =~ $NAME_RE && $1 != *..* ]]
+}
+
+# read_bounded FILE MAX [ROOT...]
+#
+# The one trust decision in this plugin, taken on a file descriptor and
+# nowhere else. FILE is opened exactly once with O_NOFOLLOW (a symlink in the
+# final component is refused by the kernel, not by a prior lstat that could
+# be raced) and O_NONBLOCK (a FIFO or device left at the path opens instead of
+# parking the process). The object behind *that* descriptor is then verified
+# with fstat — a regular file of at most MAX bytes — and, when ROOTs are
+# given, its resolved path (/proc/self/fd) must lie under one of them, so a
+# theme cannot hand us something outside its own directory. The bytes are
+# read through the same descriptor with a one-byte-past-the-ceiling check:
+# a file that grows mid-read is refused, never used as a truncated prefix.
+#
+# Owner and mode are deliberately not checked: stock themes live under
+# /usr/share/strata and are root-owned, which is the un-replaceable case.
+#
+# Perl provides descriptor-bound, no-follow reads without Python.
+# Exit 0 means accepted, 3 missing, 1 refused, 124 deadline.
+read -r -d '' SWATCH_READ_PL <<'PL'
+use strict; use warnings; use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK);
+my ($path, $cap, @roots) = @ARGV; @roots = grep { length } @roots;
+my $fh;
+unless (sysopen($fh, $path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)) { exit($!{ENOENT} ? 3 : 1) }
+my @st = stat($fh) or exit 1;
+exit 1 unless -f $fh;
+exit 1 if $st[7] > $cap;
+if (@roots) {
+  my $real = readlink("/proc/self/fd/" . fileno($fh));
+  exit 1 unless defined $real && grep { index($real, "$_/") == 0 } @roots;
+}
+my $buf = "";
+while (length($buf) <= $cap) {
+  my $n = sysread($fh, $buf, 65536, length($buf));
+  exit 1 unless defined $n;
+  last if $n == 0;
+}
+exit 1 if length($buf) > $cap;
+binmode(STDOUT); print STDOUT $buf;
+PL
+
+read_bounded() {
+  local f=$1 max=$2; shift 2
+  timeout 10s perl -e "$SWATCH_READ_PL" -- "$f" "$max" "$@"
+}
+
+# snapshot FILE MAX DEST [ROOT...] — read_bounded into DEST, a file inside a
+# private directory this run created. DEST is removed when FILE is refused.
+snapshot() {
+  local f=$1 max=$2 dest=$3 rc; shift 3
+  read_bounded "$f" "$max" "$@" >"$dest"; rc=$?
+  (( rc == 0 )) || rm -f -- "$dest"
+  return $rc
+}

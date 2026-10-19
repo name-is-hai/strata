@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "strata.system-sounds",
+  "name": "System sounds",
+  "version": "1.0.0",
+  "author": "Strata, based on Austin Larson's omarchy-system-sounds",
+  "license": "MIT",
+  "repository": "https://github.com/Dielerorn/omarchy-system-sounds",
+  "description": "Sound themes and event controls in Strata's Audio panel",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" },
+  "keepLoaded": true
+}

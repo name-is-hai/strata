@@ -1,0 +1,6 @@
+#!/bin/sh
+if command -v strata-castd >/dev/null 2>&1; then
+  exec strata-castd --client "$@"
+fi
+printf '%s\n' '{"ok":false,"error":"Media casting backend is not installed; install strata-cast.","devices":[]}'
+exit 1

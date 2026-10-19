@@ -16,9 +16,27 @@ Panel {
   readonly property var sink: Pipewire.defaultAudioSink
   readonly property var source: Pipewire.defaultAudioSource
   readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
+  readonly property var linkGroups: Pipewire.linkGroups ? Pipewire.linkGroups.values : []
   readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
   readonly property var mediaService: bar?.shell?.firstPartyServiceFor("strata.media")
   readonly property var activeMediaPlayer: mediaService ? mediaService.activePlayer : null
+  property bool settingsView: false
+
+  function showSoundSettings() {
+    settingsView = true
+    focusSection = "sounds"
+    selectedIndex = -1
+    cursorActive = false
+    Qt.callLater(resetScroll)
+  }
+
+  function showMixer() {
+    settingsView = false
+    focusSection = "output"
+    selectedIndex = -1
+    cursorActive = false
+    Qt.callLater(resetScroll)
+  }
 
   readonly property var candidateSinks: {
     var list = []
@@ -50,6 +68,7 @@ Panel {
       // A tuning's output is a playback stream too, but it is the processing
       // itself rather than an application, so it does not belong in the list.
       if (String(n.name || "").indexOf("strata_speaker_tuning") === 0) continue
+      if (String(n.name || "") === "strata-system-sounds") continue
       list.push(n)
     }
     return list
@@ -110,6 +129,33 @@ Panel {
   property var displayAudioSinks: []
   property var displayAudioSources: []
   property var displayAudioStreams: []
+  property bool routeMenuOpen: false
+
+  readonly property var streamOutputOptions: {
+    var options = [{ value: "default", label: "Follow system default" }]
+    for (var i = 0; i < displayAudioSinks.length; i++) {
+      var device = nodeFor(displayAudioSinks[i])
+      if (device) options.push({ value: String(device.name), label: Model.nodeLabel(device) })
+    }
+    return options
+  }
+
+  function streamSinkName(stream) {
+    if (!stream) return "default"
+    for (var i = 0; i < linkGroups.length; i++) {
+      var link = linkGroups[i]
+      if (!link || !link.source || !link.target || link.source.id !== stream.id) continue
+      if (link.target.isSink && !link.target.isStream) return String(link.target.name)
+    }
+    return sink ? String(sink.name) : "default"
+  }
+
+  function setStreamOutput(stream, sinkName) {
+    if (!stream || stream.id === undefined || !stream.name) return
+    Quickshell.execDetached([
+      "strata-audio-stream-output", String(stream.id), String(stream.name), sinkName
+    ])
+  }
 
   // A DSP sink -- a speaker tuning, or EasyEffects -- can be the selected output
   // without being where loudness lives: changing its volume alters the level going
@@ -157,6 +203,7 @@ Panel {
   //   "output"  — output slider + sink device list
   //   "input"   — input slider + source device list
   //   "streams" — per-app playback streams
+  //   "sounds"  — system sounds and their event controls
   // selectedIndex semantics within a section:
   //   -1            → on the slider row (h/l adjusts volume, m/Enter mute)
   //   0..N-1        → on the Nth device/stream row
@@ -170,13 +217,10 @@ Panel {
   // "header" is a virtual section for the hero output mute toggle; it sits
   // above the output section so the speaker can be muted from the keyboard.
   readonly property bool headerHasCursor: cursorActive && focusSection === "header"
-  // Only channels that actually exist get a vote. A box with no default source
-  // would otherwise report "input unmuted" forever, leaving the hero switch
-  // able to mute but never to unmute.
+  // The speaker switch follows output mute. Microphone state is independent.
   readonly property bool hasOutput: !!(volumeSink && volumeSink.audio)
-  readonly property bool hasInput: !!(source && source.audio)
-  readonly property bool anyAudible: (hasOutput && !outputMuted) || (hasInput && !inputMuted)
-  readonly property string toggleHint: anyAudible ? "Mute" : "Unmute"
+  readonly property bool outputEnabled: hasOutput && !outputMuted
+  readonly property string toggleHint: outputEnabled ? "Mute output" : "Unmute output"
 
   readonly property color hoverFill: bar
     ? Style.hoverFillFor(bar.foreground, Color.accent)
@@ -189,6 +233,7 @@ Panel {
     if (section === "output") return displayAudioSinks.length
     if (section === "input") return displayAudioSources.length
     if (section === "streams") return displayAudioStreams.length
+    if (section === "sounds") return soundsLoader.item ? soundsLoader.item.rowCount : 0
     return 0
   }
 
@@ -196,22 +241,26 @@ Panel {
     if (section === "output") return true
     if (section === "input") return displayAudioSources.length > 0 || !!source
     if (section === "streams") return displayAudioStreams.length > 0
+    if (section === "sounds") return settingsView && !!soundsLoader.item
     return false
   }
 
   function sectionHasSlider(section) {
     if (section === "output") return true
     if (section === "input") return !!source
+    if (section === "sounds") return true
     return false  // stream rows carry their own sliders inline; not a section-level slider
   }
 
   // Order of visible sections, recomputed reactively so dropping a section
   // (e.g. no input devices) doesn't leave the cursor pointing at it.
   readonly property var visibleSections: {
+    if (settingsView) return sectionVisible("sounds") ? ["sounds"] : []
     var list = []
     if (sectionVisible("output")) list.push("output")
     if (sectionVisible("input")) list.push("input")
     if (sectionVisible("streams")) list.push("streams")
+    if (sectionVisible("sounds")) list.push("sounds")
     return list
   }
 
@@ -285,12 +334,14 @@ Panel {
     if (focusSection === "streams" && selectedIndex >= 0 && selectedIndex < displayAudioStreams.length) {
       var s = nodeFor(displayAudioStreams[selectedIndex])
       if (s && s.audio) s.audio.volume = Math.max(0, Math.min(1.5, s.audio.volume + delta))
+      return
     }
+    if (focusSection === "sounds" && soundsLoader.item) soundsLoader.item.adjust(selectedIndex, delta)
   }
 
   // Enter/Space: activate whatever the cursor is on.
   function activateCursor() {
-    if (focusSection === "header") { toggleAllMuted(); return }
+    if (focusSection === "header") { toggleOutputMute(); return }
     if (focusSection === "output") {
       if (selectedIndex === -1) { toggleOutputMute(); return }
       var sink = nodeFor(displayAudioSinks[selectedIndex])
@@ -306,7 +357,9 @@ Panel {
     if (focusSection === "streams" && selectedIndex >= 0) {
       var st = nodeFor(displayAudioStreams[selectedIndex])
       if (st && st.audio) st.audio.muted = !st.audio.muted
+      return
     }
+    if (focusSection === "sounds" && soundsLoader.item) soundsLoader.item.activate(selectedIndex)
   }
 
   onOpenedChanged: {
@@ -317,6 +370,8 @@ Panel {
       cursorActive = false
       Qt.callLater(resetScroll)
     } else {
+      settingsView = false
+      routeMenuOpen = false
       clearDisplayAudioModels()
     }
   }
@@ -413,8 +468,8 @@ Panel {
   }
 
   function outputIcon(volume) {
-    // Match the old Waybar pulseaudio glyph set. The Material Design speaker
-    // icons render visually smaller in JetBrainsMono Nerd Font.
+    // Keep the familiar Waybar pulseaudio glyph shapes. The bar button fits
+    // their visible outlines to the shared icon size.
     if (!sink || !sink.audio) return ""
     if (isHeadphones(sink)) return "󰋋"
     if (outputMuted) return ""
@@ -463,15 +518,6 @@ Panel {
 
   function toggleInputMute() {
     if (source && source.audio) source.audio.muted = !source.audio.muted
-  }
-
-  // The hero switch is the whole panel's on/off, so it carries both channels
-  // at once. It reads as on while anything is still audible, which keeps
-  // muting a single channel from the row below flipping the master switch.
-  function toggleAllMuted() {
-    var mute = anyAudible
-    if (hasOutput) volumeSink.audio.muted = mute
-    if (hasInput) source.audio.muted = mute
   }
 
   function setDefaultSink(node) {
@@ -583,6 +629,10 @@ Panel {
     return Model.streamLabel(node, mprisPlayers, audioStreams)
   }
 
+  function streamDetail(node) {
+    return Model.streamDetail(node)
+  }
+
   function streamRepresentsPlayer(node, player) {
     return Model.streamRepresentsPlayer(node, player, mprisPlayers, audioStreams)
   }
@@ -650,7 +700,7 @@ Panel {
     bar: root.bar
     text: root.outputIcon()
     onPressed: function(b) {
-      if (b === Qt.RightButton) root.toggleAllMuted()
+      if (b === Qt.RightButton) root.toggleOutputMute()
       else root.toggle()
     }
 
@@ -666,6 +716,7 @@ Panel {
 
   KeyboardPanel {
     id: panel
+    panelHeader: heroItem
     anchorItem: button
     owner: root
     bar: root.bar
@@ -677,15 +728,18 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: root.routeMenuOpen
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (dy !== 0) root.moveCursor(dy)
         else if (dx !== 0) root.adjustVolume(dx * 0.05)
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
-      onCloseRequested: root.close()
+      onCloseRequested: if (root.settingsView) root.showMixer(); else root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
+        if (root.cursorActive && root.focusSection === "sounds" && soundsLoader.item
+            && soundsLoader.item.textKey(t, root.selectedIndex)) return
         // 'm' mutes whatever the cursor is on: focused section's slider
         // for output/input, the focused stream for streams.
         if (t === "m" || t === "M") {
@@ -707,7 +761,17 @@ Panel {
         anchors.fill: parent
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        ScrollBar.vertical.policy: panelColumn.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        ScrollBar.vertical: PanelScrollBar {
+          id: audioScrollBar
+          parent: scrollArea.parent
+          anchors.top: scrollArea.top
+          anchors.bottom: scrollArea.bottom
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(4) - panel.padding
+          width: Style.space(6)
+          padding: 0
+          policy: panelColumn.implicitHeight > scrollArea.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        }
         Binding {
           target: scrollArea.contentItem
           property: "interactive"
@@ -716,40 +780,35 @@ Panel {
 
         Column {
           id: panelColumn
-          width: scrollArea.availableWidth
+          // Reserve a separate rail so the thumb never overlaps switches,
+          // sliders, or the trailing labels in sound settings.
+          width: Math.max(0, scrollArea.availableWidth
+            - (audioScrollBar.policy !== ScrollBar.AlwaysOff ? Style.space(16) : 0))
           spacing: Style.space(14)
 
           // ---------- Hero: speaker icon · title/status ----------
-          Item {
+          PanelHeaderSurface {
             id: heroItem
+            parent: panel.headerContainer
+            visible: !root.settingsView
             width: parent.width
-            implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, powerSwitch.implicitHeight)
+            headerForeground: root.bar.foreground
+            implicitHeight: Style.space(58)
 
-            // Status only — the switch owns muting, mouse and keyboard alike.
-            Text {
-              id: heroIcon
-              textFormat: Text.PlainText
-              text: root.outputIcon()
-              color: root.bar.foreground
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.display
-              opacity: root.outputMuted ? 0.5 : 1.0
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-            }
 
             // Compact on/off switch on the trailing edge of the hero, and the
-            // header's only cursor target. Checked means something is still
-            // audible, so muting everything reads as switching audio off.
+            // header's only cursor target. Checked means output is unmuted.
             ToggleSwitch {
               id: powerSwitch
-              checked: root.anyAudible
+              checked: root.outputEnabled
+              interactive: root.hasOutput
               hasCursor: root.headerHasCursor
               foreground: root.bar.foreground
-              anchors.right: parent.right
+              anchors.right: soundSettingsButton.left
+              anchors.rightMargin: Style.space(10)
               anchors.verticalCenter: parent.verticalCenter
               onHovered: function(on) { if (on) root.setHeaderCursor() }
-              onToggled: root.toggleAllMuted()
+              onToggled: root.toggleOutputMute()
 
               PanelToolTip {
                 visible: powerSwitch.containsMouse
@@ -758,12 +817,40 @@ Panel {
               }
             }
 
+            Item {
+              id: soundSettingsButton
+              width: Style.space(27)
+              height: parent.height
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(12)
+              Text {
+                anchors.centerIn: parent
+                text: "󰒓"
+                color: root.bar.foreground
+                opacity: soundSettingsMouse.containsMouse ? 1 : 0.75
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              MouseArea {
+                id: soundSettingsMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.showSoundSettings()
+              }
+              PanelToolTip {
+                visible: soundSettingsMouse.containsMouse
+                text: "System sound settings"
+                fontFamily: root.bar.fontFamily
+              }
+            }
+
             Column {
               id: heroLabels
-              anchors.left: heroIcon.right
-              anchors.leftMargin: Style.space(14)
-              anchors.right: parent.right
-              anchors.rightMargin: powerSwitch.width + Style.space(12)
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(16)
+              anchors.right: powerSwitch.left
+              anchors.rightMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
 
@@ -771,7 +858,7 @@ Panel {
                 text: "Audio"
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.title
+                font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
                 width: parent.width
@@ -783,12 +870,11 @@ Panel {
                 text: root.outputVolumeName(
                   outputSlider.dragging ? outputSlider.liveValue : root.outputVolume,
                   root.outputMuted
-                ).toUpperCase()
-                color: Qt.darker(root.bar.foreground, 1.4)
+                )
+                color: Util.alpha(root.bar.foreground, 0.6)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
+
                 elide: Text.ElideRight
                 width: parent.width
               }
@@ -796,13 +882,10 @@ Panel {
           }
 
           // ---- Output devices ----
-          PanelSeparator {
-            foreground: root.bar.foreground
-          }
-
           Column {
             width: parent.width
             spacing: Style.space(6)
+            visible: !root.settingsView
 
             Item {
               width: parent.width
@@ -882,14 +965,14 @@ Panel {
 
           // ---- Input ----
           PanelSeparator {
-            visible: root.displayAudioSources.length > 0 || !!root.source
+            visible: !root.settingsView && (root.displayAudioSources.length > 0 || !!root.source)
             foreground: root.bar.foreground
           }
 
           Column {
             width: parent.width
             spacing: Style.space(6)
-            visible: root.displayAudioSources.length > 0 || !!root.source
+            visible: !root.settingsView && (root.displayAudioSources.length > 0 || !!root.source)
 
             Item {
               width: parent.width
@@ -990,14 +1073,14 @@ Panel {
 
           // ---- Per-app streams ----
           PanelSeparator {
-            visible: root.displayAudioStreams.length > 0
+            visible: !root.settingsView && root.displayAudioStreams.length > 0
             foreground: root.bar.foreground
           }
 
           Column {
             width: parent.width
             spacing: Style.space(10)
-            visible: root.displayAudioStreams.length > 0
+            visible: !root.settingsView && root.displayAudioStreams.length > 0
 
             PanelSectionHeader {
               text: "SOURCES"
@@ -1015,6 +1098,58 @@ Panel {
                 node: root.nodeFor(modelData)
                 rowIndex: index
               }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(14)
+            visible: root.settingsView
+
+            Item {
+              width: parent.width
+              implicitHeight: Style.space(30)
+              Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "󰁍  Audio"
+                color: root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.body
+              }
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.showMixer()
+              }
+            }
+
+            PanelSeparator { foreground: root.bar.foreground }
+
+            Loader {
+              id: soundsLoader
+              width: parent.width
+              active: root.settingsView
+              source: Qt.resolvedUrl("../../services/system-sounds/AudioSection.qml")
+              onLoaded: {
+                item.bar = Qt.binding(function() { return root.bar })
+                item.open = Qt.binding(function() { return root.opened && root.settingsView })
+                item.cursorIndex = Qt.binding(function() {
+                  return root.cursorActive && root.focusSection === "sounds" ? root.selectedIndex : -2
+                })
+              }
+            }
+
+            Connections {
+              target: soundsLoader.item
+              function onCursorRequested(index) {
+                root.cursorActive = true
+                root.focusSection = "sounds"
+                root.selectedIndex = index
+              }
+              function onRevealRequested(item) { root.ensureCursorVisible(item) }
+              function onRowCountChanged() { root.clampCursor() }
+              function onCloseRequested() { root.close() }
             }
           }
         }
@@ -1160,6 +1295,8 @@ Panel {
     readonly property real streamVolume: node && node.audio ? node.audio.volume : 0
     readonly property bool streamMuted: node && node.audio ? node.audio.muted : false
     readonly property bool isActive: root.streamRepresentsPlayer(node, root.activeMediaPlayer)
+    readonly property string routedSinkName: root.streamSinkName(node)
+    onRoutedSinkNameChanged: streamOutput.value = routedSinkName
 
     hasCursor: root.cursorActive && root.focusSection === "streams" && root.selectedIndex === rowIndex
     onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(streamRow)
@@ -1231,6 +1368,21 @@ Panel {
         }
       }
 
+      Text {
+        textFormat: Text.PlainText
+        text: root.streamDetail(streamRow.node)
+        visible: text !== ""
+        x: Style.space(30)
+        width: parent.width - x
+        color: root.bar.foreground
+        opacity: 0.7
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+      }
+
       PanelSlider {
         bar: root.bar
         width: parent.width
@@ -1247,6 +1399,20 @@ Panel {
           if (streamRow.node && streamRow.node.audio)
             streamRow.node.audio.muted = !streamRow.node.audio.muted
         }
+      }
+
+      Dropdown {
+        id: streamOutput
+        width: parent.width
+        visible: root.displayAudioSinks.length > 1
+        showLabel: false
+        rowHeight: Style.space(30)
+        foreground: root.bar.foreground
+        fontFamily: root.bar.fontFamily
+        options: root.streamOutputOptions
+        value: streamRow.routedSinkName
+        onChanged: function(output) { root.setStreamOutput(streamRow.node, output) }
+        onPopupOpenChanged: root.routeMenuOpen = popupOpen
       }
     }
 

@@ -138,24 +138,21 @@ QtObject {
   // overlays, services).
   //
   // Special cases (implicitly always enabled, no shell.json entry needed):
-  //   - the built-in bar option (`strata.bar`) is active when `bar.id` is
-  //     missing or set to `strata.bar`.
+  //   - the selected bar defaults to `strata.bar`; bar.enabled can turn it
+  //     off while retaining the selection and widget layout.
   //   - first-party non-bar plugins are shell infrastructure (settings,
   //     image-picker, ...). Requiring users to add them to plugins[] just to
   //     summon them was a footgun: a stock shell.json with `plugins: []` would
   //     silently make `strata launch bar-settings` a no-op. Turning one off
   //     is therefore recorded the other way round, in `disabledPlugins[]`.
   function isEnabled(id) {
-    var key = String(id)
+    var key = Util.canonicalWidgetId(String(id))
     var manifest = installedPlugins[key]
     var config = shellConfigProvider ? shellConfigProvider() : null
     if (manifest) {
       if (Array.isArray(manifest.kinds) && manifest.kinds.indexOf("bar") !== -1) {
-        var selectedBar = ""
-        if (Util.isPlainObject(config) && Util.isPlainObject(config.bar))
-          selectedBar = Util.canonicalWidgetId(String(config.bar.id || ""))
-        if (!selectedBar) selectedBar = "strata.bar"
-        return selectedBar === key
+        if (config && config.bar && config.bar.enabled === false) return false
+        return configuredBarId(config) === key
       }
       if (isDisabled(config, key)) return false
       if (manifest.__isFirstParty) return true
@@ -163,9 +160,19 @@ QtObject {
     return findEntryLocation(config, key).found
   }
 
+  function configuredBarId(config) {
+    var selected = config && config.bar ? Util.canonicalWidgetId(String(config.bar.id || "")) : ""
+    if (!selected || selected === "strata.bar") return "strata.bar"
+    var manifest = installedPlugins[selected]
+    return manifest && Array.isArray(manifest.kinds) && manifest.kinds.indexOf("bar") !== -1
+      && manifest.entryPoints && manifest.entryPoints.bar ? selected : "strata.bar"
+  }
+
   function isDisabled(config, id) {
     return Util.isPlainObject(config) && Array.isArray(config.disabledPlugins)
-      && config.disabledPlugins.indexOf(Util.canonicalWidgetId(String(id))) !== -1
+      && config.disabledPlugins.some(function(entry) {
+        return Util.canonicalWidgetId(String(entry)) === Util.canonicalWidgetId(String(id))
+      })
   }
 
   function resolveEnabledId(id) {
@@ -401,7 +408,9 @@ QtObject {
   // built-in in disabledPlugins[].
   function removeDisabled(config, id) {
     if (!Array.isArray(config.disabledPlugins)) return
-    config.disabledPlugins = config.disabledPlugins.filter(function(entry) { return entry !== id })
+    config.disabledPlugins = config.disabledPlugins.filter(function(entry) {
+      return Util.canonicalWidgetId(String(entry)) !== Util.canonicalWidgetId(String(id))
+    })
     if (config.disabledPlugins.length === 0) delete config.disabledPlugins
   }
 
@@ -511,10 +520,8 @@ QtObject {
       if (isBarOption) {
         if (value) {
           config.bar.id = key
-        } else if (Util.canonicalWidgetId(String(config.bar.id || "")) === key) {
-          if (clonedFrom && clonedFrom !== "strata.bar") config.bar.id = clonedFrom
-          else delete config.bar.id
-        }
+          config.bar.enabled = true
+        } else if (configuredBarId(config) === key) config.bar.enabled = false
         return
       }
 
@@ -523,6 +530,22 @@ QtObject {
 
       if (value) {
         removeDisabled(config, key)
+        // Restore the previous settings and bar position when re-enabling.
+        var saved = Util.isPlainObject(config.disabledPluginEntries) ? config.disabledPluginEntries[key] : null
+        if (!location.found && !clonedFrom && saved && saved.entry) {
+          var savedId = typeof saved.entry === "string" ? saved.entry : saved.entry.id
+          if (savedId === key) {
+            var destination = saved.kind === "bar" && ["left", "center", "right"].indexOf(saved.section) !== -1
+              ? config.bar.layout[saved.section] : config.plugins
+            var savedIndex = Math.max(0, Math.min(destination.length, Number(saved.index) || 0))
+            destination.splice(savedIndex, 0, Util.cloneJson(saved.entry))
+            location = findEntryLocation(config, key)
+          }
+        }
+        if (config.disabledPluginEntries) {
+          delete config.disabledPluginEntries[key]
+          if (Object.keys(config.disabledPluginEntries).length === 0) delete config.disabledPluginEntries
+        }
         var entry = { id: key }
         var insertedWithPlacement = false
         if (!location.found && isBarWidget) {
@@ -552,13 +575,19 @@ QtObject {
         return
       }
 
+      if (location.found && !clonedFrom) {
+        if (!Util.isPlainObject(config.disabledPluginEntries)) config.disabledPluginEntries = {}
+        var oldEntry = location.kind === "bar" ? config.bar.layout[location.section][location.index] : config.plugins[location.index]
+        config.disabledPluginEntries[key] = {
+          kind: location.kind, section: location.section || "", index: location.index, entry: Util.cloneJson(oldEntry)
+        }
+      }
       if (clonedFrom) restoreCloneSource(config, key, clonedFrom)
       else if (location.kind === "bar") config.bar.layout[location.section].splice(location.index, 1)
       else if (location.kind === "plugin") config.plugins.splice(location.index, 1)
 
-      // Dropping the layout entry is the whole story for a widget. Anything
-      // else built-in loads by default, so switching it off has to be stated.
-      if (isFirstParty && !isBarWidget) addDisabled(config, key)
+      // Widgets may also own a service; disabling must stop that service too.
+      if (isFirstParty) addDisabled(config, key)
     })
     if (lastEnableError) return false
     registryRevision++
@@ -691,7 +720,7 @@ QtObject {
     scanning = true
     // $0 = first-party dir, $1 = third-party dir. Some bash versions need the explicit -- separator.
     // First-party plugins may be grouped one level deeper, e.g. panels/audio
-    // or services/battery.
+    // or services/idle.
     // First-party bar widgets can also carry sibling manifests such as
     // widgets/Clock.manifest.json so multiple widgets can live in one source
     // directory without wrapper folders.

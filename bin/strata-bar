@@ -3,7 +3,7 @@
 # strata:summary=Configure the bar and its widget layout
 # strata:group=bar
 # strata:args=use <id> | reset | defaults | position <top|bottom|left|right> | transparent <true|false|toggle> | put <id> [placement] | move <id> [placement] | set <id> <key> <value> [--json] [placement]
-# strata:examples=strata bar use local.neon-bar | strata bar put strata.keyboard-layout --after strata.clock | strata bar move strata.clock --section center --index 0 | strata bar set strata.clock format HH:mm
+# strata:examples=strata bar use local.neon-bar | strata bar put strata.language-input --after strata.clock | strata bar move strata.clock --section center --index 0 | strata bar set strata.clock format HH:mm
 
 set -euo pipefail
 
@@ -41,7 +41,7 @@ already on the bar where it is, and falls back to the widget's usual spot when
 
 Examples:
   strata bar use local.neon-bar
-  strata bar put strata.keyboard-layout --after strata.clock
+  strata bar put strata.language-input --after strata.clock
   strata bar move strata.media left
   strata bar move strata.clock --section center --index 0
   strata bar set strata.clock format HH:mm

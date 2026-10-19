@@ -30,7 +30,40 @@ open_image() {
   local path="$1"
 
   [[ -r $path ]] || exit 1
-  exec omasnap "$path"
+  exec xdg-open "$path"
+}
+
+open_files_from_text() {
+  local candidate file
+  local -a files=()
+  while IFS= read -r candidate || [[ -n $candidate ]]; do
+    candidate=${candidate%$'\r'}
+    [[ -n $candidate ]] || continue
+    case "$candidate" in
+      file://localhost/*) candidate="file:///${candidate#file://localhost/}" ;;
+    esac
+    case "$candidate" in
+      file:///*)
+        [[ ${candidate,,} != *%00* ]] || return 1
+        file=$(perl -e '$s = shift; $s =~ s/%([0-9a-fA-F]{2})/chr(hex($1))/eg; print $s' "${candidate#file://}") || return 1
+        ;;
+      '~/'*) file="$HOME/${candidate#\~/}" ;;
+      /*) file="$candidate" ;;
+      *) return 1 ;;
+    esac
+    [[ -e $file ]] || return 1
+    files+=("$file")
+  done <<<"$1"
+
+  (( ${#files[@]} > 0 )) || return 1
+  if (( ${#files[@]} == 1 )); then
+    exec xdg-open "${files[0]}"
+  fi
+  for file in "${files[@]}"; do
+    xdg-open "$file" &
+  done
+  wait
+  exit
 }
 
 open_text() {
@@ -39,7 +72,12 @@ open_text() {
   local open_dir=""
   local open_file=""
 
-  url=$(grep -Eom1 'https?://[^[:space:]"'\''<>]+' <<<"$text" || true)
+  open_files_from_text "$text"
+
+  # A link alone opens the browser; a paragraph containing links stays text.
+  if [[ $text =~ ^https?://[^[:space:]]+$ ]]; then
+    url="$text"
+  fi
   if [[ -z $url && $text =~ ^[[:space:]]*([[:alnum:]][[:alnum:].-]+\.[[:alpha:]]{2,})(/[^[:space:]]*)?[[:space:]]*$ ]]; then
     url="https://${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
   fi
@@ -51,7 +89,7 @@ open_text() {
   open_dir="${XDG_STATE_HOME:-$HOME/.local/state}/strata/clipboard-open"
   mkdir -p "$open_dir"
   open_file=$(mktemp --tmpdir="$open_dir" clipboard.XXXXXX.txt) || exit 1
-  printf '%s' "$text" >"$open_file"
+  jq -j --argjson index "$history_index" '.[$index].text' "$history_path" >"$open_file"
   exec strata-launch-editor "$open_file"
 }
 

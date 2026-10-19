@@ -2,62 +2,105 @@
 
 # strata:summary=Take a screenshot
 # strata:group=capture
-# strata:args=[smart|region|windows|fullscreen|scroll] [copy|save]
+# strata:args=[snip|smart|region|windows|fullscreen|scroll] [copy|save]
 # strata:examples=strata screenshot | strata capture screenshot region
 # strata:aliases=strata screenshot
 
-if [[ -n ${STRATA_SCREENSHOT_DIR:-} && -z ${OMASNAP_SCREENSHOT_DIR:-} ]]; then
-  export OMASNAP_SCREENSHOT_DIR="$STRATA_SCREENSHOT_DIR"
+# Desktop hints are live chrome, never part of the frozen capture. The native
+# selector supplies its own guide after taking the desktop frame.
+if command -v strata-shell >/dev/null 2>&1; then
+  STRATA_SHELL_IPC_TIMEOUT=0.5s strata-shell shortcut-guide prepareCapture >/dev/null 2>&1 || true
 fi
 
-omasnap_args=()
+snip_args=()
 for arg in "$@"; do
   case "$arg" in
-    copy) omasnap_args+=(--copy) ;;
-    save) omasnap_args+=(--save) ;;
+    copy) snip_args+=(--copy) ;;
+    save) snip_args+=(--save) ;;
+    snip) snip_args+=(--snip-toolbar) ;;
     slurp) ;;
-    *) omasnap_args+=("$arg") ;;
+    *) snip_args+=("$arg") ;;
   esac
 done
 
-if command -v omasnap >/dev/null 2>&1; then
-  exec omasnap "${omasnap_args[@]}"
+# Strata Snip is the native frozen-frame selector. Prefer the per-user
+# installation even when an older UWSM session has not yet picked ~/.local/bin
+# up in PATH.
+snip_bin="${STRATA_SNIP_BIN:-}"
+if [[ -z $snip_bin && -x "$HOME/.local/bin/strata-snip" ]]; then
+  snip_bin="$HOME/.local/bin/strata-snip"
+elif [[ -z $snip_bin ]] && command -v strata-snip >/dev/null 2>&1; then
+  snip_bin="$(command -v strata-snip)"
+fi
+if [[ -n $snip_bin && -x $snip_bin ]]; then
+  exec "$snip_bin" "${snip_args[@]}"
 fi
 
-# Fedora does not currently package omasnap. Keep the canonical Strata command
-# useful with the small Wayland capture stack already required by the desktop.
+# Keep the canonical Strata command useful when the native tool is unavailable.
 mode="smart"
 destination="copy"
 
 for arg in "$@"; do
   case "$arg" in
     smart | region | fullscreen) mode="$arg" ;;
+    snip) mode="region" ;;
     copy | save) destination="$arg" ;;
     slurp) mode="region" ;;
     windows | scroll)
-      echo "strata-capture-screenshot: '$arg' requires omasnap" >&2
+      echo "strata-capture-screenshot: '$arg' requires strata-snip" >&2
       exit 2
       ;;
   esac
 done
 
-grim_args=()
+# Capture before the region picker appears. The picker is a new layer surface, so
+# it causes hover-driven UI such as the tray to close. Cropping this frozen image
+# means the resulting screenshot contains exactly what was visible at the hotkey.
+frozen=""
+cleanup() {
+  [[ -n $frozen ]] && rm -rf "${frozen%/*}"
+}
+
 case "$mode" in
   smart | region)
+    frozen_dir=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/strata-screenshot.XXXXXX")
+    frozen="$frozen_dir/screen.png"
+    trap cleanup EXIT INT TERM
+    grim "$frozen" || exit 1
     geometry=$(slurp) || exit 0
-    grim_args=(-g "$geometry")
+    if [[ $geometry =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]+([0-9]+)x([0-9]+)$ ]]; then
+      x="${BASH_REMATCH[1]}"
+      y="${BASH_REMATCH[2]}"
+      width="${BASH_REMATCH[3]}"
+      height="${BASH_REMATCH[4]}"
+    else
+      echo "strata-capture-screenshot: unsupported region geometry: $geometry" >&2
+      exit 1
+    fi
+    captured="$frozen_dir/selection.png"
+    vips crop "$frozen" "$captured" "$x" "$y" "$width" "$height" || exit 1
     ;;
-  fullscreen) ;;
+  fullscreen)
+    captured=""
+    ;;
 esac
 
 if [[ $destination == copy ]]; then
-  grim "${grim_args[@]}" - | wl-copy --type image/png
+  if [[ -n $captured ]]; then
+    wl-copy --type image/png < "$captured"
+  else
+    grim - | wl-copy --type image/png
+  fi
   strata-notification-send "Screenshot copied" "The screenshot is in the clipboard."
 else
   pictures=$(xdg-user-dir PICTURES 2>/dev/null || true)
   directory="${STRATA_SCREENSHOT_DIR:-${pictures:-$HOME/Pictures}/Screenshots}"
   install -d "$directory"
   output="$directory/Screenshot-$(date +%Y%m%d-%H%M%S).png"
-  grim "${grim_args[@]}" "$output"
+  if [[ -n $captured ]]; then
+    install -m 644 "$captured" "$output"
+  else
+    grim "$output"
+  fi
   strata-notification-send "Screenshot saved" "$output"
 fi

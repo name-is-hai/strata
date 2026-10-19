@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# strata:summary=Enter text using the Strata menu
+# strata:args=<prompt>
+set -euo pipefail
+prompt=${1:?Usage: strata-menu-input <prompt>}
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+payload=$(jq -cn --arg prompt "$prompt" --arg selectionFile "$work/selection" --arg doneFile "$work/done" \
+  '{mode:"input",prompt:$prompt,selectionFile:$selectionFile,doneFile:$doneFile,width:620}')
+strata-shell shell summon strata.menu "$payload" >/dev/null
+while [[ ! -e $work/done ]]; do sleep 0.05; done
+[[ -s $work/selection ]] || exit 1
+cat "$work/selection"

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# strata:summary=Fetch the best available website icon
+# strata:args=<http-url> <destination-base>
+set -euo pipefail
+url=${1:-}
+destination=${2:-}
+[[ -n $destination && ! $url =~ [[:space:][:cntrl:]] && ${url,,} =~ ^https?://[^/?#]+ ]] || exit 1
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+
+origin_of() { local host=${1#*://}; host=${host%%[/?#]*}; printf '%s://%s' "${1%%://*}" "$host"; }
+resolve_url() {
+  local base=$1 ref=$2 origin
+  ref=${ref//&amp;/\&}
+  [[ -n $ref && ! $ref =~ [[:space:][:cntrl:]] ]] || return 1
+  origin=$(origin_of "$base")
+  case "$ref" in
+    //*) printf '%s:%s' "${base%%:*}" "$ref" ;;
+    /*) printf '%s%s' "$origin" "$ref" ;;
+    \?*) printf '%s%s' "${base%%\?*}" "$ref" ;;
+    \#*) return 1 ;;
+    *)
+      if [[ $ref =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]]; then
+        [[ ${ref,,} =~ ^https?:// ]] || return 1
+        printf '%s' "$ref"
+      else
+        base=${base%%\#*}; base=${base%%\?*}
+        [[ $base != "$origin" ]] || base+=/
+        printf '%s/%s' "${base%/*}" "$ref"
+      fi
+      ;;
+  esac
+}
+attribute() (
+  shopt -s nocasematch
+  tag=$1 key=$2
+  pattern="(^|[[:space:]])${key}[[:space:]]*=[[:space:]]*\"([^\"]*)\""
+  if [[ $tag =~ $pattern ]]; then printf '%s' "${BASH_REMATCH[2]}"; exit; fi
+  pattern="(^|[[:space:]])${key}[[:space:]]*=[[:space:]]*'([^']*)'"
+  if [[ $tag =~ $pattern ]]; then printf '%s' "${BASH_REMATCH[2]}"; exit; fi
+  pattern="(^|[[:space:]])${key}[[:space:]]*=[[:space:]]*([^[:space:]\"\'<>]+)"
+  if [[ $tag =~ $pattern ]]; then printf '%s' "${BASH_REMATCH[2]%/}"; exit; fi
+  exit 1
+)
+fetch() {
+  curl -gfsSL --proto '=http,https' --proto-redir '=http,https' \
+    --connect-timeout 3 --max-time 5 --max-filesize 2097152 "$@" 2>/dev/null
+}
+page_url=$(fetch "$url" -o "$work/page" -w '%{url_effective}') || page_url=$url
+origin=$(origin_of "$page_url")
+base=$page_url
+if [[ -s $work/page ]]; then
+  page=$(cat "$work/page")
+  shopt -s nocasematch
+  base_pattern='<base[[:space:]][^>]*>'
+  if [[ $page =~ $base_pattern ]]; then
+    ref=$(attribute "${BASH_REMATCH[0]}" href) || ref=
+    base=$(resolve_url "$page_url" "$ref") || base=$page_url
+  fi
+  remaining=$page
+  link_pattern='<link[[:space:]][^>]*>'
+  while [[ $remaining =~ $link_pattern ]]; do
+    tag=${BASH_REMATCH[0]}
+    remaining=${remaining#*"$tag"}
+    rel=$(attribute "$tag" rel) || continue
+    [[ " $rel " =~ [[:space:]](apple-touch-icon(-precomposed)?|icon)[[:space:]] ]] || continue
+    ref=$(attribute "$tag" href) || continue
+    candidate=$(resolve_url "$base" "$ref") || continue
+    sizes=$(attribute "$tag" sizes) || sizes=
+    score=0
+    if [[ $sizes =~ ([0-9]+)x[0-9]+ ]]; then score=$((10#${BASH_REMATCH[1]})); fi
+    [[ $sizes != any ]] || score=512
+    [[ $rel != *apple-touch-icon* ]] || score=$((score + 100000))
+    printf '%s\t%s\n' "$score" "$candidate" >> "$work/candidates"
+  done
+  shopt -u nocasematch
+fi
+candidates=()
+if [[ -f $work/candidates ]]; then
+  while IFS=$'\t' read -r score candidate; do
+    candidates+=("$candidate")
+    (( ${#candidates[@]} < 8 )) || break
+  done < <(sort -t $'\t' -k1,1nr "$work/candidates")
+fi
+candidates+=("$origin/apple-touch-icon.png" "$origin/favicon.ico")
+encoded_origin=$(jq -rn --arg value "$origin" '$value | @uri')
+# Same final fallback used by Omarchy, after trying the website's own icons.
+candidates+=("https://www.google.com/s2/favicons?domain_url=$encoded_origin&sz=256")
+for candidate in "${candidates[@]}"; do
+  fetch "$candidate" -o "$work/icon" || continue
+  mime=$(file -b --mime-type "$work/icon")
+  case "$mime" in
+    image/png) extension=png ;;
+    image/jpeg) extension=jpg ;;
+    image/x-icon|image/vnd.microsoft.icon) extension=ico ;;
+    image/svg+xml) extension=svg ;;
+    image/webp) extension=webp ;;
+    *) continue ;;
+  esac
+  install -Dm0644 "$work/icon" "$destination.$extension"
+  printf '%s\n' "$destination.$extension"
+  exit 0
+done
+exit 1

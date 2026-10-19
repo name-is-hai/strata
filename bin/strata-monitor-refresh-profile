@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# strata:summary=Apply power-aware refresh rates to all connected monitors
+# strata:args=[ac|battery]
+# strata:examples=strata monitor refresh profile ac | strata monitor refresh profile battery
+
+# Preserve every output's resolution, scale, position, transform and workspace
+# assignment. Only the monitor mode is changed through Hyprland's Lua API.
+# AC selects the highest refresh rate for the active resolution. Battery picks
+# the lowest smooth rate (at least 59 Hz), avoiding 24/30 Hz TV modes.
+
+profile=${1:-}
+if [[ $profile != ac && $profile != battery ]]; then
+  echo "Usage: strata-monitor-refresh-profile [ac|battery]" >&2
+  exit 2
+fi
+
+monitors=$(hyprctl monitors all -j)
+while IFS=$'\t' read -r name mode current_rate; do
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || continue
+  [[ $mode =~ ^[0-9]+x[0-9]+@[0-9]+([.][0-9]+)?Hz$ ]] || continue
+
+  # Do not churn the compositor when this profile is already active.
+  if awk -v current="$current_rate" -v wanted="${mode#*@}" \
+      'BEGIN { sub(/Hz$/, "", wanted); exit !(current - wanted < 0.1 && wanted - current < 0.1) }'; then
+    continue
+  fi
+
+  hyprctl eval "hl.monitor({ output = \"$name\", mode = \"$mode\" })" >/dev/null || true
+done < <(
+  jq -r --arg profile "$profile" '
+    def parsed_mode:
+      capture("^(?<width>[0-9]+)x(?<height>[0-9]+)@(?<rate>[0-9]+(?:\\.[0-9]+)?)Hz$")
+      | .width |= tonumber | .height |= tonumber | .rate |= tonumber;
+    def matching_modes:
+      . as $monitor
+      | [($monitor.availableModes // [])[]
+         | select(test("^[0-9]+x[0-9]+@[0-9]+(?:\\.[0-9]+)?Hz$"))
+         | . as $raw | (parsed_mode) as $mode
+         | select((($mode.width == $monitor.width and $mode.height == $monitor.height)
+                   or ((($monitor.transform // 0) == 1 or ($monitor.transform // 0) == 3)
+                       and $mode.width == $monitor.height and $mode.height == $monitor.width)))
+         | $mode + { raw: $raw } ];
+    .[] | select(.disabled != true) | . as $monitor
+    | (matching_modes) as $modes
+    | if ($modes | length) == 0 then empty
+      elif $profile == "ac" then ($modes | max_by(.rate))
+      else
+        ([ $modes[] | select(.rate >= 59) ] | if length > 0 then min_by(.rate) else ($modes | min_by(.rate)) end)
+      end
+    | [ $monitor.name, .raw, ($monitor.refreshRate // 0) ] | @tsv
+  ' <<<"$monitors"
+)

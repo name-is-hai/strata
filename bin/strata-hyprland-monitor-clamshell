@@ -219,6 +219,13 @@ enable_internal() {
   fi
 
   [[ -f $MANUAL_DISABLE_FLAG ]] && strata-hyprland-monitor-external-active && return 0
+  # A personal disabled rule also wins while an external display is active.
+  # Do not undo Display Layout merely because the laptop lid is open.
+  if strata-hyprland-monitor-external-active && [[ -z $(current_internal_scale) ]]; then
+    return 0
+  fi
+  strata-monitor-fallback >/dev/null 2>&1 || true
+  [[ -f ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/strata-monitor-fallback.json ]] && return 0
   sync_internal_scale
 
   if (( changed )); then

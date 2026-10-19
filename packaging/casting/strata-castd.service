@@ -1,0 +1,14 @@
+[Unit]
+Description=Strata media casting
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/strata-castd
+Restart=on-failure
+RestartSec=1
+UMask=0077
+TasksMax=1024
+MemoryMax=4G
+OOMScoreAdjust=200
+KeyringMode=private

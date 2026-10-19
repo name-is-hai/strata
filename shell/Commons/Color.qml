@@ -14,7 +14,7 @@ QtObject {
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: home + "/.local/state"
-  readonly property string currentThemePath: stateHome + "/strata/current/theme"
+  readonly property string currentThemePath: Quickshell.env("STRATA_GREETER_THEME_DIR") || stateHome + "/strata/current/theme"
 
   property color foreground: "#cacccc"
   property color background: "#101315"
@@ -247,7 +247,7 @@ QtObject {
   // CLI takes effect live without restarting the shell; absent by default.
   property FileView userShellFile: FileView {
     id: userShellFile
-    path: root.home + "/.config/strata/shell.toml"
+    path: Quickshell.env("STRATA_GREETER_USER_SHELL_FILE") || root.home + "/.config/strata/shell.toml"
     watchChanges: true
     printErrors: false
     onLoaded: root.loadUserShell(text())

@@ -12,7 +12,7 @@ hl.config({
         layout = "dwindle",
     },
     decoration = {
-        rounding = 10,
+        rounding = 0,
         active_opacity = 1.0,
         inactive_opacity = 0.96,
         shadow = {
@@ -54,6 +54,24 @@ hl.layer_rule({
     name = "strata-menu-fade",
     match = { namespace = "^strata-menu$" },
     animation = "fade",
+})
+
+-- Shortcut hints animate their live QML contents. Do not leave compositor
+-- snapshots behind when capture hands off to the native selector's chrome.
+hl.layer_rule({
+    name = "strata-shortcut-hints-live",
+    match = { namespace = "^strata-shortcut-(guide|promoter)$" },
+    no_anim = true,
+    animation = "none",
+})
+
+-- Strata Snip captures the frame before opening this layer. Keep its picker in
+-- place so its frozen image never slides in from a screen edge.
+hl.layer_rule({
+    name = "strata-snip-freeze",
+    match = { namespace = "^strata-snip$" },
+    no_anim = true,
+    animation = "none",
 })
 
 return true
