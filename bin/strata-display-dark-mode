@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
 # strata:summary=Set the desktop light or dark appearance
 # strata:args=[dark|light|toggle]
 # strata:examples=strata display dark mode dark | strata display dark mode toggle
+set -euo pipefail
+
 
 SCHEMA="org.gnome.desktop.interface"
 

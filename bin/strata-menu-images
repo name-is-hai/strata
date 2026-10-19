@@ -182,7 +182,9 @@ generate_thumbnail() {
     # stalled file must not hold it shut. A failed run drops the row.
     thumbnail_command=(timeout -k 5 10 ffmpegthumbnailer -i "$image" -o "$tmp" -s 1536 -q 8)
   else
-    thumbnail_command=(env VIPS_CONCURRENCY=1 vipsthumbnail "$image" --size 1536x864 --smartcrop=centre --path "$tmp[Q=82,strip]")
+    thumbnail_command=(timeout -k 2 30 magick -limit thread 1 -limit memory 256MiB -limit map 512MiB -limit disk 1GiB
+      "$image[0]" -auto-orient -thumbnail "1536x864^" -gravity center -extent 1536x864
+      -background black -alpha remove -alpha off -strip -quality 82 "JPEG:$tmp")
   fi
 
   # Close the lock fd for the converter: an orphaned or hung child must not
@@ -216,10 +218,9 @@ thumbnail_for() {
   thumbnail="$cache_dir/$hash.jpg"
 
   if [[ ! -f $thumbnail ]]; then
-    # Fedora packages vipsthumbnail in vips-tools. A source checkout may be
-    # tested before that RPM dependency is installed, so retain a usable
+    # A source checkout may lack ImageMagick, so retain a usable
     # picker by letting Qt render still images directly in that case.
-    if ! is_video_path "$image" && ! command -v vipsthumbnail >/dev/null 2>&1; then
+    if ! is_video_path "$image" && ! command -v magick >/dev/null 2>&1; then
       printf '%s' "$image"
       return
     fi
@@ -255,7 +256,7 @@ thumbnail_for() {
   printf '%s' "$thumbnail"
 }
 
-# Each vips run is single-threaded. Eager preparation can fill every core;
+# Each ImageMagick run is single-threaded. Eager preparation can fill every core;
 # lazy preparation leaves CPU and I/O capacity for the interactive shell.
 # ffmpegthumbnailer leaves FFmpeg's automatic threading on, so a full-width fan
 # out of those would put a codec thread pool on every core at once.

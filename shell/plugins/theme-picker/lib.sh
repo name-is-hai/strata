@@ -17,7 +17,6 @@ MAX_PALETTE_BYTES=16384     # strata-theme-color --all is ~60 short lines
 MAX_IMAGE_BYTES=67108864    # 64 MB — 4K PNG wallpapers run 10–30 MB
 MAX_PIXELS=50000000         # 50 MP — 8K is 33 MP
 MAX_INDEX_BYTES=8388608     # an index.json above this is refused, not parsed
-LOADERS='^(jpegload|pngload|webpload|gifload)$'
 NAME_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 
 # Animated backgrounds. A clip is a wallpaper that moves, so it is bounded like

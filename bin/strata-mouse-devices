@@ -24,22 +24,8 @@ kernel=$(
         external=true
       fi
     fi
-    battery='{"percentage":null,"charging":null}'
-    # HID battery providers are optional. Unsupported devices remain visible.
-    vendor=$(sed -n 's/^ID_VENDOR_ID=//p' <<<"$properties")
-    product=$(sed -n 's/^ID_MODEL_ID=//p' <<<"$properties")
-    if [[ $vendor == 1532 && ( $product == 00c0 || $product == 00c1 ) ]]; then
-      for raw in /sys/class/hidraw/hidraw*; do
-        [[ -r $raw/device/uevent ]] || continue
-        grep -qx "HID_PHYS=$physical" "$raw/device/uevent" || continue
-        if result=$(timeout 4s strata-mouse-hid-battery "/dev/${raw##*/}" 2>/dev/null); then
-          battery=$result
-        fi
-        break
-      done
-    fi
-    jq -cn --arg id "$id" --arg name "$name" --arg serial "$short_serial" --argjson battery "$battery" --argjson external "$external" --argjson touchpad "$touchpad" \
-      '{id:$id,name:$name,serial:$serial,external:$external,touchpad:$touchpad} + $battery'
+    jq -cn --arg id "$id" --arg name "$name" --arg serial "$short_serial" --argjson external "$external" --argjson touchpad "$touchpad" \
+      '{id:$id,name:$name,serial:$serial,external:$external,touchpad:$touchpad,percentage:null,charging:null}'
   done | jq -s 'unique_by(.id)'
 )
 

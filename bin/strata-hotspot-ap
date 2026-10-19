@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Manage the hotspot virtual interface and client block list
 # Root-only helper for the virtual AP and its Strata-specific client block list.
 set -euo pipefail
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin

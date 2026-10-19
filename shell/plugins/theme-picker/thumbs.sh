@@ -6,15 +6,15 @@
 #
 # This is the only place theme image bytes are decoded; the shell never opens
 # a theme file, it shows these JPEGs. Each source is read once through
-# read_bounded into a private snapshot, and the header check (loader
-# allowlist, pixel ceiling) and both decodes run on that snapshot — what was
-# checked is what is decoded. vips runs single-threaded under a deadline and
+# read_bounded into a private snapshot, and the header check (raster signature,
+# pixel ceiling) and both decodes run on that snapshot — what was
+# checked is what is decoded. ImageMagick runs single-threaded under a deadline and
 # an address-space limit, at bounded parallelism, and writes only into
 # exclusively created files in our own thumbs dir. A source that is refused
 # is remembered by key so it is not copied again on every open.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-command -v vipsthumbnail >/dev/null && command -v vipsheader >/dev/null || exit 0
+command -v magick >/dev/null || exit 0
 
 if [[ ${SWATCH_THUMBS_WRAPPED:-0} != 1 ]] && command -v timeout >/dev/null; then
   export SWATCH_THUMBS_WRAPPED=1
@@ -47,27 +47,29 @@ trap 'rm -rf -- "$snapdir"' EXIT
 # makes the create fail, and nothing it points to is touched.
 mark_reject() { (set -C; : >"$1") 2>/dev/null; }
 
-# vips on one file, bounded: single-threaded, 2 GB address space, deadline.
-# vipsthumbnail exits 0 on unreadable input, so the output is what is checked.
+# ImageMagick on one snapshot, bounded: one thread, 2 GB address space,
+# bounded pixel-cache resources and a deadline. Decode only the verified coder.
 #
 # Exit 2 means "not this time": the deadline was hit, which says the machine
 # was busy, not that the file is bad. That distinction matters because a
 # refusal is remembered forever — see gen(). A wallpaper that timed out once
 # under load would otherwise lose its filmstrip thumb permanently, since its
 # key stays live and the sweep never revisits it.
-vips_to() {
-  local src=$1 size=$2 out=$3 q=$4 tmp rc
+image_to() {
+  local src=$1 size=$2 out=$3 q=$4 coder=$5 tmp rc
   tmp=$(mktemp --suffix=.jpg "$SWATCH_THUMBS/.tmp.XXXXXXXX") || return 1
-  ( ulimit -v 2097152 2>/dev/null; VIPS_CONCURRENCY=1 timeout --kill-after=2s 30s \
-      vipsthumbnail "$src" --size "$size" --smartcrop=none --no-rotate --path "$tmp[Q=$q,strip]" ) 2>/dev/null
+  ( ulimit -v 2097152 2>/dev/null; MAGICK_TEMPORARY_PATH="$snapdir" timeout --kill-after=2s 30s \
+      magick -limit thread 1 -limit memory 256MiB -limit map 512MiB -limit disk 1GiB \
+        -define "jpeg:size=${size%>}" "$coder:$src[0]" -thumbnail "$size" \
+        -background black -alpha remove -alpha off -strip -quality "$q" "JPEG:$tmp" ) 2>/dev/null
   rc=$?
-  if [[ -s $tmp ]]; then mv -f -- "$tmp" "$out"; return 0; fi
+  if (( rc == 0 )) && [[ -s $tmp ]]; then mv -f -- "$tmp" "$out"; return 0; fi
   rm -f -- "$tmp"
   (( rc == 124 || rc == 137 )) && return 2   # deadline, or killed after it
   return 1
 }
 
-# ffmpeg on one snapshot, bounded like vips is. The output is transcoded, not
+# ffmpeg on one snapshot, bounded like image conversion. The output is transcoded, not
 # copied: the shell must decode bytes our own encoder wrote, exactly as it
 # decodes our JPEGs and never a theme's PNG. A validated copy would still hand
 # a long-lived decoder attacker-shaped bytes, which is the thing the posture
@@ -129,38 +131,52 @@ gen_video() {
 # ever decoded by pathname — not the theme file, not our own cache.
 gen() {
   local src=$1 key=$2 dir=$SWATCH_THUMBS
-  local stage=$dir/stage-$key-${W}x${H}.jpg thumb=$dir/bg-$key.jpg info=$dir/size-$key.json reject=$dir/reject-$key snap line w=0 h=0 loader=""
+  local stage=$dir/stage-$key-${W}x${H}.jpg thumb=$dir/bg-$key.jpg info=$dir/size-$key.json reject=$dir/reject-$key snap line w=0 h=0 coder="" magic=""
   [[ $key =~ ^[0-9a-f]{16}$ ]] || return 0
   [[ -e $reject ]] && return 0
   [[ -f $stage && -f $thumb && -f $info ]] && return 0
   snap=$(mktemp "$snapdir/img.XXXXXXXX") || return 0
   if ! read_bounded "$src" "$MAX_IMAGE_BYTES" >"$snap"; then rm -f -- "$snap"; mark_reject "$reject"; return 0; fi
-  # Header of the snapshot: "<path>: <W>x<H> <fmt>, <bands> band(s), <space>, <loader>".
-  # Capture before the loader test: a second =~ overwrites BASH_REMATCH.
-  line=$(timeout 5s vipsheader -- "$snap" 2>/dev/null)
-  if [[ $line =~ :\ ([0-9]+)x([0-9]+)\ [^,]+,\ [0-9]+\ bands?,\ [^,]+,\ ([a-z0-9]+)$ ]]; then
-    w=${BASH_REMATCH[1]}; h=${BASH_REMATCH[2]}; loader=${BASH_REMATCH[3]}
+  # Check magic bytes before invoking a decoder. An SVG/MVG renamed to PNG
+  # must never reach an ImageMagick delegate. Pin the accepted raster coder
+  # explicitly for both the header probe and rendering of this snapshot.
+  magic=$(od -An -tx1 -N12 -- "$snap" | tr -d " \n")
+  case $magic in
+    ffd8ff*) coder=JPEG ;;
+    89504e470d0a1a0a*) coder=PNG ;;
+    474946383761*|474946383961*) coder=GIF ;;
+    52494646????????57454250*) coder=WEBP ;;
+    *) rm -f -- "$snap"; mark_reject "$reject"; return 0 ;;
+  esac
+  local header_rc
+  line=$( ( ulimit -v 2097152 2>/dev/null; MAGICK_TEMPORARY_PATH="$snapdir" timeout --kill-after=2s 5s \
+    magick identify -limit thread 1 -limit memory 256MiB -limit map 512MiB -limit disk 1GiB \
+      -ping -format "%w %h" "$coder:$snap[0]" ) 2>/dev/null)
+  header_rc=$?
+  if (( header_rc == 124 || header_rc == 137 )); then rm -f -- "$snap"; return 0; fi
+  if (( header_rc == 0 )) && [[ $line =~ ^([0-9]+)\ ([0-9]+)$ ]]; then
+    w=${BASH_REMATCH[1]}; h=${BASH_REMATCH[2]}
   fi
   # A marker is a statement about the file, so only a real refusal earns one:
   # a header we do not accept, or a render that failed for a reason other than
   # the deadline. A timeout (rc 2) leaves no marker and is simply retried on a
   # later open, which is what makes a busy machine recoverable.
   local rc
-  if [[ $loader =~ $LOADERS ]] && (( w > 0 && h > 0 && w * h <= MAX_PIXELS )); then
+  if (( w > 0 && h > 0 && w <= MAX_PIXELS && h <= MAX_PIXELS && w * h <= MAX_PIXELS )); then
     local metadata
     metadata=$(mktemp "$dir/.size.XXXXXXXX") || { rm -f -- "$snap"; return 0; }
     printf '{"key":"%s","width":%s,"height":%s}\n' "$key" "$w" "$h" >"$metadata"
     mv -f -- "$metadata" "$info"
-    if [[ ! -f $stage ]]; then vips_to "$snap" "${W}x${H}>" "$stage" 85; rc=$?; (( rc == 1 )) && mark_reject "$reject"; fi
-    if [[ ! -f $thumb ]]; then vips_to "$snap" 640x360 "$thumb" 80; rc=$?; (( rc == 1 )) && mark_reject "$reject"; fi
+    if [[ ! -f $stage ]]; then image_to "$snap" "${W}x${H}>" "$stage" 85 "$coder"; rc=$?; (( rc == 1 )) && mark_reject "$reject"; fi
+    if [[ ! -f $thumb ]]; then image_to "$snap" 640x360 "$thumb" 80 "$coder"; rc=$?; (( rc == 1 )) && mark_reject "$reject"; fi
   else
     mark_reject "$reject"
   fi
   rm -f -- "$snap"
   return 0
 }
-export -f gen gen_video vips_to video_to read_bounded mark_reject
-export SWATCH_READ_PL SWATCH_THUMBS MAX_IMAGE_BYTES MAX_PIXELS LOADERS snapdir W H
+export -f gen gen_video image_to video_to read_bounded mark_reject
+export SWATCH_READ_PL SWATCH_THUMBS MAX_IMAGE_BYTES MAX_PIXELS snapdir W H
 export MAX_VIDEO_BYTES MAX_VIDEO_SECONDS MAX_VIDEO_WIDTH MAX_VIDEO_HEIGHT VIDEO_FORMATS VIDEO_CODECS
 
 # Jobs: current theme first so the first open lands on a finished stage;

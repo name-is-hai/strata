@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Open a saved screenshot in the annotation editor
 
 # Open a saved screenshot in Strata Snip's annotation overlay. Notifications
 # call this stable Strata command on installed and development machines.

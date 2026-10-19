@@ -1,4 +1,5 @@
 #!/usr/bin/gjs
+# strata:summary=List or activate actions from the focused application
 // Read and activate actions exposed by the focused application's AT-SPI tree.
 // The short-lived bridge keeps accessibility dependencies out of strata-shell.
 const Atspi = imports.gi.Atspi;

@@ -35,9 +35,9 @@ check 0
 jq -e '.available==false' >/dev/null <<<"$status"
 check 0
 [[ $(count dnf) == 1 ]]
-printf 'strata-config\t4.0.0~alpha-3.fc44\tx86_64\nstrata-lock-auth\t1.1-1.fc44\tx86_64\n' > "$work/updates"
+printf 'strata-config\t1:1.0.0-1.fc44\tx86_64\nstrata-lock-auth\t1.1-1.fc44\tx86_64\n' > "$work/updates"
 check 0 --refresh --notify
-jq -e '.available and (.updates|length==2)' >/dev/null <<<"$status"
+jq -e '.available and (.updates|length==2) and .updates[0].version=="1:1.0.0-1.fc44"' >/dev/null <<<"$status"
 [[ $(count strata-notification-send) == 1 ]]
 check 0 --refresh --notify
 [[ $(count strata-notification-send) == 1 ]]

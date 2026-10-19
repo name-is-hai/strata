@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Bridge Quickshell authentication messages to greetd
 # Line-delimited Quickshell bridge to greetd's length-prefixed JSON socket.
 set -uo pipefail
 export LC_ALL=C

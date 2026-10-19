@@ -92,7 +92,7 @@ own plugin directories, each with its own `manifest.json`.
 
 The built-in status bar and default full-bar option. Layout lives in the
 top-level `bar:` subtree of `~/.config/strata/shell.json` (with the shell
-providing [`config/strata/shell.json`](../../config/strata/shell.json) when
+providing [`defaults/strata/shell.json`](../../defaults/strata/shell.json) when
 the user has no file). See [`bar/README.md`](bar/README.md) for the widget catalogue
 and customization schema.
 
@@ -128,7 +128,7 @@ mark and name using the terminal's current colors.
 
 The menu definition lives outside the shell host code:
 
-- defaults: `default/strata/strata-menu.jsonc`
+- defaults: `defaults/strata/strata-menu.jsonc`
 - user extensions: `~/.config/strata/extensions/strata-menu.jsonc`
 
 The shell parses both JSONC files at startup (with `watchChanges: true`

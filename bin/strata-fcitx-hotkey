@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# strata:summary=Read or set the Fcitx5 input-method toggle shortcut
 """Read or set Fcitx5's global input-method toggle shortcut."""
 import os
 from pathlib import Path

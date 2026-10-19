@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Read available battery temperature sensors
 # Based on omarchy-battery (MIT): read the Linux battery temperature sensor.
 set -u
 for battery in "${STRATA_POWER_SUPPLY_PATH:-/sys/class/power_supply}"/*; do

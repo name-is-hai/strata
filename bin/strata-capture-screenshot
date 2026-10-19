@@ -78,7 +78,8 @@ case "$mode" in
       exit 1
     fi
     captured="$frozen_dir/selection.png"
-    vips crop "$frozen" "$captured" "$x" "$y" "$width" "$height" || exit 1
+    printf -v crop_geometry '%sx%s%+d%+d' "$width" "$height" "$x" "$y"
+    magick -limit thread 1 "$frozen" -crop "$crop_geometry" +repage "$captured" || exit 1
     ;;
   fullscreen)
     captured=""

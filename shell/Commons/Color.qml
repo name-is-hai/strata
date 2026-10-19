@@ -6,7 +6,7 @@ import "BorderGeometry.js" as Geometry
 
 // Color surfaces for the shell. Foundational palette (foreground, background,
 // accent, urgent) comes from theme/colors.toml. Per-surface roles come from
-// theme/shell.toml — generated per theme from default/themed/shell.toml.tpl,
+// theme/shell.toml — generated per theme from defaults/themed/shell.toml.tpl,
 // or shipped directly by a theme to replace the generated file. Surfaces that
 // don't appear in shell.toml fall back to the foundational palette.
 QtObject {

@@ -6,8 +6,8 @@ trap 'rm -rf -- "$work"' EXIT
 export HOME=$work/home XDG_CACHE_HOME=$work/cache XDG_RUNTIME_DIR=$work/run STRATA_PATH=$work/stock
 mkdir -p "$HOME/.config/strata/themes/active/backgrounds" "$HOME/.local/state/strata/current" "$XDG_RUNTIME_DIR" "$STRATA_PATH/themes" "$work/bin"
 printf 'background = "#111111"\nforeground = "#eeeeee"\naccent = "#33aaff"\n' > "$HOME/.config/strata/themes/active/colors.toml"
-vips black "$HOME/.config/strata/themes/active/backgrounds/own.png" 64 36
-vips black "$work/external.png" 600 200
+magick -size 64x36 xc:black "$HOME/.config/strata/themes/active/backgrounds/own.png"
+magick -size 600x200 xc:black "$work/external.png"
 printf active > "$HOME/.local/state/strata/current/theme.name"
 ln -s "$work/external.png" "$HOME/.local/state/strata/current/background"
 printf '#!/bin/bash\nprintf '\''[{"width":640,"height":360}]\\n'\''\n' > "$work/bin/hyprctl"
@@ -19,8 +19,8 @@ key=$(jq -r .activeBackground.key "$work/index.json")
 "$here/thumbs.sh"
 [[ -f $XDG_CACHE_HOME/strata/swatch/thumbs/bg-$key.jpg ]]
 jq -e '.width==600 and .height==200' "$XDG_CACHE_HOME/strata/swatch/thumbs/size-$key.json" >/dev/null
-[[ $(vipsheader -f width "$XDG_CACHE_HOME/strata/swatch/thumbs/stage-$key-640x360.jpg") == 600 ]]
-[[ $(vipsheader -f height "$XDG_CACHE_HOME/strata/swatch/thumbs/stage-$key-640x360.jpg") == 200 ]]
+[[ $(magick identify -ping -format %w "$XDG_CACHE_HOME/strata/swatch/thumbs/stage-$key-640x360.jpg") == 600 ]]
+[[ $(magick identify -ping -format %h "$XDG_CACHE_HOME/strata/swatch/thumbs/stage-$key-640x360.jpg") == 200 ]]
 "$here/image-info.sh" "$XDG_CACHE_HOME/strata/swatch/thumbs" "$key" | jq -e '.width==600 and .height==200' >/dev/null
 "$here/index.sh" --selection | jq -e --arg bg "$work/external.png" '.currentTheme=="active" and .currentBackground==$bg and .activeBackground.path==$bg' >/dev/null
 # A desktop change after indexing must be read fresh, even with a warm cache.

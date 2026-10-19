@@ -1,0 +1,142 @@
+name: Build Strata release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (for example v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - id: version
+        name: Validate version tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          version=$(<VERSION)
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$TAG" == "v$version" ]]
+          [[ $(<runtime-version) == "$version" ]]
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [config, desktop, hyprland, utilities, fonts]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Build Fedora 44 RPMs
+        env:
+          TARGET: ${{ matrix.target }}
+          STRATA_BUILD_CPUS: '2'
+        run: bin/strata-build-rpms "$TARGET"
+      - name: Select runtime RPMs
+        run: |
+          mkdir release-rpms
+          find build-output/RPMS -type f -name '*.rpm' \
+            ! -name '*-debuginfo-*' ! -name '*-debugsource-*' \
+            -exec cp -- {} release-rpms/ \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpms-${{ matrix.target }}
+          path: release-rpms/*.rpm
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  assemble:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rpms-*
+          path: incoming
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Assemble and verify repository
+        run: |
+          podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo \
+            registry.fedoraproject.org/fedora:44 bash -euc '
+              dnf install -y --setopt=install_weak_deps=False createrepo_c rpm-build
+              bash .github/scripts/assemble-release.sh incoming
+            '
+      - name: Resolve fresh Fedora dependencies
+        run: |
+          podman run --rm --user 0 -v "$PWD:/repo:ro,Z" -w /repo \
+            registry.fedoraproject.org/fedora:44 bash -euc '
+              dnf install -y --setopt=install_weak_deps=False dnf-plugins-core \
+                https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+              dnf copr enable -y errornointernet/quickshell
+              result=0
+              dnf --assumeno --setopt=install_weak_deps=False \
+                --repofrompath=strata-release,file:///repo --enablerepo=strata-release \
+                --setopt=strata-release.gpgcheck=0 install hyprland-desktop strata-config \
+                > /tmp/transaction.log 2>&1 || result=$?
+              cat /tmp/transaction.log
+              if ! grep -Fq "Transaction Summary" /tmp/transaction.log; then
+                echo "Dependency resolution failed (DNF exit $result)." >&2
+                exit 1
+              fi
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: build-output/release/assets/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  release:
+    needs: [validate, assemble]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          gh release create "$TAG" assets/* --verify-tag --draft \
+            --title "Strata $TAG" --generate-notes

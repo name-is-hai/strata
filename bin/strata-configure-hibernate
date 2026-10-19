@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Configure the system hibernation sleep policy
 
 # Root-owned systemd sleep drop-in writer, adapted from lgse/sandman (MIT).
 # This program is installed by strata-config; never run a user-owned script

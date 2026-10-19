@@ -1,5 +1,5 @@
 Name:           hyprland-utilities
-Version:        0.1
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Tagged Hyprland desktop utility collection
 
@@ -51,14 +51,13 @@ BuildRequires:  wayland-devel
 BuildRequires:  wayland-protocols-devel
 
 Requires:       hypridle%{?_isa} = %{hypridle_version}-%{release}
-Requires:       hyprlock%{?_isa} = %{hyprlock_version}-%{release}
 Requires:       hyprsunset%{?_isa} = %{hyprsunset_version}-%{release}
 Requires:       hyprpicker%{?_isa} = %{hyprpicker_version}-%{release}
 Requires:       hyprcursor >= 0.1.11
 Requires:       hyprlang
 
 %description
-Meta-package for the tagged Hyprland idle daemon, lock screen, blue-light
+Meta-package for the tagged Hyprland idle daemon, blue-light
 filter, color picker, and Hyprcursor theme tools used by Strata.
 
 %package -n hypridle
@@ -206,6 +205,6 @@ DESTDIR=%{buildroot} cmake --install hyprpicker-build
 %{_mandir}/man1/hyprpicker.1*
 
 %changelog
-* Wed Oct 07 2026 Liam <liam@localhost> - 0.1-1
-- Package hypridle 0.1.8, hyprlock 0.9.6, hyprsunset 0.4.0, and hyprpicker 0.4.7
-- Build only from upstream release tags compatible with Hyprland 0.56.2
+* Mon Oct 19 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0.0-1
+- Release the Strata 1.0 utilities package set
+- Preserve upstream Hypridle, Hyprsunset and Hyprpicker versions

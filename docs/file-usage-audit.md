@@ -52,7 +52,8 @@ explicitly target those independent workspaces.
   passed.
 - The active Bash CLI still renders its command help.
 - Both casting Cargo workspaces resolve independently with offline metadata.
-- Config, desktop and casting RPM specs parse successfully.
+- Config and desktop RPM specs parse successfully. Casting now shares the
+  config source spec as part of the 1.0 release preparation.
 - The restored Rust workspace compiles. Its CLI command actions remain
   unfinished; restoring it does not replace the active Bash CLI.
 

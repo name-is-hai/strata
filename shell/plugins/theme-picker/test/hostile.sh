@@ -15,7 +15,7 @@ fail=0
 check() { if [[ $2 == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1: got '$2', want '$3'"; fail=1; fi; }
 
 mk() { mkdir -p "$1/backgrounds"; printf 'background = "#101010"\nforeground = "#e0e0e0"\naccent = "#ff8800"\nred = "#ff0000"\n' >"$1/colors.toml"; printf 'bar.position = "top"\n' >"$1/shell.toml"; }
-png() { vips black "$1" "${2:-64}" "${3:-36}" 2>/dev/null; }
+png() { magick -limit thread 1 -size "${2:-64}x${3:-36}" xc:black "$1" 2>/dev/null; }
 svg=$(find /usr/share/icons -name '*.svg' -print -quit 2>/dev/null)
 
 mk "$U/good";        png "$U/good/backgrounds/a.png"; png "$U/good/backgrounds/b.png" 1920 1080; png "$U/good/preview.png" 320 180
@@ -48,7 +48,7 @@ if command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null; then
                      mkdir -p "$U/vidsym/backgrounds/intros"; ln -s "$T/outside.mp4" "$U/vidsym/backgrounds/intros/clip.mp4"
   # Not a video at all, wearing the extension. ffprobe must refuse it and the
   # refusal must be remembered, not retried on every open.
-  # (cp, not vips: vips picks its writer from the extension and cannot emit .mp4)
+  # (Copy the raster bytes directly to give the fake video an image header.)
   mk "$U/vidfake";   png "$U/vidfake/backgrounds/clip.png"
                      mkdir -p "$U/vidfake/backgrounds/intros"; cp "$U/vidfake/backgrounds/clip.png" "$U/vidfake/backgrounds/intros/clip.mp4"
   # Past the byte ceiling: filtered in the inventory, before any decoder.
@@ -168,7 +168,7 @@ check "cached opening refreshes theme" "$(jq -r '.currentTheme' <<<"$cached")" s
 check "cached opening refreshes background" "$(jq -r '.currentBackground' <<<"$cached")" "$S/stockonly/backgrounds/s.png"
 check "cached opening retains inventory" "$(jq -S '.themes' <<<"$cached" | md5sum)" "$(jq -S '.themes' <<<"$idx2" | md5sum)"
 selection=$("$here/index.sh" --selection)
-check "selection-only matches live desktop" "$(jq -S . <<<"$selection" | md5sum)" "$(jq -S '{currentTheme, currentBackground, activeBackground}' <<<"$cached" | md5sum)"
+check "selection-only matches live desktop" "$(jq -S '{currentTheme, currentBackground, activeBackground}' <<<"$selection" | md5sum)" "$(jq -S '{currentTheme, currentBackground, activeBackground}' <<<"$cached" | md5sum)"
 # The lightweight path must remain independent of even an unreadable inventory.
 selection_no_cache=$(XDG_CACHE_HOME="$T/no-cache" "$here/index.sh" --selection)
 check "selection-only needs no cache" "$selection_no_cache" "$selection"
@@ -198,7 +198,7 @@ start=$SECONDS; "$here/thumbs.sh"; rc=$?; echo "     ${SECONDS-start}s rc=$rc"
 D=$XDG_CACHE_HOME/strata/swatch/thumbs
 k=$(t good '.bgKeys[1]'); pk=$(t good '.previewKey')
 check "good: stage + thumb"    "$(ls "$D/stage-$k-${sw}x${sh}.jpg" "$D/bg-$k.jpg" "$D/bg-$pk.jpg" 2>/dev/null | wc -l)" 3
-check "good: 1920x1080 source stays 1920x1080 (shrink only)" "$(vipsheader "$D/stage-$k-${sw}x${sh}.jpg" | sed 's/.*: //')" "1920x1080 uchar, 1 band, b-w, jpegload"
+check "good: 1920x1080 source stays 1920x1080 (shrink only)" "$(magick identify -ping -format '%wx%h %m' "$D/stage-$k-${sw}x${sh}.jpg")" "1920x1080 JPEG"
 : >"$D/stage-${pk}-1280x720.jpg"; touch -d '-40 days' "$D/stage-${pk}-1280x720.jpg"; : >"$D/stage-${pk}-1920x1080.jpg"
 for n in bomb fakepng; do
   k=$(t $n '.bgKeys[0]'); [[ -n $k && $k != null ]] || { [[ $n == fakepng && -z $svg ]] && continue; }
@@ -275,22 +275,22 @@ printf '%s\n' "${STRATA_THEME_SKIP_BACKGROUND:-0}" >"$o/skip"
 printf '%s\n' "$1" >"$o/current/theme.name"
 STUB
 chmod +x "$B"/*
-A=$T/applyfx; mkdir -p "$A/from" "$A/to/intros"; : >"$A/from/f.png"; : >"$A/to/still.png"; : >"$A/to/moving.png"; : >"$A/to/intros/moving.mp4"
-reset() { printf 'from\n' >"$O/current/theme.name"; ln -nsf "$A/from/f.png" "$O/current/background"; rm -rf "$O/theme-backgrounds" "$O/skip" "$O/toggles/background-intros-off"; }
-reset; "$here/apply.sh" to "$A/to/moving.png"
-check "intro: stock plays it, background pinned" "$(cat "$O/skip"),$(readlink "$O/current/background")" "0,$A/to/moving.png"
-check "intro: outgoing memory intact"           "$(cat "$O/theme-backgrounds/from")" "$A/from/f.png"
+F=$S/from/backgrounds; N=$S/to/backgrounds; mkdir -p "$F" "$N/intros"; : >"$F/f.png"; : >"$N/still.png"; : >"$N/moving.png"; : >"$N/intros/moving.mp4"
+reset() { printf 'from\n' >"$O/current/theme.name"; ln -nsf "$F/f.png" "$O/current/background"; rm -rf "$O/theme-backgrounds" "$O/skip" "$O/toggles/background-intros-off"; }
+reset; "$here/apply.sh" to "$N/moving.png"
+check "intro: stock plays it, background pinned" "$(cat "$O/skip"),$(readlink "$O/current/background")" "0,$N/moving.png"
+check "intro: outgoing memory intact"           "$(cat "$O/theme-backgrounds/from")" "$F/f.png"
 check "intro: no stray temp files"              "$(ls -A "$O/theme-backgrounds" | grep -c swatch)" 0
-reset; "$here/apply.sh" to "$A/to/still.png"
-check "no intro: set first, theme-set skips"    "$(cat "$O/skip"),$(readlink "$O/current/background")" "1,$A/to/still.png"
-check "no intro: outgoing memory restored"      "$(cat "$O/theme-backgrounds/from")" "$A/from/f.png"
-reset; : >"$O/toggles/background-intros-off"; "$here/apply.sh" to "$A/to/moving.png"
+reset; "$here/apply.sh" to "$N/still.png"
+check "no intro: set first, theme-set skips"    "$(cat "$O/skip"),$(readlink "$O/current/background")" "1,$N/still.png"
+check "no intro: outgoing memory restored"      "$(cat "$O/theme-backgrounds/from")" "$F/f.png"
+reset; : >"$O/toggles/background-intros-off"; "$here/apply.sh" to "$N/moving.png"
 check "intros off: background set first"        "$(cat "$O/skip")" 1
-reset; ANIM=false "$here/apply.sh" to "$A/to/moving.png"
+reset; ANIM=false "$here/apply.sh" to "$N/moving.png"
 check "animations off: background set first"    "$(cat "$O/skip")" 1
-reset; printf 'to\n' >"$O/current/theme.name"; "$here/apply.sh" to "$A/to/moving.png"
-check "same theme: no intro, memory is the new one" "$(cat "$O/skip"),$(cat "$O/theme-backgrounds/to")" "1,$A/to/moving.png"
-reset; "$here/apply.sh" '../x' "$A/to/moving.png"
+reset; printf 'to\n' >"$O/current/theme.name"; "$here/apply.sh" to "$N/moving.png"
+check "same theme: no intro, memory is the new one" "$(cat "$O/skip"),$(cat "$O/theme-backgrounds/to")" "1,$N/moving.png"
+reset; "$here/apply.sh" '../x' "$N/moving.png"
 check "invalid theme refused"                   "$([[ -e $O/skip ]] && echo ran)" ""
 
 (( fail == 0 )) && echo "ALL OK" || { echo "FAILURES"; exit 1; }

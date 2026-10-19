@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Place the login pointer on the main monitor
 # Put the initial pointer on the display selected as Main. Run only at login.
 set -euo pipefail
 

@@ -10,11 +10,13 @@ Theme navigation restores each theme's last chosen wallpaper from Strata's `them
 
 Every opening starts on the live theme. Each theme lists only its own wallpapers and restores its own remembered choice, independently of the current desktop wallpaper. Desktop double-click opens theme + background mode: confirmation applies the selected theme and its selected wallpaper together. Right double-click directly opens full-screen wallpaper adjustment: drag to reposition, scroll to zoom, Enter to save, Escape to cancel. `strata-theme-bg-switcher` uses `pick.sh --background` to return a selected wallpaper path without applying it; cancellation exits 1 with no selection. `strata-theme-bg-cache` warms this picker's index and derivatives.
 
-There is no Python runtime or helper. Indexing and application use Bash, jq and vips. Perl performs descriptor-bound, no-follow file reads. `preferences.sh` uses jq for schema validation and transformations, with Perl file descriptors, a read-only script lock, bounded reads, exclusive temporary creation, fsync and atomic replacement for durable state. Invalid files are refused without replacing them.
+There is no Python runtime or helper. Indexing and application use Bash, jq and ImageMagick. Perl performs descriptor-bound, no-follow file reads. `preferences.sh` uses jq for schema validation and transformations, with Perl file descriptors, a read-only script lock, bounded reads, exclusive temporary creation, fsync and atomic replacement for durable state. Invalid files are refused without replacing them.
 
 Strata's normal wallpaper handoff is supported. Omarchy's compositor boot-intro protocol is absent; the landing probe follows Strata's current-background link. Optional video previews remain isolated in `VideoStage.qml` so a missing QtMultimedia module cannot prevent still-image previews.
 
 Tests:
+
+`bash scripts/tests/image-tools.sh` checks ImageMagick previews in the supported raster formats, menu thumbnail crops and the screenshot fallback without desktop interaction.
 
 ```sh
 node shell/plugins/theme-picker/test/model.test.js

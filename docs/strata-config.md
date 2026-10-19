@@ -120,7 +120,7 @@ installation or cancelling the review removes its snapshot. The CLI is `strata-p
 Style → Themes & backgrounds and `strata-theme-select` open the bundled Swatch picker. It
 previews the wallpaper and shell palette while browsing; Enter applies the
 selection, and Escape restores the previous preview. Favorites and hidden
-backgrounds persist in XDG state. The Strata port uses Bash, jq, vips and Perl;
+backgrounds persist in XDG state. The Strata port uses Bash, jq, ImageMagick and Perl;
 it does not run Python. Desktop double-click opens theme + background mode,
 which applies the selected theme and wallpaper together. Right double-click opens
 full-screen wallpaper adjustment directly: drag to reposition, scroll to zoom,
@@ -262,7 +262,7 @@ Two-finger pinch remains available to applications for zooming.
 windows. Open the Strata menu → Settings → Stage & gestures to configure it. Its
 appearance follows the current Strata theme and system font.
 
-The gesture definitions live in `default/hypr/gestures.lua` and load from the
+The gesture definitions live in `defaults/hypr/gestures.lua` and load from the
 standard Hyprland entry file. The desktop gesture temporarily stores the
 current workspace's windows and restores them when toggled again. Custom
 mouse-drawn gestures and ring menus can be added
@@ -320,7 +320,7 @@ their separate renderer and do not expose these image crop controls.
 
 ## Mouse settings
 
-The Mouse / Touchpad bar panel controls pointer and scrolling behavior, plus
+Open **Settings → Mouse & Touchpad** from the menu to control pointer and scrolling behavior, plus
 touchpad tapping, dragging, and disable-while-typing. Mouse and touchpad
 pointer speed and acceleration are independent: touchpads receive per-device
 overrides, including when reconnected. Each pointer slider uses 0–100% in 5%
@@ -328,9 +328,9 @@ steps, with 50% representing the default sensitivity. Changes preview live;
 closing the panel discards unsaved changes. Save writes
 `~/.config/hypr/mouse.lua`, loaded by Strata's default input configuration;
 later personal Hyprland overrides take precedence. The header shows the mouse
-name and available battery reading. Without an external mouse the icon changes
-to a touchpad; with neither device present it is hidden. Standard UPower mice are discovered
-automatically; a query-only HID provider also supports the Razer Viper V3 Pro.
+name and available battery reading. The panel is menu-only and remains available
+without a bar icon. Mouse battery readings
+are discovered through UPower, without a device-specific raw HID helper.
 Devices with no battery interface omit the battery reading. Low-battery
 alerts name each mouse at 20% and again at 5%, rearming after charging or
 recovery above 25%. The service runs even while the panel is closed.
@@ -387,12 +387,6 @@ At login, greetd authenticates the user while a separate Hyprland session
 shows the Quickshell greeter. The form appears on Main and the background
 covers every connected output.
 
-`python3 scripts/tests/lock-power.py` exercises the real lock view and action
-handlers with a fake `systemctl`, including failure feedback. Run
-`python3 scripts/tests/greetd-ipc.py` checks the greeter's authentication and
-session handoff against a private fake greetd socket. These tests do not perform
-real power operations.
-
 ## Source layout
 
 The unified Strata repository contains both source and the published DNF
@@ -400,19 +394,19 @@ repository. `packaging/strata-config.spec` maps the desktop source as follows.
 
 | Source                          | Installed path                       |
 | ------------------------------- | ------------------------------------ |
-| `bin/`                          | `/usr/share/strata/bin`              |
+| `bin/`                          | `/usr/bin` and `/usr/share/strata/bin` |
 | `shell/`                        | `/usr/share/strata/shell`            |
-| `runtime-config/`               | `/usr/share/strata/config`           |
-| `default/`                      | `/usr/share/strata/default`          |
+| `defaults/`                     | `/usr/share/strata/default` (Strata shell config also under `/usr/share/strata/config/strata`) |
 | `themes/`                       | `/usr/share/strata/themes`           |
 | `docs/`                         | `/usr/share/strata/docs`             |
 | `runtime-version`               | `/usr/share/strata/version`          |
 | `config/hypr`, `config/uwsm`, `config/xdg-desktop-portal` | `/usr/share/strata/user-config` |
-| `scripts/`                      | `/usr/bin`                           |
+| `scripts/`                      | Development tests and Git-hook adapter; not installed |
 
-`default/` holds all shipped defaults, while `config/` holds the per-user entry
-files. `runtime-config/` is kept separate because it installs to
-`/usr/share/strata/config`.
+`defaults/` is the single source directory for shipped desktop defaults, assets,
+and templates. Its `strata/` subdirectory also contains shell defaults,
+menu-extension templates and hook samples. Installed locations retain the
+existing runtime paths; `config/` holds per-user entry files.
 
 Personal Ghostty, Neovim, Zsh, Tmux, Git, Fcitx5, Zed, and Mise settings are
 kept in the separate `dotfiles` repository and are never packaged by Strata.
@@ -450,7 +444,8 @@ strata-shell shell toggle strata.cast
 
 `strata-config` requires the `strata-casting` meta-package, which pulls in
 `strata-waycast`, `strata-doubletake`, and `strata-cast`. Build those with
-`scripts/build-rpms-podman casting` before building/installing config. The `all`
+`bin/strata-build-rpms config`; this builds the desktop config and casting
+backends from the same source spec. The `all`
 target includes them. The installer enables RPM Fusion Free for Miracast’s
 GStreamer x264 encoder and `libavcodec-freeworld` for media transcoding. Backends and the media user unit are RPM-owned; no
 Rust toolchain or source build is needed on an installed desktop. The media
@@ -485,7 +480,7 @@ and [UniCast](https://github.com/liberuum/unicast). Screen backends:
 [Waycast](https://github.com/alchemy/waycast) and
 [Doubletake](https://github.com/alchemy/doubletake) (LGPL). Vendored revisions
 are recorded in each backend’s `UPSTREAM` file; release archives are checksum
-verified in `packaging/strata-casting.spec`.
+verified in `packaging/strata-config.spec`.
 
 
 ### Login greeter colors
@@ -514,7 +509,7 @@ Four-finger horizontal swipes use the output under the pointer. They jump to
 the nearest occupied desktop, including windows hidden with three-finger
 down. Beyond the occupied desktops, a swipe allows one empty neighbor.
 
-`default/hypr/workspaces.lua` maps local numbers to unique Hyprland IDs:
+`defaults/hypr/workspaces.lua` maps local numbers to unique Hyprland IDs:
 `(monitor.id + 1) * 100 + local_number` (local numbers 1–99). For personal
 rules targeting a desktop, use the mapped ID rather than a global 1–5.
 Existing desktops are adopted on reload; an unplugged output's desktops are
@@ -644,3 +639,23 @@ this config for a new user while preserving existing configurations.
 Wallpaper loading reads the first frame's dimensions with
 `magick identify -ping` before decoding, and retains the per-display decode-size
 cap. This reads metadata without adding a full-size wallpaper decode.
+
+## Installation diagnostics
+
+Run `strata doctor` as the desktop user to check core commands and RPMs, installed
+runtime files and version, personal shell JSON, portal preference, the current
+wallpaper target, media/portal services and live Hyprland/Quickshell IPC. It also
+checks that the active desktop can report a default audio output. This does not
+prove that every application's capture stream follows that output.
+
+The command only reads state: it does not repair settings, install packages,
+restart services, play media or change volume. Outside a desktop session,
+unavailable session checks are marked skipped. A required failure exits 1;
+warnings alone exit 0. The hook examples and optional plugin directories do not
+need to exist for the installation to pass.
+
+From the source checkout, use `bin/strata doctor`. The installed command becomes
+available after rebuilding and installing the config RPM. Diagnostic checks use
+the installed runtime selected by `STRATA_PATH`, not the source tree's planned
+release version. Run `scripts/tests/doctor.sh` for isolated checks using mock
+services and a temporary home directory.

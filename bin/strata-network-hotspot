@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Manage the Strata Wi-Fi hotspot
 set -euo pipefail
 PROFILE=StrataHotspot
 helper=/usr/bin/strata-hotspot-ap

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Temporarily recover a disabled laptop panel when no usable output remains.
+# strata:summary=Recover the laptop panel when no usable output remains
 # strata:hidden=true
+# Temporarily recover a disabled laptop panel when no usable output remains.
 set -euo pipefail
 runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 state=$runtime/strata-monitor-fallback.json

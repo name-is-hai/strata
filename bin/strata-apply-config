@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Install missing Strata user configuration files
 set -euo pipefail
 
 source_root=/usr/share/strata/user-config

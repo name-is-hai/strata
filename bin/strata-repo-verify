@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# strata:summary=Check public RPM repository metadata and required packages
+set -euo pipefail
+
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+  echo "Usage: strata-repo-verify"
+  echo "Run from a Strata checkout or set STRATA_REPO_DIR."
+  exit 0
+fi
+if (( $# )); then
+  echo "Usage: strata-repo-verify" >&2
+  exit 2
+fi
+
+repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
+repo_url="file://$repo_root"
+
+for command in dnf rpm rpmspec; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "$command is required to verify repository packages and source versions." >&2
+    exit 1
+  }
+done
+
+test -f "$repo_root/repodata/repomd.xml" || {
+  echo "Missing repodata/repomd.xml. Run bin/strata-repo-refresh first." >&2
+  exit 1
+}
+
+required_packages=(
+  strata-config hyprland-desktop hyprland-desktop-core hyprland-desktop-services
+  hyprland-desktop-apps hyprland-utilities strata-lock-auth
+  zen-browser zen-browser-engine strata-casting strata-waycast strata-doubletake strata-cast
+  hyprland hyprland-guiutils xdg-desktop-portal-hyprland
+  jetbrains-mono-nerd-fonts ghostty uwsm hypridle hyprpicker hyprsunset
+)
+
+declare -A expected_versions package_files published_versions
+expected=$(for spec in "$repo_root"/packaging/*.spec; do
+  rpmspec -q --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' "$spec" || exit 1
+done)
+while IFS=$'\t' read -r name version; do
+  expected_versions[$name]=$version
+done <<< "$expected"
+
+# GitHub Pages is published from Git: oversized RPMs cannot be pushed there.
+while IFS= read -r -d '' package; do
+  if (( $(stat -c %s "$package") > 104857600 )); then
+    echo "RPM exceeds GitHub's 100 MiB file limit: $package" >&2
+    exit 1
+  fi
+  name=$(rpm -qp --qf '%{NAME}' "$package")
+  if [[ -n ${package_files[$name]:-} ]]; then
+    echo "Duplicate public RPM for $name: ${package_files[$name]} and $package" >&2
+    exit 1
+  fi
+  package_files[$name]=$package
+done < <(find "$repo_root/packages" -maxdepth 1 -type f -name '*.rpm' -print0)
+
+resolved=$(dnf -q --refresh --disablerepo='*' \
+  --repofrompath=strata-test,"$repo_url" \
+  --enablerepo=strata-test \
+  repoquery --qf $'%{name}\t%{evr}\n' "${required_packages[@]}")
+
+while IFS=$'\t' read -r name version; do
+  [[ -n $name ]] || continue
+  [[ $version == *:* ]] || version="0:$version"
+  published_versions[$name]=$version
+done <<< "$resolved"
+
+# repoquery can succeed even when some requested names matched nothing.
+missing=0
+for name in "${required_packages[@]}"; do
+  if [[ -z ${package_files[$name]:-} ]]; then
+    echo "Required public RPM is missing from packages/: $name" >&2
+    missing=1
+  elif [[ -z ${published_versions[$name]:-} ]]; then
+    echo "Required package is missing from repository metadata: $name" >&2
+    missing=1
+  elif [[ -n ${expected_versions[$name]:-} && ${published_versions[$name]} != "${expected_versions[$name]}" ]]; then
+    echo "Wrong public version for $name: ${published_versions[$name]}; source requires ${expected_versions[$name]}" >&2
+    missing=1
+  fi
+done
+(( missing == 0 )) || exit 1
+
+echo "Strata repository metadata, unique RPMs and source package versions are valid."

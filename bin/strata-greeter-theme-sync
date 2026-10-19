@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publish the active lock palette and typography to the Strata greeter.
+# strata:summary=Synchronize desktop theme colors to the greeter
 # strata:hidden=true
+# Publish the active lock palette and typography to the Strata greeter.
 set -euo pipefail
 shopt -s extglob
 

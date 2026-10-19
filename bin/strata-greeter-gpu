@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Resolve DRM device ordering for the login greeter
 # Print a greeter-only DRM order for closed-lid startup. Resolve connector to
 # card on every boot: neither GPU vendors nor changing card numbers are pinned.
 set -euo pipefail

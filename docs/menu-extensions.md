@@ -1,6 +1,6 @@
 # Menu extensions
 
-Strata reads shipped menu rows from `default/strata/strata-menu.jsonc`, then
+Strata reads shipped menu rows from `defaults/strata/strata-menu.jsonc`, then
 merges `~/.config/strata/extensions/strata-menu.jsonc` over them. The personal
 file is watched for changes. Updating the shipped menu does not rewrite it.
 

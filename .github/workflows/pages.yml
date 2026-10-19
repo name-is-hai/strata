@@ -1,9 +1,14 @@
 name: Publish Strata repository
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag; leave empty to deploy committed packages
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -16,19 +21,46 @@ concurrency:
 
 jobs:
   publish:
+    if: github.event_name != 'release' || !github.event.release.prerelease
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate DNF metadata
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Download published repository
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          mkdir release-download
+          gh release download "$TAG" --dir release-download \
+            --pattern strata-repository-f44-x86_64.tar.gz --pattern SHA256SUMS
+          (cd release-download; grep '  strata-repository-f44-x86_64.tar.gz$' SHA256SUMS | sha256sum -c -)
+          mkdir public-site
+          tar --no-same-owner -xzf release-download/strata-repository-f44-x86_64.tar.gz -C public-site
+          rm -rf packages repodata
+          cp -a public-site/packages public-site/repodata .
+          cmp VERSION public-site/VERSION
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Generate and verify DNF metadata
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo fedora:44 \
-            bash -lc 'dnf install -y createrepo_c && scripts/refresh-repodata.sh'
+            bash -lc 'dnf install -y createrepo_c rpm-build && bin/strata-repo-refresh && bin/strata-repo-verify'
+          rm -rf public-site
+          mkdir public-site
+          cp -a packages repodata strata.repo VERSION LICENSE public-site/
+          mkdir public-site/bin
+          cp bin/strata-install-desktop public-site/bin/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: public-site
       - id: deployment
         uses: actions/deploy-pages@v4

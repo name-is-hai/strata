@@ -1,4 +1,5 @@
 #!/bin/bash
+# strata:summary=Save the Hyprland monitor layout
 
 # Store a new monitors.lua and let Hyprland load it.
 # Usage: save-layout <file content> [lua to run once the file is loaded]

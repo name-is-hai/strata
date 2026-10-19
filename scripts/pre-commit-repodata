@@ -6,6 +6,6 @@ cd "$repo_root"
 
 # Prek invokes this hook only when an RPM under packages/ is staged. Generate
 # the matching index in the working tree, stage it, and prove DNF can read it.
-scripts/refresh-repodata.sh
+bin/strata-repo-refresh
 git add repodata
-scripts/verify-repo.sh
+bin/strata-repo-verify

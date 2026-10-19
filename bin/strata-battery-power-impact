@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Estimate application power impact from CPU activity
 # CPU activity is an estimate of power impact, not per-application watts.
 # Adapted from AROICE-HQ/omarchy-battery's power-impact.sh (MIT).
 set -u

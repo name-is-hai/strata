@@ -1557,7 +1557,7 @@ ShellRoot {
   //
   // Bindings that open a menu route or panel, or step the volume, dispatch
   // these through Hyprland, so a keypress reaches the shell without spawning
-  // an IPC client or script. The list is shared with default/hypr/helpers.lua, which binds a
+  // an IPC client or script. The list is shared with defaults/hypr/helpers.lua, which binds a
   // route or panel missing from it through the command instead.
 
   function parseShortcuts(raw) {

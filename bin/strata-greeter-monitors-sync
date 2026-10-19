@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publish only display enable/disable states, never execute personal Lua as root.
+# strata:summary=Synchronize disabled monitors to the greeter
 # strata:hidden=true
+# Publish only display enable/disable states, never execute personal Lua as root.
 set -euo pipefail
 [[ $# == 0 || ( $# == 1 && $1 == --print ) ]] || exit 64
 errors=$(hyprctl configerrors)

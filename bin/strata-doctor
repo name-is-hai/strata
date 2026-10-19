@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# strata:summary=Check the Strata installation and desktop services without changing settings
+# strata:args=[--help]
+# strata:examples=strata doctor
+set -uo pipefail
+
+if (( $# > 0 )); then
+  case $1 in
+    --help|-h)
+      echo 'Usage: strata doctor'
+      echo 'Read-only checks of packages, commands, configuration, services and desktop IPC.'
+      echo 'Run as the desktop user. Exit 1 means a required check failed; warnings alone exit 0.'
+      exit 0
+      ;;
+    *) echo 'Usage: strata doctor' >&2; exit 2 ;;
+  esac
+fi
+
+passed=0
+warnings=0
+failed=0
+skipped=0
+report() {
+  local status=$1 label=$2 detail=${3:-}
+  detail=${detail//$'\n'/ }
+  detail=${detail//$'\r'/ }
+  printf '[%s] %s%s\n' "$status" "$label" "${detail:+: $detail}"
+  case $status in
+    OK) passed=$((passed+1)) ;;
+    WARN) warnings=$((warnings+1)) ;;
+    FAIL) failed=$((failed+1)) ;;
+    SKIP) skipped=$((skipped+1)) ;;
+  esac
+}
+
+root=${STRATA_PATH:-/usr/share/strata}
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+state_home=${XDG_STATE_HOME:-$HOME/.local/state}
+runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$UID}
+printf 'Strata doctor\n\n'
+
+for command in rpm jq timeout hyprctl quickshell socat wl-copy wl-paste cliphist \
+  pw-cli pactl git magick strata-shell strata-snip \
+  strata-font-ink strata-wiggle-monitor; do
+  if command -v "$command" >/dev/null 2>&1; then
+    report OK "Command $command"
+  else
+    report FAIL "Command $command" 'missing; reinstall the package providing it'
+  fi
+done
+
+if command -v rpm >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+  installed_version=""
+  for package in strata-config hyprland-desktop-core hyprland-desktop-services \
+    strata-lock-auth strata-casting strata-waycast strata-doubletake strata-cast; do
+    if version=$(timeout --kill-after=1s 3s rpm -q --qf '%{VERSION}-%{RELEASE}' "$package" 2>/dev/null); then
+      report OK "Package $package" "$version"
+      if [[ $package == strata-config ]]; then
+        installed_version=$(timeout --kill-after=1s 3s rpm -q --qf '%{VERSION}' "$package" 2>/dev/null)
+      fi
+    else
+      report FAIL "Package $package" 'not installed as an RPM'
+    fi
+  done
+  if [[ -r $root/version ]]; then
+    IFS= read -r runtime_version < "$root/version" || true
+    if [[ -n $installed_version && ${runtime_version/-alpha/~alpha} == "$installed_version" ]]; then
+      report OK 'Runtime version' "$runtime_version"
+    else
+      report WARN 'Runtime version' "runtime ${runtime_version:-unknown}; RPM ${installed_version:-unknown}; local development files may differ"
+    fi
+  else
+    report WARN 'Runtime version' "$root/version is missing"
+  fi
+fi
+
+for file in shell/shell.qml shell/plugins/services/privacy/manifest.json \
+  shell/plugins/services/system-sounds/manifest.json default/strata/strata-menu.jsonc; do
+  if [[ -r $root/$file ]]; then report OK "Runtime $file"; else report FAIL "Runtime $file" "missing under $root"; fi
+done
+
+if [[ -e $config_home/strata/shell.json ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    if jq -e 'type=="object" and (.bar|type)=="object" and (.bar.layout|type)=="object"' "$config_home/strata/shell.json" >/dev/null 2>&1; then
+      report OK 'Personal shell configuration' 'valid JSON and bar layout'
+    else
+      report FAIL 'Personal shell configuration' 'invalid JSON or missing bar layout'
+    fi
+  fi
+else
+  report OK 'Personal shell configuration' 'no override; packaged defaults are used'
+fi
+
+if [[ -r $config_home/xdg-desktop-portal/hyprland-portals.conf ]]; then
+  if grep -Eq '^default[[:space:]]*=[[:space:]]*hyprland([;[:space:]]|$)' "$config_home/xdg-desktop-portal/hyprland-portals.conf"; then
+    report OK 'Screen sharing portal configuration' 'Hyprland is the preferred backend'
+  else
+    report WARN 'Screen sharing portal configuration' 'Hyprland is not the preferred default backend'
+  fi
+else
+  report SKIP 'Personal portal configuration' 'no override; system portal defaults apply'
+fi
+
+if [[ -L $state_home/strata/current/background || -e $state_home/strata/current/background ]]; then
+  if [[ -f $state_home/strata/current/background ]]; then
+    report OK 'Current background' 'target exists'
+  else
+    report WARN 'Current background' 'saved image is missing'
+  fi
+fi
+
+if command -v systemctl >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && [[ -S $runtime_dir/bus ]]; then
+  for service in pipewire pipewire-pulse wireplumber xdg-desktop-portal xdg-desktop-portal-hyprland; do
+    if status=$(timeout --kill-after=1s 2s systemctl --user is-active "$service.service" 2>/dev/null); then
+      report OK "Service $service" "$status"
+    else
+      report FAIL "Service $service" "${status:-user bus unavailable}; run as the desktop user"
+    fi
+  done
+else
+  report SKIP 'Desktop services' 'user session bus unavailable; check from the desktop user session'
+fi
+
+if [[ -n ${WAYLAND_DISPLAY:-} || -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+  if command -v timeout >/dev/null 2>&1 && command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    if monitors=$(timeout --kill-after=1s 3s hyprctl -j monitors 2>/dev/null) && \
+      names=$(jq -er 'if type=="array" and length>0 then map(.name)|join(", ") else empty end' <<<"$monitors" 2>/dev/null); then
+      report OK 'Active displays' "$names"
+    else
+      report FAIL 'Active displays' 'Hyprland IPC unavailable or no active display'
+    fi
+  fi
+  if command -v timeout >/dev/null 2>&1 && command -v strata-shell >/dev/null 2>&1; then
+    if reply=$(timeout --kill-after=1s 4s strata-shell shell ping 2>/dev/null) && [[ $reply == ok ]]; then
+      report OK 'Quickshell IPC' 'shell responds'
+    else
+      report FAIL 'Quickshell IPC' 'shell did not answer; check strata-launch-shell and its logs'
+    fi
+  fi
+  if command -v timeout >/dev/null 2>&1 && command -v pactl >/dev/null 2>&1; then
+    if sink=$(timeout --kill-after=1s 3s pactl get-default-sink 2>/dev/null) && [[ -n $sink ]]; then
+      report OK 'Default audio output' "$sink"
+    else
+      report FAIL 'Default audio output' 'PulseAudio/PipeWire did not report an output'
+    fi
+  fi
+else
+  report SKIP 'Live desktop IPC and audio' 'no Wayland session context; run from a desktop terminal for these checks'
+fi
+
+printf '\n%d passed, %d warnings, %d failed, %d skipped.\n' "$passed" "$warnings" "$failed" "$skipped"
+(( failed == 0 ))

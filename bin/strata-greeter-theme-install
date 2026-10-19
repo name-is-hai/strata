@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Install the greeter theme snapshot
 # Privileged fixed-destination helper for the greeter's lock style tokens.
 set -euo pipefail
 umask 022

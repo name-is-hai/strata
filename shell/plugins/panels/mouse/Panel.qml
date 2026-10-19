@@ -8,6 +8,7 @@ Panel {
   id: root
   moduleName: "strata.mouse"
   ipcTarget: "strata.mouse"
+  property var service: null
   property var values: ({ touchpad_sensitivity: 0, touchpad_accel_profile: "", sensitivity: 0, scroll_factor: 1, natural_scroll: false, left_handed: false, accel_profile: "" })
   property string settingsBaseline: ""
   property bool previewed: false
@@ -15,14 +16,13 @@ Panel {
   property bool loaded: false
   property bool saved: false
   property string errorText: ""
-  readonly property var mouseService: bar && bar.shell ? bar.shell.serviceFor("strata.mouse") : null
+  readonly property var mouseService: service
   readonly property var devices: mouseService ? mouseService.devices : []
 
   readonly property var externalMice: devices.filter(function(device) { return device.external === true })
   readonly property bool hasTouchpad: devices.some(function(device) { return device.touchpad === true })
-  visible: hasMouse || hasTouchpad
   readonly property bool hasMouse: externalMice.length > 0
-  readonly property string deviceName: hasMouse ? externalMice[0].name : "Touchpad"
+  readonly property string deviceName: hasMouse ? externalMice[0].name : hasTouchpad ? "Touchpad" : "No pointer device detected"
   readonly property string deviceIcon: hasMouse ? "󰍽" : "󰟸"
 
   function refresh() { if (!readProcess.running && !writeProcess.running && !discarding) readProcess.running = true }
@@ -68,19 +68,6 @@ Panel {
       if (discarding) discard(); else refresh()
       if (mouseService) mouseService.refresh()
     } else discard()
-  }
-  implicitWidth: button.implicitWidth
-  implicitHeight: button.implicitHeight
-
-  BarIconButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: root.deviceIcon
-    foreground: root.mouseService && root.mouseService.lowBattery ? Color.urgent : root.barForeground
-    tooltipText: root.hasMouse ? "Mouse settings" : "Touchpad settings"
-    active: root.opened
-    onPressed: root.toggle()
   }
 
   Process {
@@ -147,13 +134,15 @@ Panel {
     }
   }
 
-  PopupCard {
+  KeyboardPanel {
     id: panel
     panelHeader: hero
-    anchorItem: button
+    standalone: true
+    anchorItem: null
     owner: root
     bar: root.bar
     open: root.opened
+    focusTarget: keys
     margin: Style.space(16)
     contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(650))
@@ -169,7 +158,7 @@ Panel {
         anchors.right: parent.right
         anchors.top: parent.top
         height: Math.max(Style.space(42), implicitHeight)
-        title: root.hasMouse ? "Mouse" : "Touchpad"
+        title: root.hasTouchpad && !root.hasMouse ? "Touchpad" : "Mouse"
         meta: root.deviceName
         detail: root.saved ? "Saved" : root.hasMouse && root.externalMice[0].percentage !== null ? Math.round(root.externalMice[0].percentage) + "%" : ""
         iconComponent: Component {
@@ -178,13 +167,15 @@ Panel {
       }
       Flickable {
         id: viewport
+        readonly property int controlInset: Math.max(1, Style.space(2))
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.rightMargin: Style.space(16)
         clip: true
-        contentHeight: content.implicitHeight
+        contentWidth: width
+        contentHeight: content.implicitHeight + controlInset * 2
+        flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: PanelScrollBar {
           width: Style.space(6)
@@ -196,7 +187,9 @@ Panel {
         }
         Column {
           id: content
-          width: parent.width
+          x: viewport.controlInset
+          y: viewport.controlInset
+          width: Math.max(0, viewport.width - viewport.controlInset * 2)
           spacing: Style.spacing.panelGap
           Column {
             width: parent.width

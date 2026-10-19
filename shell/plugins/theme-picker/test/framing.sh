@@ -7,8 +7,8 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 mkdir -m 700 "$work/runtime"
 ln -s "$repo/shell/Commons" "$work/Commons"
-vips black "$work/original.png" 600 200
-vipsthumbnail "$work/original.png" --size '100x100>' --smartcrop=none --path "$work/preview.jpg"
+magick -size 600x200 xc:black "$work/original.png"
+magick "$work/original.png" -thumbnail '100x100>' "$work/preview.jpg"
 cat > "$work/shell.qml" <<'QML'
 import QtQuick
 import QtQuick.Window

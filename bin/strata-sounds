@@ -1,4 +1,5 @@
 #!/bin/bash
+# strata:summary=Play or control Strata system sounds
 set -e
 
 if [[ -n ${STRATA_PATH:-} && -x $STRATA_PATH/shell/plugins/services/system-sounds/bin/strata-sounds ]]; then

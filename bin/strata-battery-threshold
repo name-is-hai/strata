@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Read or toggle the battery charge limit through UPower
 # Read or toggle a firmware charge limit through UPower's authorized D-Bus API.
 set -euo pipefail
 

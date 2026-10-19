@@ -9,7 +9,7 @@ desktop dependencies, and the tagged Quickshell package comes from its COPR.
 After this repository is published with GitHub Pages, run:
 
 ```bash
-curl -fsSL https://name-is-hai.github.io/strata/scripts/strata-install | \
+curl -fsSL https://name-is-hai.github.io/strata/bin/strata-install-desktop | \
   sudo bash -s -- --enable-greetd
 ```
 
@@ -35,12 +35,12 @@ strata-update --check  # Check now without installing
 strata-update          # Review and install available Strata package updates
 ```
 
-To publish an update, increase `Version` or `Release` in
-`packaging/strata-config.spec`, build with `scripts/build-rpms-podman config`,
-and publish the new RPM from `build-output/RPMS/` under `packages/` on `main`.
-The Pages workflow regenerates `repodata/` and publishes the repository. Machines
-then detect the newer RPM version; pushing source changes or a GitHub tag alone
-does not publish an installable update.
+To publish an update, update the release versions and push a matching version
+tag, such as `v1.0.0`. GitHub builds the RPMs, verifies the complete repository
+and creates a draft release. Test it, then publish the draft to deploy its DNF
+repository to Pages. Installed machines then detect the newer RPM versions.
+See [Releasing Strata](docs/releasing.md) for the complete process and the
+manual local-build alternative.
 
 The checker uses Bash, RPM, DNF, jq, flock and a user cache. An offline check
 retains the last result, and each set of available versions is notified once.
@@ -48,6 +48,12 @@ Existing custom bars can add the icon with
 `strata-bar put strata.system-update --after strata.menu`; new installations
 include it by default. Disable the **Strata updates** plugin to stop checks.
 Run `scripts/tests/update-check.sh` to test with fake package commands.
+
+## Diagnostics
+
+Run `strata doctor` to check the installed desktop without changing settings.
+From this checkout, use `bin/strata doctor`. Session checks work best in a
+desktop terminal; unavailable session context is reported as skipped.
 
 ## Development hook
 
@@ -58,5 +64,5 @@ prek install
 ```
 
 When a staged RPM under `packages/` changes, the hook regenerates `repodata/`,
-stages the new metadata, and verifies that DNF can resolve the required Strata
-packages. It requires `createrepo_c` and `dnf` on that build machine.
+stages the new metadata, and verifies required Strata packages and versions.
+It requires `createrepo_c`, DNF and `rpm-build` on the Fedora build machine.

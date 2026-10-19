@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Report NVIDIA power draw on hybrid GPU machines
 # Status only; report NVIDIA draw when an integrated GPU is also present.
 set -u
 command -v nvidia-smi >/dev/null || exit 0

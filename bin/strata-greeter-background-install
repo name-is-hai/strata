@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Install the greeter wallpaper snapshot
 # Install the active Strata wallpaper where the login greeter can read it.
 # This helper deliberately runs through pkexec. greetd cannot read a user's
 # private state directory, so it needs a system-owned copy of the wallpaper.

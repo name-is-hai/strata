@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
 # strata:summary=Apply power-aware refresh rates to all connected monitors
 # strata:args=[ac|battery]
 # strata:examples=strata monitor refresh profile ac | strata monitor refresh profile battery
+set -euo pipefail
+
 
 # Preserve every output's resolution, scale, position, transform and workspace
 # assignment. Only the monitor mode is changed through Hyprland's Lua API.

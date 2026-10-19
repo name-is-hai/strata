@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Synchronize the current wallpaper to the greeter
 # Synchronize the active desktop wallpaper to the system-owned greeter.
 set -euo pipefail
 

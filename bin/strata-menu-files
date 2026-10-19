@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Search home-directory filenames for the menu
 
 # Search home-directory filenames for the Strata menu's explicit ~ prefix.
 # This helper never interprets the query as a command or searches caches.

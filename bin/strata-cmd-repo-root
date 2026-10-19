@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# strata:summary=Locate the Strata source checkout for developer commands
+# strata:hidden=true
+set -euo pipefail
+
+is_checkout() {
+  [[ -f $1/packaging/strata-config.spec && -f $1/bin/strata ]]
+}
+
+if [[ -n ${STRATA_REPO_DIR:-} ]]; then
+  if is_checkout "$STRATA_REPO_DIR"; then
+    cd -- "$STRATA_REPO_DIR"
+    pwd -P
+    exit 0
+  fi
+  echo "STRATA_REPO_DIR is not a Strata source checkout: $STRATA_REPO_DIR" >&2
+  exit 2
+fi
+
+candidate=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if is_checkout "$candidate"; then
+  printf '%s\n' "$candidate"
+  exit 0
+fi
+
+candidate=$PWD
+while [[ $candidate != / ]]; do
+  if is_checkout "$candidate"; then
+    printf '%s\n' "$candidate"
+    exit 0
+  fi
+  candidate=${candidate%/*}
+  [[ -n $candidate ]] || candidate=/
+done
+
+echo 'Run from a Strata source checkout or set STRATA_REPO_DIR to its path.' >&2
+exit 2

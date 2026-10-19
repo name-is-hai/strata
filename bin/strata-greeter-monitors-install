@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# strata:summary=Install the greeter monitor policy
 """Publish validated connector states for the separate login compositor."""
 import json
 import os

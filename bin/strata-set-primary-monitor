@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Set the primary display for XWayland applications
 set -euo pipefail
 
 # Only an explicit layout save changes the persistent choice. A hotplug/startup

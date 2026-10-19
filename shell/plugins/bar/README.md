@@ -8,12 +8,12 @@ the shell for its whole session.
 - `manifest.json` declares the plugin (`id: strata.bar`, `kind: bar`) and points at `Bar.qml` as the entry point.
 - `Bar.qml` is Strata-owned bar engine code, loaded by the strata-shell host. Users should not edit it directly.
 - `widgets/` holds simple first-party bar widgets with sibling manifests.
-- The bar receives its config from the host shell as a `barConfig` property; the host loads it from `~/.config/strata/shell.json` (or `config/strata/shell.json` when the user has no file).
+- The bar receives its config from the host shell as a `barConfig` property; the host loads it from `~/.config/strata/shell.json` (or `defaults/strata/shell.json` when the user has no file).
 - `strata bar position` updates only the user shell.json file.
 
 ## Customizing
 
-The bar config lives under the `bar:` key of [`~/.config/strata/shell.json`](../../../docs/strata-shell.md#shelljson). Out of the box the shell uses [`config/strata/shell.json`](../../../config/strata/shell.json). Once you customize anything via the bar gestures, `strata bar ...`, or by editing shell.json directly, your file is canonical — there is no deep-merge.
+The bar config lives under the `bar:` key of [`~/.config/strata/shell.json`](../../../docs/strata-shell.md#shelljson). Out of the box the shell uses [`config/strata/shell.json`](../../../defaults/strata/shell.json). Once you customize anything via the bar gestures, `strata bar ...`, or by editing shell.json directly, your file is canonical — there is no deep-merge.
 
 The bar is configured directly on the bar itself: drag empty bar space (or click-and-hold) to move the bar to another screen edge, double-left-click empty center-bar space to toggle transparency, and drag widgets to reorder them. The `strata bar position`, `strata bar transparent`, `strata bar move`, and `strata bar set` commands do the same from scripts. Enable or disable widgets with `strata plugin enable` and `strata plugin disable` (widget ids come from `strata plugin list`).
 

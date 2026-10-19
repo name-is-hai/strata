@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# strata:summary=Enable the installed Quickshell login greeter for the next boot
+# strata:examples=sudo strata setup greeter
+set -euo pipefail
+
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+  echo 'Usage: sudo strata-setup-greeter'
+  echo 'Configure the RPM-installed login greeter for the next boot.'
+  exit 0
+fi
+if (( $# )); then
+  echo 'Usage: sudo strata-setup-greeter' >&2
+  exit 2
+fi
+
+# Prepare the new login manager for the next boot. Never stop the active DE.
+if (( EUID != 0 )); then
+  echo 'Run with pkexec or sudo.' >&2
+  exit 77
+fi
+
+strata_root=/usr/share/strata
+command -v greetd >/dev/null
+command -v agreety >/dev/null
+command -v Hyprland >/dev/null
+command -v qs >/dev/null
+command -v uwsm >/dev/null
+getent passwd greetd >/dev/null
+
+# RPM installation owns QML, shared modules, helpers and Polkit rules.
+# Setup only prepares machine-specific state and selects the login service.
+for file in greeter/shell.qml greeter/hyprland.lua greeter/config.toml \
+            shell/Commons/Color.qml shell/Ui/LockScreenView.qml; do
+  [[ -r $strata_root/$file ]] || {
+    echo "Missing installed Strata file: $strata_root/$file. Install strata-config first." >&2
+    exit 66
+  }
+done
+install -d -o root -g root -m 0755 /etc/strata /etc/greetd
+
+if [[ ! -e /usr/share/strata/greeter/background.sha256 ]]; then
+  fallback="$strata_root/themes/lawson-night/backgrounds/wallhaven-1k6ljv.jpg"
+  temporary=$(mktemp /tmp/strata-greeter-wallpaper.XXXXXX.jpg)
+  trap 'rm -f -- "$temporary"' EXIT
+  ffmpeg -nostdin -hide_banner -loglevel error -y -i "$fallback" \
+    -vf 'gblur=sigma=18' -frames:v 1 -q:v 3 "$temporary"
+  install -o root -g root -m 0644 "$temporary" /usr/share/strata/greeter/background.jpg
+  rm -f -- "$temporary"
+  trap - EXIT
+  sha256sum "$fallback" | cut -d' ' -f1 \
+    > /usr/share/strata/greeter/background.sha256
+  chmod 0644 /usr/share/strata/greeter/background.sha256
+fi
+if [[ ! -f /usr/share/strata/greeter/theme.conf ]]; then
+  install -o root -g root -m 0644 "$strata_root/default/greeter/theme.conf" \
+    /usr/share/strata/greeter/theme.conf
+fi
+
+login_name=${STRATA_INSTALL_USER:-${SUDO_USER:-}}
+if [[ -z $login_name && ${PKEXEC_UID:-} =~ ^[0-9]+$ ]]; then
+  login_name=$(getent passwd "$PKEXEC_UID" | cut -d: -f1)
+fi
+if [[ -n $login_name && $login_name != root ]] && getent passwd "$login_name" >/dev/null; then
+  printf '%s\n' "$login_name" > /etc/strata/login-user
+  chmod 0644 /etc/strata/login-user
+  login_home=$(getent passwd "$login_name" | cut -d: -f6)
+  theme_copy=/usr/share/strata/greeter/theme
+  install -d -o root -g root -m 0755 "$theme_copy"
+  for pair in "colors.toml:$login_home/.local/state/strata/current/theme/colors.toml" \
+              "shell.toml:$login_home/.local/state/strata/current/theme/shell.toml" \
+              "user-shell.toml:$login_home/.config/strata/shell.toml"; do
+    name=${pair%%:*}
+    source=${pair#*:}
+    temporary=$(mktemp "$theme_copy/.${name}.XXXXXX")
+    if [[ -f $source ]]; then
+      source_real=$(realpath -e -- "$source")
+      [[ $source_real == "$login_home"/* ]] || { echo 'Theme file escaped login home' >&2; exit 77; }
+      install -o root -g root -m 0644 "$source_real" "$temporary"
+    else
+      : > "$temporary"
+      chmod 0644 "$temporary"
+    fi
+    mv -f -- "$temporary" "$theme_copy/$name"
+  done
+fi
+
+if [[ -f /etc/greetd/config.toml && ! -e /etc/greetd/config.toml.before-strata ]]; then
+  cp -a -- /etc/greetd/config.toml /etc/greetd/config.toml.before-strata
+fi
+install -o root -g root -m 0644 "$strata_root/greeter/config.toml" /etc/greetd/config.toml
+
+# A service enable changes only the next boot. The current desktop continues
+# running, which avoids losing the active login during installation.
+systemctl disable sddm.service 2>/dev/null || true
+systemctl enable --force greetd.service
+echo 'greetd is selected for the next boot; the current desktop was not restarted.'

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# strata:summary=Read or update lid and idle behavior
 
 # Strata idle settings. Lid and timed-sleep behavior is adapted from
 # lgse/sandman (MIT); see shell/plugins/services/idle/LICENSE.sandman.

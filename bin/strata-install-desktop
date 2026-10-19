@@ -1,0 +1,277 @@
+#!/usr/bin/env bash
+# strata:summary=Install or update the Strata desktop
+set -euo pipefail
+
+repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata}
+dotfiles_repo=${STRATA_DOTFILES_REPO:-https://github.com/name-is-hai/dotfiles.git}
+enable_greetd=0
+install_user=${STRATA_INSTALL_USER:-${SUDO_USER:-}}
+local_rpms_dir=
+install_local=0
+restart_shell=0
+nvidia_mode=auto
+drivers_only=0
+original_args=("$@")
+
+while (( $# > 0 )); do
+  case "$1" in
+    --enable-greetd) enable_greetd=1 ;;
+    --local)
+      install_local=1
+      ;;
+    --local-rpms)
+      shift
+      if [[ -z ${1:-} ]]; then
+        echo "--local-rpms requires a directory." >&2
+        exit 2
+      fi
+      install_local=1
+      local_rpms_dir="$1"
+      ;;
+    --restart-shell)
+      restart_shell=1
+      ;;
+    --nvidia)
+      nvidia_mode=install
+      ;;
+    --no-nvidia)
+      nvidia_mode=skip
+      ;;
+    --nvidia-only)
+      nvidia_mode=install
+      drivers_only=1
+      ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: strata-install-desktop [--enable-greetd] [--local | --local-rpms DIR] [--restart-shell] [--nvidia | --no-nvidia | --nvidia-only]
+
+Installs the Strata desktop from the configured static DNF repository.
+
+  --enable-greetd  Enable the Quickshell login greeter and set graphical.target.
+  --local           Install RPMs from this checkout's build-output/RPMS.
+  --local-rpms DIR  Install RPMs from DIR instead of the remote Strata repo.
+  --restart-shell   Restart the active user's Strata shell after installation.
+  --nvidia          Install the NVIDIA driver even if hardware detection fails.
+  --no-nvidia       Skip NVIDIA driver installation.
+  --nvidia-only     Install/configure NVIDIA only, then exit.
+
+When run as a normal user, the installer also applies Strata's user
+configuration and personal dotfiles for that user without replacing existing
+configuration files.
+USAGE
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if (( EUID != 0 )); then
+  export STRATA_INSTALL_USER=${install_user:-$USER}
+  exec sudo --preserve-env=STRATA_REPO_URL,STRATA_INSTALL_USER,STRATA_DOTFILES_REPO,STRATA_DOTFILES_DIR "$0" "${original_args[@]}"
+fi
+
+has_nvidia_hardware() {
+  local device
+  for device in /sys/bus/pci/devices/*; do
+    [[ -r $device/vendor ]] || continue
+    [[ $(<"$device/vendor") == "0x10de" ]] && return 0
+  done
+  return 1
+}
+
+install_casting_repository() {
+  local fedora_release
+  fedora_release=$(rpm -E '%fedora')
+  if ! rpm -q rpmfusion-free-release >/dev/null 2>&1; then
+    dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_release}.noarch.rpm"
+  fi
+}
+
+install_nvidia_driver() {
+  local fedora_release
+  fedora_release=$(rpm -E '%fedora')
+
+  if rpm -q akmod-nvidia >/dev/null 2>&1; then
+    echo "NVIDIA driver packages are already installed."
+  else
+    echo "NVIDIA graphics hardware detected; installing the current RPM Fusion driver."
+    if ! rpm -q rpmfusion-nonfree-release >/dev/null 2>&1; then
+      dnf install -y "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_release}.noarch.rpm"
+    fi
+    dnf install -y --refresh akmod-nvidia xorg-x11-drv-nvidia-cuda
+  fi
+
+  # The open-source nouveau module may already own the GPU in the running
+  # session. Keep it out of the next boot's initramfs so the NVIDIA module can
+  # bind the device before the compositor starts.
+  install -d -m 0755 /etc/modprobe.d
+  cat > /etc/modprobe.d/strata-nvidia.conf <<'EOF'
+blacklist nouveau
+options nouveau modeset=0
+options nvidia-drm modeset=1
+EOF
+  dracut --force
+  echo "NVIDIA driver is prepared. Reboot to switch this GPU from nouveau to NVIDIA."
+}
+
+case "$nvidia_mode" in
+  install) install_nvidia_driver ;;
+  auto)
+    if has_nvidia_hardware; then
+      install_nvidia_driver
+    else
+      echo "No NVIDIA graphics hardware detected; skipping NVIDIA driver."
+    fi
+    ;;
+  skip) echo "Skipping NVIDIA driver installation." ;;
+esac
+
+if (( drivers_only )); then
+  exit 0
+fi
+
+if (( install_local )); then
+  if [[ -z $local_rpms_dir ]]; then
+    repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
+    local_rpms_dir="$repo_root/build-output/RPMS"
+  fi
+  if [[ ! -d $local_rpms_dir ]]; then
+    echo "Local RPM directory does not exist: $local_rpms_dir" >&2
+    exit 2
+  fi
+  mapfile -d '' -t local_rpms < <(find "$local_rpms_dir" -type f -name '*.rpm' -print0 | sort -z)
+  if (( ${#local_rpms[@]} == 0 )); then
+    echo "No RPMs found under: $local_rpms_dir" >&2
+    exit 2
+  fi
+else
+  repo_file=/etc/yum.repos.d/strata.repo
+  install -d -m 0755 /etc/yum.repos.d
+  curl --fail --location --silent --show-error "$repo_url/strata.repo" -o "$repo_file"
+fi
+
+# Strata uses the maintained tagged Quickshell build, rather than a
+# development snapshot, because Fedora's base package may lag its API.
+dnf copr enable -y errornointernet/quickshell
+
+# Miracast software encoding uses the RPM Fusion Free GStreamer x264 plugin.
+install_casting_repository
+
+
+# Bootstrap in layers. Installing the desktop meta-package first can hide the
+# useful dependency error behind its noarch wrapper; establish the compositor
+# and Strata session core before requesting services and applications.
+if (( install_local )); then
+  # DNF resolves the local RPMs together, so a desktop build containing
+  # multiple architecture directories is installed as one transaction.
+  dnf install -y --allowerasing --setopt=install_weak_deps=False "${local_rpms[@]}"
+else
+  dnf install -y --refresh --setopt=install_weak_deps=False \
+    hyprland hyprland-desktop-core git
+
+  # The full desktop meta-package then adds the independently versioned services
+  # and application layers. strata-config is last because it activates defaults
+  # for the installed desktop rather than supplying the runtime itself.
+  dnf install -y --refresh --setopt=install_weak_deps=False \
+    hyprland-desktop strata-config
+
+  # `dnf install` intentionally leaves an installed package alone. Follow the
+  # bootstrap with an explicit upgrade so rerunning this script updates an
+  # existing Strata machine to the newest repository release as well.
+  dnf upgrade -y --refresh --setopt=install_weak_deps=False \
+    hyprland-desktop strata-config
+fi
+
+if [[ -n $install_user ]]; then
+  if ! id "$install_user" >/dev/null 2>&1; then
+    echo "Requested desktop user does not exist: $install_user" >&2
+    exit 2
+  fi
+  install_home=$(getent passwd "$install_user" | cut -d: -f6)
+  runuser -u "$install_user" -- env HOME="$install_home" \
+    XDG_CONFIG_HOME="$install_home/.config" strata-apply-config
+
+  # Strata ships and configures Zsh as its interactive shell. This is an
+  # installer responsibility rather than an RPM scriptlet: RPM packages must
+  # not silently alter the login shell of every account on a system.
+  current_shell=$(getent passwd "$install_user" | cut -d: -f7)
+  if [[ $current_shell != /usr/bin/zsh ]]; then
+    usermod -s /usr/bin/zsh "$install_user"
+    echo "Set $install_user's login shell to Zsh."
+  fi
+
+  # Fedora's enabled repositories do not currently provide mise. Install the
+  # official user-local binary so it remains owned and updated by this user,
+  # rather than adding another system repository. Do not run `mise install`:
+  # that would automatically fetch every optional tool in personal config.
+  mise_bin="$install_home/.local/bin/mise"
+  if [[ ! -x $mise_bin ]]; then
+    if runuser -u "$install_user" -- env HOME="$install_home" bash -c 'curl -fsSL https://mise.run | sh'; then
+      echo "Installed Mise for $install_user."
+    else
+      echo "Could not install Mise; rerun the installer once network access is available." >&2
+    fi
+  fi
+
+  # Personal dotfiles remain a separate, portable repository. Clone it into
+  # the conventional personal project location on a first install; on later
+  # runs only fast-forward an existing Git checkout and never replace an
+  # unrelated directory.
+  dotfiles_dir=${STRATA_DOTFILES_DIR:-"$install_home/Project/dotfiles"}
+  dotfiles_ready=0
+  if [[ -d $dotfiles_dir/.git ]]; then
+    if runuser -u "$install_user" -- env HOME="$install_home" git -C "$dotfiles_dir" pull --ff-only; then
+      dotfiles_ready=1
+    else
+      echo "Could not update dotfiles at $dotfiles_dir; leaving the existing checkout untouched." >&2
+    fi
+  elif [[ -e $dotfiles_dir ]]; then
+    echo "Not replacing existing non-Git dotfiles directory: $dotfiles_dir" >&2
+  else
+    runuser -u "$install_user" -- install -d "$(dirname "$dotfiles_dir")"
+    if runuser -u "$install_user" -- env HOME="$install_home" git clone "$dotfiles_repo" "$dotfiles_dir"; then
+      dotfiles_ready=1
+    else
+      echo "Could not clone personal dotfiles from $dotfiles_repo." >&2
+    fi
+  fi
+
+  if (( dotfiles_ready )); then
+    runuser -u "$install_user" -- env HOME="$install_home" \
+      XDG_CONFIG_HOME="$install_home/.config" bash "$dotfiles_dir/install.sh"
+  fi
+
+  if (( restart_shell )); then
+    install_uid=$(id -u "$install_user")
+    install_runtime="/run/user/$install_uid"
+    if [[ -d $install_runtime ]]; then
+      if runuser -u "$install_user" -- env \
+        HOME="$install_home" XDG_CONFIG_HOME="$install_home/.config" \
+        XDG_RUNTIME_DIR="$install_runtime" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$install_runtime/bus" \
+        strata-restart-shell; then
+        echo "Restarted the Strata shell for $install_user."
+      else
+        echo "Installed successfully, but the Strata shell could not restart. Run 'strata-restart-shell' from your desktop session." >&2
+      fi
+    else
+      echo "No active desktop runtime for $install_user; run 'strata-restart-shell' after logging in." >&2
+    fi
+  fi
+else
+  echo "No desktop user was detected; run strata-apply-config after logging in."
+fi
+
+if (( enable_greetd )); then
+  STRATA_INSTALL_USER="$install_user" strata-setup-greeter
+  systemctl set-default graphical.target
+fi
+
+cat <<'DONE'
+
+Strata is installed. Reboot or log in through the Strata greeter.
+DONE

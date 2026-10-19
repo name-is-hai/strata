@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const repo = path.resolve(__dirname, '../..');
 const model = require(path.join(repo, 'shell/plugins/menu/MenuModel.js'));
-const defaults = model.parseMenuJsonc(fs.readFileSync(path.join(repo, 'default/strata/strata-menu.jsonc'), 'utf8'));
+const defaults = model.parseMenuJsonc(fs.readFileSync(path.join(repo, 'defaults/strata/strata-menu.jsonc'), 'utf8'));
 const base = model.mergeMenuSources(defaults, []);
-const expected = ['style.theme','style.font','install.style.theme','install.webapp','remove.webapp','remove.theme','setup.plugin','setup.plugin.add','setup.typing.input','setup.monitors','setup.config.hyprland','trigger.capture.color','trigger.appearance.top-bar'];
+const expected = ['style.theme','style.font','install.style.theme','install.webapp','remove.webapp','remove.theme','setup.plugin','setup.plugin.add','setup.typing.input','setup.monitors','setup.mouse','setup.config.hyprland','trigger.capture.color','trigger.appearance.top-bar'];
 for (const id of expected) {
   assert(base.items[id], `Missing supported Omarchy route ${id}`);
   assert.equal(model.resolveRoute(base.items,base.itemOrder,id),id);
@@ -61,3 +61,11 @@ assert(!base.items['setup.theme']);
 const cleared=model.mergeMenuSources(defaults,model.parseMenuJsonc('{"style.theme":{"action":"","target":"style.font","plugin":""}}')).items['style.theme'];
 assert.equal(cleared.kind,'link');assert.equal(cleared.plugin,'');assert.equal(cleared.label,'Themes & backgrounds');
 console.log('PASS: native routes, literal extension IDs, partial merge, plugin targeting, JSONC comments and literal actions');
+
+const mouseManifest=JSON.parse(fs.readFileSync(path.join(repo,'shell/plugins/panels/mouse/manifest.json'),'utf8'));
+assert(mouseManifest.kinds.includes('panel') && mouseManifest.kinds.includes('service'));
+assert(!mouseManifest.kinds.includes('bar-widget') && !mouseManifest.entryPoints.barWidget);
+assert.equal(base.items['setup.mouse'].plugin,'strata.mouse');
+assert.equal(base.items['setup.mouse'].action,"strata-shell shell summon strata.mouse '{}'");
+const shippedLayout=JSON.parse(fs.readFileSync(path.join(repo,'defaults/strata/shell.json'),'utf8')).bar.layout;
+assert(!Object.values(shippedLayout).flat().some(row=>row.id==='strata.mouse'));
