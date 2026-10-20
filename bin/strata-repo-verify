@@ -30,7 +30,7 @@ test -f "$repo_root/repodata/repomd.xml" || {
 required_packages=(
   strata-config hyprland-desktop hyprland-desktop-core hyprland-desktop-services
   hyprland-desktop-apps hyprland-utilities strata-lock-auth
-  zen-browser zen-browser-engine strata-casting strata-waycast strata-doubletake strata-cast
+  strata-casting strata-waycast strata-doubletake strata-cast
   hyprland hyprland-guiutils xdg-desktop-portal-hyprland
   jetbrains-mono-nerd-fonts ghostty uwsm hypridle hyprpicker hyprsunset
 )

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Strata Zen launcher
+set -euo pipefail
+(( EUID != 0 )) || { echo 'Launch Zen as the desktop user, without sudo.' >&2; exit 1; }
+application=$HOME/.tarball-installations/zen/zen
+[[ -x $application ]] || { echo 'Install Zen first with strata-install-browser zen.' >&2; exit 1; }
+# Changing the application path can change Firefox's per-installation profile
+# hash. Reuse an unambiguous native profile without rewriting profiles.ini.
+profile_args=()
+explicit_profile=false
+for argument in "$@"; do
+  case "$argument" in --profile|-profile|--profile=*|-profile=*|-P*|--ProfileManager|--profilemanager|-ProfileManager) explicit_profile=true ;; esac
+done
+if ! $explicit_profile; then
+  for profile_root in "${XDG_CONFIG_HOME:-$HOME/.config}/zen" "$HOME/.zen"; do
+    [[ -f $profile_root/profiles.ini ]] || continue
+    mapfile -t selected < <(awk '
+      { sub(/\r$/, "") }
+      /^\[/ { section=$0 }
+      /^\[Profile[0-9]+\]$/ { count++; first=section }
+      section ~ /^\[Profile[0-9]+\]$/ && /^Path=/ { paths[section]=substr($0,6) }
+      section ~ /^\[Profile[0-9]+\]$/ && /^IsRelative=/ { relative[section]=substr($0,12) }
+      section ~ /^\[Profile[0-9]+\]$/ && /^Default=1$/ { defaults++; chosen=section }
+      END {
+        if (defaults != 1) { if (count == 1) chosen=first; else exit }
+        if (paths[chosen] != "") { print relative[chosen]; print paths[chosen] }
+      }
+    ' "$profile_root/profiles.ini")
+    if (( ${#selected[@]} == 2 )); then
+      profile=${selected[1]}
+      [[ ${selected[0]} != 1 ]] || profile=$profile_root/$profile
+      if [[ -d $profile ]]; then profile_args=(--profile "$profile"); break; fi
+    fi
+  done
+fi
+# Reset only GTK text DPI; monitor scaling follows the compositor.
+export GDK_DPI_SCALE=1
+exec "$application" "${profile_args[@]}" "$@"

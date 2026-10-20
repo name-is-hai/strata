@@ -2,7 +2,7 @@ Name:           hyprland-desktop
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.1
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT AND Unicode-DFS-2016
@@ -13,7 +13,6 @@ Source0:        hyprland-desktop-LICENSE
 Requires:       %{name}-core = 1:%{version}-%{release}
 Requires:       %{name}-services = 1:%{version}-%{release}
 Requires:       %{name}-apps = 1:%{version}-%{release}
-Requires:       zen-browser >= 1.23b
 
 %description
 The recommended package set for this personal Fedora Hyprland desktop. The
@@ -106,7 +105,7 @@ the Strata Hyprland session.
 %package apps
 Summary:        Fedora applications for the Strata desktop
 
-# Standalone web apps; Zen remains the default browser.
+# Standalone web apps; Zen is installed per user and updates itself.
 Requires:       chromium
 
 # File management, archives, previews, and storage administration.
@@ -153,6 +152,9 @@ install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %license LICENSE
 
 %changelog
+* Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-2
+- Drop the Zen RPM dependency; Strata config supplies the per-user browser integration
+
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-1
 - Build desktop dependency packages separately from Ghostty, Zen and UWSM
 - Align the Strata package version with release 1.1.1

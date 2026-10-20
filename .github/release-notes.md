@@ -1,4 +1,5 @@
-# Strata 1.1.3
+# Strata 1.1.4
 
-- Build and reuse desktop applications independently
-- Fix standalone UWSM packaging by disabling empty debug packages
+- Make Zen an optional self-updating user installation instead of an RPM
+- Follow the system default browser and install Zen only when selected
+- Avoid COPR API timeouts when configuring the Quickshell repository

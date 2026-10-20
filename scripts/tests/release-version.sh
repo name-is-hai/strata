@@ -32,9 +32,9 @@ for option in missing empty check; do
   case "$option" in missing) set -- -m;; empty) set -- -m '';; check) set -- --check -m 'Invalid';; esac
   if "$release" "$@" >/dev/null 2>&1; then echo 'Invalid arguments accepted' >&2; exit 1; fi
 done
-other=$(sha256sum VERSION runtime-version packaging/{strata-config,hyprland-desktop,hyprland-utilities,zen-browser,uwsm}.spec)
+other=$(sha256sum VERSION runtime-version packaging/{strata-config,hyprland-desktop,hyprland-utilities,uwsm}.spec)
 "$package" ghostty 9.0.1 -m 'Update only Ghostty' -m "$message"
-[[ $other == "$(sha256sum VERSION runtime-version packaging/{strata-config,hyprland-desktop,hyprland-utilities,zen-browser,uwsm}.spec)" ]]
+[[ $other == "$(sha256sum VERSION runtime-version packaging/{strata-config,hyprland-desktop,hyprland-utilities,uwsm}.spec)" ]]
 grep -Fxq -- "- $message" packaging/ghostty.spec
 [[ $(awk '/^Version:/ {print $2; exit}' packaging/ghostty.spec) == 9.0.1 ]]
 "$package" ghostty 9.0.1 -m 'Fix packaging without an upstream version change'

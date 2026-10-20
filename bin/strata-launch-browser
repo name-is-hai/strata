@@ -1,33 +1,52 @@
 #!/usr/bin/env bash
-
-# strata:summary=Launch the default browser as determined by xdg-settings.
+# strata:summary=Launch the browser chosen through the system default settings
 # strata:args=[url]
+set -euo pipefail
 
-default_browser=$(strata-cmd-default-browser)
-browser_exec=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' {~/.local,~/.nix-profile,/usr}/share/applications/$default_browser 2>/dev/null | head -1)
-
-if $browser_exec --help 2>/dev/null | grep -q MOZ_LOG; then
-  private_flag="--private-window"
-elif [[ $browser_exec =~ edge ]]; then
-  private_flag="--inprivate"
-else
-  private_flag="--incognito"
+default_browser=$(strata-cmd-default-browser) || {
+  echo 'Choose a default browser in your browser or Strata settings first.' >&2
+  exit 1
+}
+IFS=: read -ra data_dirs <<< "${XDG_DATA_HOME:-$HOME/.local/share}:$HOME/.nix-profile/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+browser_exec=
+for directory in "${data_dirs[@]}"; do
+  entry=$directory/applications/$default_browser
+  [[ -r $entry ]] || continue
+  browser_exec=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$entry" | head -1)
+  break
+done
+# A user-owned Zen installation takes precedence over a remaining system RPM.
+if [[ $default_browser == zen.desktop || $default_browser == zen-browser.desktop ]] && [[ -x $HOME/.local/bin/zen-browser ]]; then
+  browser_exec=$HOME/.local/bin/zen-browser
 fi
+[[ -n $browser_exec ]] && command -v -- "$browser_exec" >/dev/null || {
+  echo "The default browser entry is unavailable: $default_browser" >&2
+  exit 1
+}
 
-if ! strata-cmd-browser-handoff "$browser_exec" "${@/--private/$private_flag}"; then
-  systemd-run --user --quiet --collect --unit="strata-browser-$(date +%s%N)" \
-    --property=StandardOutput=null --property=StandardError=null \
-    uwsm-app -- "$browser_exec" "${@/--private/$private_flag}"
-fi
-
-url=""
+case "${default_browser,,}" in
+  *zen*|*firefox*) private_flag=--private-window ;;
+  *edge*) private_flag=--inprivate ;;
+  *)
+    if "$browser_exec" --help 2>/dev/null | grep -q MOZ_LOG; then private_flag=--private-window
+    else private_flag=--incognito; fi ;;
+esac
+arguments=()
+url=
 for argument in "$@"; do
-  if [[ $argument != "--private" ]]; then
-    url=$argument
-    break
+  if [[ $argument == --private ]]; then arguments+=("$private_flag")
+  else
+    arguments+=("$argument")
+    [[ -n $url ]] || url=$argument
   fi
 done
-
+if ! strata-cmd-browser-handoff "$browser_exec" "${arguments[@]}"; then
+  systemd-run --user --quiet --collect --unit="strata-browser-$(date +%s%N)" \
+    --property=StandardOutput=null --property=StandardError=null \
+    uwsm-app -- "$browser_exec" "${arguments[@]}"
+fi
 if [[ -n $url && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
-  strata-hyprland-focus-app "^$(basename "$browser_exec" -stable).*$" || true
+  focus_class=$(basename "$browser_exec" -stable)
+  [[ $default_browser != *zen* ]] || focus_class=zen
+  strata-hyprland-focus-app "^${focus_class}.*$" || true
 fi

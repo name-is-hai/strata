@@ -38,6 +38,12 @@ sudo reboot
 The installer uses `install_weak_deps=False`, so Fedora does not add optional
 Node/npm documentation solely because Neovim is installed.
 
+## Zen Browser
+
+Zen is optional. Choose **Install Zen Browser** or run `strata-install-browser zen`
+to install its official tarball for your user. Zen then manages its own updates;
+other browser choices remain unchanged. See [Zen installation and RPM migration](docs/zen.md).
+
 ## Strata update notifications
 
 Strata checks its published DNF repository at startup and every six hours. A

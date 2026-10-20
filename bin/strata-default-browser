@@ -18,7 +18,7 @@ if (($# == 0)); then
   brave-origin.desktop) echo "brave-origin" ;;
   microsoft-edge.desktop) echo "edge" ;;
   firefox.desktop) echo "firefox" ;;
-  zen.desktop) echo "zen" ;;
+  zen.desktop|zen-browser.desktop) echo "zen" ;;
   *) env -u BROWSER xdg-settings get default-web-browser ;;
   esac
   exit 0
@@ -31,7 +31,7 @@ brave) browser="brave"; command="brave"; desktop_id="brave-browser.desktop"; nam
 brave-origin) browser="brave-origin"; command="brave-origin"; desktop_id="brave-origin.desktop"; name="Brave Origin"; glyph=󰖟 ;;
 edge) browser="edge"; command="microsoft-edge-stable"; desktop_id="microsoft-edge.desktop"; name="Edge"; glyph=󰇩 ;;
 firefox) browser="firefox"; command="firefox"; desktop_id="firefox.desktop"; name="Firefox"; glyph=󰈹 ;;
-zen) browser="zen"; command="zen-browser"; desktop_id="zen.desktop"; name="Zen"; glyph=󰖟 ;;
+zen) browser="zen"; command="$HOME/.tarball-installations/zen/zen"; desktop_id="zen.desktop"; name="Zen"; glyph=󰖟 ;;
 *)
   echo "Usage: strata-default-browser <chromium|chrome|brave|brave-origin|edge|firefox|zen>"
   exit 1
@@ -40,7 +40,8 @@ esac
 
 if strata-cmd-missing "$command"; then
   if [[ $installing == "false" ]]; then
-    exec strata-launch-floating-terminal-with-presentation strata-default-browser --install "$browser"
+    printf -v install_command '%q ' "${BASH_SOURCE[0]}" --install "$browser"
+    exec strata-launch-floating-terminal-with-presentation "$install_command"
   else
     strata-install-browser "$browser" || exit 1
   fi

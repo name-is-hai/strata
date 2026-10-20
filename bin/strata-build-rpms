@@ -12,7 +12,7 @@ ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fed
 
 usage() {
   cat <<'USAGE'
-Usage: bin/strata-build-rpms [config|desktop|ghostty|zen|uwsm|lock-auth|hyprland|utilities|fonts|all]...
+Usage: bin/strata-build-rpms [config|desktop|ghostty|uwsm|lock-auth|hyprland|utilities|fonts|all]...
 
 Build selected Strata RPM source packages on this host through rootless Podman.
 All compilers and build dependencies remain in the disposable container.
@@ -21,7 +21,6 @@ Pass multiple targets to reuse the same build container and DNF dependencies.
   config      Strata config and casting backend RPMs
   desktop     desktop dependency meta-packages only
   ghostty     Ghostty terminal emulator
-  zen         Zen Browser and matching engine
   uwsm        Universal Wayland Session Manager
   lock-auth   Fedora PAM policy for the lock screen
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
@@ -43,7 +42,7 @@ USAGE
 (( $# > 0 )) || { usage >&2; exit 2; }
 for target in "$@"; do
   case "$target" in
-    config|desktop|ghostty|zen|uwsm|lock-auth|hyprland|utilities|fonts|all) ;;
+    config|desktop|ghostty|uwsm|lock-auth|hyprland|utilities|fonts|all) ;;
     *) usage >&2; exit 2 ;;
   esac
 done
@@ -175,7 +174,6 @@ podman "${podman_args[@]}" \
           ;;
         desktop) build_spec hyprland-desktop.spec ;;
         ghostty) build_spec ghostty.spec ;;
-        zen) build_spec zen-browser.spec ;;
         uwsm) build_spec uwsm.spec ;;
         lock-auth) build_spec strata-lock-auth.spec ;;
         hyprland) build_spec hyprland-minimal.spec ;;
@@ -187,7 +185,6 @@ podman "${podman_args[@]}" \
           build_spec jetbrains-mono-nerd-fonts.spec
           build_spec hyprland-desktop.spec
           build_spec ghostty.spec
-          build_spec zen-browser.spec
           build_spec uwsm.spec
           build_spec strata-config.spec
           build_spec strata-lock-auth.spec

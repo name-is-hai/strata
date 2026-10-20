@@ -39,9 +39,8 @@ try {
     'packaging/strata-config.spec', 'packaging/strata-lock-auth.spec',
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
-    'packaging/zen-browser', 'packaging/zen-browser.desktop',
     'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password',
-    'packaging/ghostty.spec', 'packaging/uwsm.spec', 'packaging/zen-browser.spec',
+    'packaging/ghostty.spec', 'packaging/uwsm.spec',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
   commit();
   assert.deepEqual(choices(), all(false), 'first release builds everything');
@@ -74,18 +73,15 @@ try {
   put('packaging/uwsm.spec', 'new UWSM version'); commit();
   assert.deepEqual(choices(), {...all(true), uwsm: false}, 'UWSM builds independently');
   put('packaging/uwsm.spec', 'original\n'); commit();
-  put('packaging/zen-browser.spec', 'new Zen version'); commit();
-  assert.deepEqual(choices(), {...all(true), zen: false}, 'Zen spec builds independently');
-  put('packaging/zen-browser.spec', 'original\n'); commit();
   put('packaging/hyprland-desktop.spec', 'new dependency'); commit();
   assert.deepEqual(choices(), {...all(true), desktop: false}, 'desktop dependencies build independently');
   put('packaging/hyprland-desktop.spec', 'original\n'); commit();
   put('shell/shell.qml', 'new widget'); commit();
   assert.deepEqual(choices(), {...all(true), config: false}, 'shell affects config');
   put('shell/shell.qml', 'original\n'); commit();
-  put('packaging/zen-browser', 'new launcher'); commit();
-  assert.deepEqual(choices(), {...all(true), zen: false}, 'launcher affects only Zen');
-  put('packaging/zen-browser', 'original\n'); commit();
+  put('bin/strata-launch-browser', 'new user browser launcher'); commit();
+  assert.deepEqual(choices(), {...all(true), config: false}, 'Browser launcher ships with config, not a browser RPM');
+  fs.unlinkSync('bin/strata-launch-browser'); commit();
   put('packaging/hyprland-minimal.spec', 'new source version'); commit();
   assert.deepEqual(choices(), {...all(true), hyprland: false}, 'Hyprland spec affects only Hyprland');
   put('packaging/hyprland-minimal.spec', 'original\n'); commit();

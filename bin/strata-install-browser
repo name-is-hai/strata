@@ -6,6 +6,11 @@
 
 set -e
 
+if [[ ${1:-} == zen ]]; then
+  strata-install-zen
+  exit $?
+fi
+
 source "$STRATA_PATH/install/helpers/browser-policy.sh"
 
 setup_chromium_policy_directory() {
@@ -82,14 +87,6 @@ firefox)
   browser_policy_setup_firefox_distribution /usr/lib/firefox/distribution
   setup_firefox_wayland
   announce_browser_installed "Firefox"
-  ;;
-zen)
-  echo "Installing Zen..."
-  strata-pkg-aur-add zen-browser-bin || exit 1
-
-  browser_policy_setup_firefox_distribution /opt/zen-browser/distribution
-  setup_firefox_wayland
-  announce_browser_installed "Zen"
   ;;
 *)
   echo "Usage: strata-install-browser <chromium|chrome|brave|brave-origin|edge|firefox|zen>"

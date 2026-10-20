@@ -103,6 +103,25 @@ install_casting_repository() {
   install_rpmfusion_release free
 }
 
+install_quickshell_repository() {
+  local fedora_release temporary
+  fedora_release=$(rpm -E '%fedora')
+  temporary=$(mktemp)
+  # Fetch COPR's official .repo directly; enabling through DNF also calls
+  # the API, which can time out even while repository downloads work.
+  if ! curl --fail --location --silent --show-error \
+      --retry 3 --retry-all-errors --connect-timeout 10 --max-time 45 \
+      "https://copr.fedorainfracloud.org/coprs/errornointernet/quickshell/repo/fedora-${fedora_release}/errornointernet-quickshell-fedora-${fedora_release}.repo" \
+      --output "$temporary"; then
+    rm -f -- "$temporary"
+    echo 'Could not download the Quickshell COPR repository configuration.' >&2
+    return 1
+  fi
+  install -d -m 0755 /etc/yum.repos.d
+  install -m 0644 "$temporary" /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:errornointernet:quickshell.repo
+  rm -f -- "$temporary"
+}
+
 install_nvidia_driver() {
   if rpm -q akmod-nvidia >/dev/null 2>&1; then
     echo "NVIDIA driver packages are already installed."
@@ -150,7 +169,8 @@ if (( install_local )); then
     echo "Local RPM directory does not exist: $local_rpms_dir" >&2
     exit 2
   fi
-  mapfile -d '' -t local_rpms < <(find "$local_rpms_dir" -type f -name '*.rpm' -print0 | sort -z)
+  # Older output directories may still contain the retired Zen RPMs.
+  mapfile -d '' -t local_rpms < <(find "$local_rpms_dir" -type f -name '*.rpm' ! -name 'zen-browser-*.rpm' -print0 | sort -z)
   if (( ${#local_rpms[@]} == 0 )); then
     echo "No RPMs found under: $local_rpms_dir" >&2
     exit 2
@@ -163,7 +183,7 @@ fi
 
 # Strata uses the maintained tagged Quickshell build, rather than a
 # development snapshot, because Fedora's base package may lag its API.
-dnf copr enable -y errornointernet/quickshell
+install_quickshell_repository
 
 # Miracast software encoding uses the RPM Fusion Free GStreamer x264 plugin.
 install_casting_repository

@@ -53,7 +53,6 @@ checked individually against its recorded digest.
 | Config | Config spec, shell, commands, defaults, themes, documentation, native and vendored code, runtime version and casting service files. Builds config and its casting backends together. |
 | Desktop | Dependency metapackage spec and its local license. No application compilation. |
 | Ghostty | Standalone `packaging/ghostty.spec`. |
-| Zen | Standalone `packaging/zen-browser.spec`, launcher and desktop file. Includes the matching engine RPM. |
 | UWSM | Standalone `packaging/uwsm.spec`. |
 | Lock auth | PAM spec, policy and license. |
 | Hyprland | Compositor, portal and GUI utility spec. |
@@ -70,8 +69,12 @@ backends, and a utilities change rebuilds its grouped utilities. Builder,
 planner or build-workflow changes invalidate all targets. Unmapped packaging
 files conservatively invalidate all targets until assigned an explicit owner.
 
-The first release using this split performs a full build because the manifest
-format has changed. Later releases can reuse unchanged targets. Enable
+Zen is an optional per-user installation from the official tarball and updates itself; it
+is not an RPM target. See [Zen installation](zen.md) for fresh installs and
+migration from the former browser RPMs.
+
+The first release using the independent-target layout performs a full build
+because the manifest format changed. Later releases can reuse unchanged targets. Enable
 **force_full** in a manual run to rebuild all targets deliberately.
 
 ## Build and verification

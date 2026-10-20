@@ -10,7 +10,6 @@ const inputs = {
     'runtime-version', 'scripts', 'shell', 'systemd', 'third_party', 'themes'],
   desktop: ['packaging/hyprland-desktop.spec', 'packaging/hyprland-desktop-LICENSE'],
   ghostty: ['packaging/ghostty.spec'],
-  zen: ['packaging/zen-browser.spec', 'packaging/zen-browser', 'packaging/zen-browser.desktop'],
   uwsm: ['packaging/uwsm.spec'],
   'lock-auth': ['packaging/strata-lock-auth.spec', 'packaging/strata-lock-password',
     'packaging/hyprland-desktop-LICENSE'],
@@ -39,9 +38,8 @@ function fingerprints() {
     'packaging/strata-config.spec', 'packaging/strata-lock-auth.spec',
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
-    'packaging/hyprland-desktop-LICENSE', 'packaging/zen-browser',
-    'packaging/zen-browser.desktop', 'packaging/strata-lock-password',
-    'packaging/ghostty.spec', 'packaging/zen-browser.spec', 'packaging/uwsm.spec'
+    'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password',
+    'packaging/ghostty.spec', 'packaging/uwsm.spec'
   ]);
   const extraPackaging = git(['ls-tree', '-rz', 'HEAD', '--', 'packaging']).toString()
     .split('\0').filter(row => row && !knownPackaging.has(row.slice(row.indexOf('\t') + 1)) &&

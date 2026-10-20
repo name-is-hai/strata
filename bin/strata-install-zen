@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# strata:summary=Install the self-updating Zen browser for the current user
+# strata:args=[--force]
+set -euo pipefail
+[[ $# == 0 || ( $# == 1 && $1 == --force ) ]] || { echo 'Usage: strata-install-zen [--force]' >&2; exit 64; }
+(( EUID != 0 )) || { echo 'Run strata-install-zen as the desktop user, without sudo.' >&2; exit 1; }
+force=${1:-}
+template=${STRATA_PATH:-/usr/share/strata}/default/browser/zen-browser
+if [[ ! -r $template ]]; then
+  template=$(dirname -- "${BASH_SOURCE[0]}")/../defaults/browser/zen-browser
+fi
+[[ -r $template ]] || { echo 'The Zen launcher template is missing.' >&2; exit 1; }
+# Only users explicitly installing Zen need these shared system packages.
+missing=()
+for package in xz alsa-lib gtk3 libXtst libX11-xcb mesa-libgbm nss; do
+  rpm -q --quiet "$package" || missing+=("$package")
+done
+if (( ${#missing[@]} )); then
+  echo "Installing Zen runtime requirements: ${missing[*]}"
+  sudo dnf install -y --setopt=install_weak_deps=False "${missing[@]}"
+fi
+parent=$HOME/.tarball-installations
+destination=$parent/zen
+data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+mkdir -p "$parent" "$HOME/.local/bin" "$data_home/applications"
+exec 9>"$parent/.strata-zen.lock"
+flock -w 120 9 || { echo 'Another Zen installation is still running.' >&2; exit 1; }
+
+if [[ ! -x $destination/zen || $force == --force ]]; then
+  case $(uname -m) in
+    x86_64) arch=x86_64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    *) echo 'Zen supports x86_64 and aarch64 Linux systems.' >&2; exit 1 ;;
+  esac
+  stage=$(mktemp -d "$parent/.zen-install.XXXXXXXX")
+  trap 'rm -rf -- "$stage"' EXIT
+  echo 'Downloading the official Zen release...'
+  curl --fail --location --show-error --retry 3 --retry-all-errors \
+    --connect-timeout 10 --max-time 600 \
+    "https://github.com/zen-browser/desktop/releases/latest/download/zen.linux-$arch.tar.xz" \
+    --output "$stage/zen.tar.xz"
+  tar --no-same-owner --no-same-permissions -xJf "$stage/zen.tar.xz" -C "$stage"
+  [[ ! -L $stage/zen && -x $stage/zen/zen && -f $stage/zen/libxul.so ]] || {
+    echo 'The Zen download is incomplete; the existing installation was kept.' >&2; exit 1;
+  }
+  # Keep the old application until its replacement has downloaded and validated.
+  if [[ -e $destination || -L $destination ]]; then
+    backup=$parent/.zen-previous-$(date +%s%N)
+    mv -- "$destination" "$backup"
+  fi
+  if ! mv -- "$stage/zen" "$destination"; then
+    [[ -z ${backup:-} ]] || mv -- "$backup" "$destination"
+    exit 1
+  fi
+  [[ -z ${backup:-} ]] || rm -rf -- "$backup"
+fi
+
+# Preserve custom launchers; refresh only the small files Strata owns. These
+# aliases also keep existing zen-browser.desktop MIME defaults working.
+for name in zen zen-browser; do
+  launcher=$HOME/.local/bin/$name
+  if [[ ! -e $launcher && ! -L $launcher ]] || grep -q '^# Strata Zen launcher$' "$launcher" 2>/dev/null; then
+    install -m 0755 "$template" "$launcher"
+  fi
+  desktop=$data_home/applications/$name.desktop
+  if [[ ! -e $desktop ]] || grep -q '^X-Strata-Managed=true$' "$desktop"; then
+    {
+      printf '[Desktop Entry]\nName=Zen Browser\nComment=Browse the web\nExec=zen-browser %%U\n'
+      printf 'Icon=%s/browser/chrome/icons/default/default128.png\n' "$destination"
+      printf 'Terminal=false\nType=Application\nCategories=Network;WebBrowser;\nStartupNotify=true\nStartupWMClass=zen\n'
+      printf 'MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;\nX-Strata-Managed=true\n'
+      [[ $name != zen-browser ]] || printf 'NoDisplay=true\n'
+    } > "$desktop"
+    chmod 0644 "$desktop"
+  fi
+done
+if command -v update-desktop-database >/dev/null; then update-desktop-database "$data_home/applications"; fi
+echo "Zen is installed at $destination; application updates are managed by Zen."

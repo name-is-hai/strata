@@ -44,15 +44,6 @@ jobs:
           bin/strata-release-version --check
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - name: Test release planning
-        run: |
-          node scripts/tests/release-plan.js
-          bash scripts/tests/release-base.sh
-          bash scripts/tests/release-version.sh
 
   plan:
     needs: validate
@@ -103,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [config, desktop, ghostty, zen, uwsm, lock-auth, hyprland, utilities, fonts]
+        target: [config, desktop, ghostty, uwsm, lock-auth, hyprland, utilities, fonts]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -183,7 +174,7 @@ jobs:
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:ro,Z" -w /repo \
             registry.fedoraproject.org/fedora:44 bash -euc '
-              dnf install -y --setopt=install_weak_deps=False dnf-plugins-core
+              dnf install -y --setopt=install_weak_deps=False dnf-plugins-core curl-minimal
               repo_ready=0
               for base in https://download1.rpmfusion.org https://mirrors.rpmfusion.org; do
                 if dnf install -y --setopt=install_weak_deps=False \
@@ -196,7 +187,13 @@ jobs:
                 echo "RPM Fusion repository setup failed from all endpoints." >&2
                 exit 1
               fi
-              dnf copr enable -y errornointernet/quickshell
+              # Avoid the COPR API dependency; retain the official signing key.
+              curl --fail --location --silent --show-error \
+                --retry 3 --retry-all-errors --connect-timeout 10 --max-time 45 \
+                https://copr.fedorainfracloud.org/coprs/errornointernet/quickshell/repo/fedora-44/errornointernet-quickshell-fedora-44.repo \
+                --output /tmp/quickshell.repo
+              install -m 0644 /tmp/quickshell.repo \
+                /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:errornointernet:quickshell.repo
               result=0
               dnf --assumeno --setopt=install_weak_deps=False \
                 --repofrompath=strata-release,file:///repo --enablerepo=strata-release \

@@ -48,11 +48,11 @@ truncate -s 104857601 "$work/source/packages/strata-config.rpm"
 run 1
 rg -q 'RPM exceeds' "$work/output"
 truncate -s 0 "$work/source/packages/strata-config.rpm"
-rm "$work/source/packages/zen-browser.rpm"
+rm "$work/source/packages/ghostty.rpm"
 run 1
-rg -q 'Required public RPM is missing from packages/: zen-browser' "$work/output"
-touch "$work/source/packages/zen-browser.rpm"
-sed -i '/^zen-browser\t/d' "$work/metadata"
+rg -q 'Required public RPM is missing from packages/: ghostty' "$work/output"
+touch "$work/source/packages/ghostty.rpm"
+sed -i '/^ghostty\t/d' "$work/metadata"
 run 1
-rg -q 'Required package is missing from repository metadata: zen-browser' "$work/output"
+rg -q 'Required package is missing from repository metadata: ghostty' "$work/output"
 echo 'PASS: publish gate accepts matching sources and rejects old versions, duplicate/oversized RPMs, missing files and incomplete metadata'

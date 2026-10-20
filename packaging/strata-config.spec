@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.2
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX
@@ -251,6 +251,8 @@ install -Dpm 0644 defaults/polkit-1/rules.d/49-strata-greeter.rules \
 cp -a bin shell themes docs %{buildroot}%{_datadir}/strata/
 find %{buildroot}%{_datadir}/strata -type f -name '*.pyc' -delete
 find %{buildroot}%{_datadir}/strata -depth -type d -name '__pycache__' -empty -delete
+install -Dpm 0644 defaults/applications/zen.desktop \
+    %{buildroot}%{_datadir}/applications/zen.desktop
 install -Dpm 0644 defaults/applications/strata-editor.desktop \
     %{buildroot}%{_datadir}/applications/strata-editor.desktop
 install -Dpm 0644 defaults/applications/strata-image-editor.desktop \
@@ -311,6 +313,7 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %exclude %{_bindir}/strata-castd
 %{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
 %{_datadir}/applications/strata-snip.desktop
+%{_datadir}/applications/zen.desktop
 %{_datadir}/applications/strata-editor.desktop
 %{_datadir}/applications/strata-image-editor.desktop
 %license %{_datadir}/licenses/strata-snip/
@@ -363,6 +366,9 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-2
+- Offer optional self-updating Zen installation with native profile migration
+
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-1
 - Separate release versions from RPM versions and add selective package updates
 - Build and reuse Ghostty, Zen, UWSM and lock authentication independently

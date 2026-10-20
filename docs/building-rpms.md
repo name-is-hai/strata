@@ -11,8 +11,9 @@ bin/strata-build-rpms desktop
 ```
 
 The `desktop` target builds only the desktop dependency metapackages.
-Use `bin/strata-build-rpms ghostty`, `zen` or `uwsm` to build each application
-independently. The `zen` target produces both the browser and matching engine RPM.
+Use `bin/strata-build-rpms ghostty` or `uwsm` to build each application
+independently. Zen is a per-user, self-updating tarball installation and is
+not built or published as an RPM. See [Zen installation](zen.md).
 
 Use `all` to build every source package. Results are written to
 `build-output/RPMS/`. Test those RPMs in a VM. Publication uses CI-built
@@ -45,23 +46,14 @@ Fedora’s `hyprcursor` package for cursor-theme tools; `strata-config` also
 requires it directly for fresh installs.
 The public tools do not replace Hyprland’s private Hyprcursor runtime library.
 
-## Preparing the 1.0 release
+## Package and release versions
 
-The source release is `1.0.1`. Build the changed targets together:
-
-```bash
-bin/strata-build-rpms config desktop utilities
-```
-
-The Strata config, desktop and casting packages use RPM Epoch 1 so that
-`1:1.0.0-1` upgrades existing `4.0.0~alpha` development installations. Keep
-that epoch in subsequent releases. UWSM, Ghostty and Zen keep epoch 0 and their
-upstream versions; the utilities meta-package uses 1.0.0 while its upstream
-Hyprland tools keep their own versions. Zen's packaging release is 3 and the
-desktop source package uses XZ payload compression to reduce the large browser RPM.
-The engine is packaged separately so neither browser RPM exceeds the per-file
-limit. Use `bin/strata-build-rpms zen` to repackage only Zen, without rebuilding
-Ghostty or UWSM.
+`VERSION` identifies a repository release; each RPM keeps its own version.
+The Strata config, desktop and casting packages retain Epoch 1 for upgrades
+from the development packages. UWSM and Ghostty retain their upstream versions
+and Epoch 0. Bump only packages whose payload or packaging changed, using
+`strata-package-version`, then prepare the release with `strata-release-version`.
+See [Releasing Strata](releasing.md) for examples.
 
 GitHub builds changed targets, reuses verified unchanged RPMs from the previous
 release, assembles a complete runtime repository, verifies it

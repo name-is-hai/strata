@@ -5,7 +5,7 @@ repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
 cd "$repo_root"
 usage() {
   echo 'Usage: strata-package-version TARGET VERSION [--release NUMBER] [-m MESSAGE]...'
-  echo 'Targets: config desktop ghostty zen uwsm lock-auth hyprland utilities fonts'
+  echo 'Targets: config desktop ghostty uwsm lock-auth hyprland utilities fonts'
 }
 [[ ${1:-} == -h || ${1:-} == --help ]] && { usage; exit 0; }
 (( $# >= 2 )) || { usage >&2; exit 64; }
@@ -15,7 +15,6 @@ case "$target" in
   config) spec=packaging/strata-config.spec ;;
   desktop) spec=packaging/hyprland-desktop.spec ;;
   ghostty) spec=packaging/ghostty.spec ;;
-  zen) spec=packaging/zen-browser.spec ;;
   uwsm) spec=packaging/uwsm.spec ;;
   lock-auth) spec=packaging/strata-lock-auth.spec ;;
   hyprland) spec=packaging/hyprland-minimal.spec ;;
