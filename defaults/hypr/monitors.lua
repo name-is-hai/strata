@@ -30,9 +30,10 @@ for _, event in ipairs({ "hyprland.start", "monitor.layout_changed", "config.rel
     end)
 end
 
--- Publish the applied layout at login and after personal config edits. Keep
--- hotplug-only fallback changes from replacing saved disabled-display choices.
-for _, event in ipairs({ "hyprland.start", "config.reloaded" }) do
+-- Publish live scale changes too, including Display panel Apply and hyprctl
+-- edits that do not reload the config. The sync helper preserves temporary
+-- laptop fallback preferences instead of saving them as permanent choices.
+for _, event in ipairs({ "hyprland.start", "config.reloaded", "monitor.layout_changed" }) do
     hl.on(event, function()
         hl.exec_cmd("strata-greeter-monitors-sync")
     end)

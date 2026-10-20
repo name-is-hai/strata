@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 # strata:summary=Install the greeter monitor policy
-"""Publish validated connector states for the separate login compositor."""
+"""Publish validated connector states and scales for the login compositor."""
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ import sys
 import tempfile
 
 DESTINATION = Path('/etc/strata/disabled-monitors')
+SCALES_DESTINATION = Path('/etc/strata/monitor-scales')
 CONNECTOR = re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
 
 
@@ -18,13 +20,16 @@ def merge_disabled(previous, rows):
     disabled = {name for name in previous if CONNECTOR.fullmatch(name)}
     seen = set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) != {'name', 'disabled'}:
-            raise ValueError('Expected connector name and disabled state')
+        if (not isinstance(row, dict) or not {'name', 'disabled'} <= set(row)
+                or set(row) - {'name', 'disabled', 'scale'}):
+            raise ValueError('Expected connector name, disabled state and optional scale')
         name = row['name']
         if not isinstance(name, str) or not CONNECTOR.fullmatch(name) or name in seen:
             raise ValueError('Invalid or duplicate connector name')
         if type(row['disabled']) is not bool:
             raise ValueError('Expected a boolean disabled state')
+        if 'scale' in row:
+            validate_scale(row['scale'])
         seen.add(name)
         if row['disabled']:
             disabled.add(name)
@@ -35,27 +40,55 @@ def merge_disabled(previous, rows):
     return sorted(disabled)
 
 
-def main():
-    if os.geteuid() != 0:
-        raise ValueError('Run this helper through pkexec')
-    if len(sys.argv) != 2 or len(sys.argv[1]) > 65536:
-        raise ValueError('Expected monitor states as JSON')
-    previous = DESTINATION.read_text().splitlines() if DESTINATION.exists() else []
-    names = merge_disabled(previous, json.loads(sys.argv[1]))
-    content = ''.join(name + '\n' for name in names)
-    if DESTINATION.exists() and DESTINATION.read_text() == content:
+def validate_scale(value):
+    if type(value) not in (int, float) or not 0.25 <= value <= 8 or not math.isfinite(value):
+        raise ValueError('Expected a finite display scale between 0.25 and 8')
+    return value
+
+
+def merge_scales(previous, rows):
+    scales = {}
+    for line in previous:
+        fields = line.split()
+        if len(fields) == 2 and CONNECTOR.fullmatch(fields[0]):
+            try:
+                scales[fields[0]] = validate_scale(float(fields[1]))
+            except ValueError:
+                continue
+    for row in rows:
+        if 'scale' in row:
+            scales[row['name']] = validate_scale(row['scale'])
+    return ''.join(f'{name} {scale:.6g}\n' for name, scale in sorted(scales.items()))
+
+
+def write_policy(destination, content):
+    if destination.exists() and destination.read_text() == content:
         return
-    DESTINATION.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix='.disabled-monitors.', dir=DESTINATION.parent)
+    destination.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
     try:
         with os.fdopen(fd, 'w') as stream:
             stream.write(content)
             os.fchmod(stream.fileno(), 0o644)
             os.fchown(stream.fileno(), 0, 0)
-        os.replace(temporary, DESTINATION)
+        os.replace(temporary, destination)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def main():
+    if os.geteuid() != 0:
+        raise ValueError('Run this helper through pkexec')
+    if len(sys.argv) != 2 or len(sys.argv[1]) > 65536:
+        raise ValueError('Expected monitor states as JSON')
+    rows = json.loads(sys.argv[1])
+    previous = DESTINATION.read_text().splitlines() if DESTINATION.exists() else []
+    names = merge_disabled(previous, rows)
+    old_scales = SCALES_DESTINATION.read_text().splitlines() if SCALES_DESTINATION.exists() else []
+    scales = merge_scales(old_scales, rows)
+    write_policy(SCALES_DESTINATION, scales)
+    write_policy(DESTINATION, ''.join(name + '\n' for name in names))
 
 
 if __name__ == '__main__':

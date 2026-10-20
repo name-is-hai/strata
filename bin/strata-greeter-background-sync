@@ -7,17 +7,19 @@ state_home=${XDG_STATE_HOME:-$HOME/.local/state}
 background=${1:-"$state_home/strata/current/background"}
 destination=/usr/share/strata/greeter/background.jpg
 source_hash_file=/usr/share/strata/greeter/background.sha256
+output_hash_file=/usr/share/strata/greeter/background-output.sha256
 
 background=$(readlink -f -- "$background")
 [[ -f $background ]] || { echo "Active background does not exist: $background" >&2; exit 66; }
 
-# The greeter copy is blurred, so compare the original wallpaper's hash rather
-# than comparing its bytes with the processed JPEG.
+# Track both the source and blurred copy. An upgrade or manual replacement can
+# change the greeter JPEG while leaving the source hash unchanged.
 source_hash=$(sha256sum -- "$background")
 source_hash=${source_hash%% *}
-if [[ -r $destination && -r $source_hash_file ]] &&
+if [[ -r $destination && -r $source_hash_file && -r $output_hash_file ]] &&
    [[ $(<"$source_hash_file") == "$source_hash" ]]; then
-  exit 0
+  output_hash=$(sha256sum -- "$destination")
+  if [[ $(<"$output_hash_file") == "${output_hash%% *}" ]]; then exit 0; fi
 fi
 
 pkexec /usr/bin/strata-greeter-background-install "$background"

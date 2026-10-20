@@ -1,11 +1,26 @@
 -- Only the login wallpaper and form belong in this temporary compositor.
-hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
+
+-- Reuse saved display scaling without loading the user's executable Lua.
+local scales = {}
+local scale_policy = io.open("/etc/strata/monitor-scales", "r")
+if scale_policy then
+    for line in scale_policy:lines() do
+        local name, value = line:match("^([%w_.-]+)%s+([%d.]+)$")
+        local scale = tonumber(value)
+        if name and scale and scale >= 0.25 and scale <= 8 then
+            scales[name] = scale
+            hl.monitor({ output = name, mode = "preferred", position = "auto", scale = scale })
+        end
+    end
+    scale_policy:close()
+end
 
 -- Apply Main before creating the greeter surfaces, including closed-lid boots.
 -- A disconnected Main does not disable the catch-all output above.
 local main = os.getenv("STRATA_MAIN_MONITOR") or ""
 if main:match("^[%w_.-]+$") then
-    hl.monitor({ output = main, mode = "preferred", position = "0x0", scale = 1 })
+    hl.monitor({ output = main, mode = "preferred", position = "0x0", scale = scales[main] or "auto" })
 end
 
 -- Use a system-readable snapshot, never the user's executable/private config.
@@ -31,7 +46,7 @@ local function apply_monitor_policy()
             hl.monitor({ output = name, disabled = true })
         else
             -- An unplugged external screen must not leave login invisible.
-            hl.monitor({ output = name, disabled = false, mode = "preferred", position = "auto", scale = 1 })
+            hl.monitor({ output = name, disabled = false, mode = "preferred", position = "auto", scale = scales[name] or "auto" })
         end
     end
     applying = false

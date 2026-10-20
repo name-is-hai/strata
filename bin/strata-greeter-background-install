@@ -8,6 +8,7 @@ set -euo pipefail
 source_path=${1:-}
 destination=/usr/share/strata/greeter/background.jpg
 source_hash_file=/usr/share/strata/greeter/background.sha256
+output_hash_file=/usr/share/strata/greeter/background-output.sha256
 
 if [[ -z $source_path ]]; then
   echo "Usage: strata-greeter-background-install <image-or-video>" >&2
@@ -51,4 +52,5 @@ case "$extension" in
     ;;
 esac
 sha256sum -- "$source_path" | cut -d' ' -f1 > "$source_hash_file"
-chmod 0644 "$source_hash_file"
+sha256sum -- "$destination" | cut -d' ' -f1 > "$output_hash_file"
+chmod 0644 "$source_hash_file" "$output_hash_file"

@@ -319,7 +319,23 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %config(noreplace) %{_sysconfdir}/mpv/mpv.conf
 %config(noreplace) %{_sysconfdir}/polkit-1/rules.d/49-strata-greeter.rules
 %{_datadir}/icons/Win11OSX/
-%{_datadir}/strata/
+%dir %{_datadir}/strata
+%{_datadir}/strata/bin/
+%{_datadir}/strata/config/
+%{_datadir}/strata/default/
+%{_datadir}/strata/docs/
+%{_datadir}/strata/shell/
+%{_datadir}/strata/themes/
+%{_datadir}/strata/user-config/
+%{_datadir}/strata/version
+%dir %{_datadir}/strata/greeter
+%{_datadir}/strata/greeter/Commons
+%{_datadir}/strata/greeter/Ui
+%{_datadir}/strata/greeter/config.toml
+%{_datadir}/strata/greeter/hyprland.lua
+%{_datadir}/strata/greeter/shell.qml
+%{_datadir}/strata/greeter/theme.conf
+%config(noreplace) %{_datadir}/strata/greeter/background.jpg
 %{_datadir}/quickshell/strata/
 
 %files -n strata-casting
