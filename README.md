@@ -5,6 +5,20 @@ desktop. GitHub release builds produce the RPMs and static DNF repository
 hosted on Pages. Generated RPMs and metadata are not stored in Git. Fedora
 supplies normal desktop dependencies, and Quickshell comes from its COPR.
 
+## Screenshots
+
+The Strata desktop and status bar.
+
+![Strata desktop with the lasthorizon mountain wallpaper and top status bar](docs/screenshots/desktop.png)
+
+The menu brings applications, tools and settings together.
+
+![Strata menu with application search and desktop settings](docs/screenshots/menu.png)
+
+Preview themes and choose a background in the full-screen theme picker.
+
+![Strata theme picker showing the lasthorizon palette and background selection](docs/screenshots/theme-picker.png)
+
 ## Install on a fresh Fedora 44 system
 
 After this repository is published with GitHub Pages, run:
