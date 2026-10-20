@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.2
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX
@@ -366,6 +366,9 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-3
+- Scope RPM reuse to declared target inputs and extract build recipes
+
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-2
 - Offer optional self-updating Zen installation with native profile migration
 
