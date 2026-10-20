@@ -10,10 +10,13 @@ stack and preserves local changes on upgrade. No package is taken from Git.
 
 ## Start a release
 
-1. Run `bin/strata-release-version 1.1.1` with the new version. This updates
+1. Run `bin/strata-release-version 1.1.2 -m "Fix greeter display scaling"`
+   with the new version and changelog message. Repeat `-m` for additional bullets;
+   the messages go into each spec's new release entry when its version changes.
+   Without `-m`, the command supplies a generic version update message. This updates
    `VERSION`, `runtime-version`, and the Strata versions in the config, desktop
    and utilities specs, resets their releases to 1 and adds changelog entries.
-   Add any release details to those entries. Alternatively, edit only `VERSION`
+   Alternatively, edit only `VERSION`
    and run `bin/strata-release-version` to synchronize the remaining files.
    RPM epochs and upstream package versions remain unchanged. Local builds and
    CI check consistency before starting compilation.

@@ -4,12 +4,24 @@ set -euo pipefail
 repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
 cd "$repo_root"
 check=false
-if [[ ${1:-} == --check ]]; then check=true; shift; fi
-if (( $# > 1 )) || [[ ${1:-} == -* ]]; then
-  echo 'Usage: strata-release-version [VERSION | --check]' >&2
-  exit 64
-fi
-version=${1:-$(<VERSION)}
+version=
+messages=()
+usage() { echo 'Usage: strata-release-version [VERSION] [-m MESSAGE]... | --check'; }
+while (( $# )); do
+  case "$1" in
+    -m)
+      (( $# >= 2 )) && [[ -n ${2//[[:space:]]/} && $2 != *$'\n'* && $2 != *$'\r'* ]] || {
+        echo '-m requires a nonempty, single-line changelog message' >&2; exit 64;
+      }
+      messages+=("$2"); shift 2 ;;
+    --check) check=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) usage >&2; exit 64 ;;
+    *) [[ -z $version ]] || { usage >&2; exit 64; }; version=$1; shift ;;
+  esac
+done
+if $check && { [[ -n $version ]] || (( ${#messages[@]} )); }; then usage >&2; exit 64; fi
+version=${version:-$(<VERSION)}
 [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
   echo "Invalid release version: $version" >&2; exit 64;
 }
@@ -33,17 +45,23 @@ if $check; then
   done
   exit "$result"
 fi
+changelog_message=
+if (( ${#messages[@]} )); then
+  printf -v changelog_message -- '- %s\n' "${messages[@]}"
+else
+  changelog_message="- Align the Strata package version with release $version"$'\n'
+fi
 for spec in "${specs[@]}"; do
   [[ $(awk '/^Version:/ {print $2; exit}' "$spec") != "$version" ]] || continue
   temporary=$(mktemp "$spec.XXXXXX")
-  LC_ALL=C awk -v version="$version" -v date="$(LC_ALL=C date '+%a %b %d %Y')" '
+  STRATA_CHANGELOG_MESSAGE="$changelog_message" LC_ALL=C awk -v version="$version" -v date="$(LC_ALL=C date '+%a %b %d %Y')" '
     /^Epoch:/ && !seenVersion {epoch=$2 ":"}
     /^Version:/ && !seenVersion { $0="Version:        " version; seenVersion=1 }
     /^Release:/ && !seenRelease { $0="Release:        1%{?dist}"; seenRelease=1 }
     { print }
     /^%changelog$/ {
       print "* " date " Strata Maintainers <maintainers@strata.dev> - " epoch version "-1"
-      print "- Align the Strata package version with release " version
+      printf "%s", ENVIRON["STRATA_CHANGELOG_MESSAGE"]
       print ""
     }
   ' "$spec" > "$temporary"
