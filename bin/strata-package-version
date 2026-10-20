@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# strata:summary=Set one RPM target version and spec changelog
+set -euo pipefail
+repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
+cd "$repo_root"
+usage() {
+  echo 'Usage: strata-package-version TARGET VERSION [--release NUMBER] [-m MESSAGE]...'
+  echo 'Targets: config desktop ghostty zen uwsm lock-auth hyprland utilities fonts'
+}
+[[ ${1:-} == -h || ${1:-} == --help ]] && { usage; exit 0; }
+(( $# >= 2 )) || { usage >&2; exit 64; }
+target=$1 version=$2
+shift 2
+case "$target" in
+  config) spec=packaging/strata-config.spec ;;
+  desktop) spec=packaging/hyprland-desktop.spec ;;
+  ghostty) spec=packaging/ghostty.spec ;;
+  zen) spec=packaging/zen-browser.spec ;;
+  uwsm) spec=packaging/uwsm.spec ;;
+  lock-auth) spec=packaging/strata-lock-auth.spec ;;
+  hyprland) spec=packaging/hyprland-minimal.spec ;;
+  utilities) spec=packaging/hyprland-utilities.spec ;;
+  fonts) spec=packaging/jetbrains-mono-nerd-fonts.spec ;;
+  *) usage >&2; exit 64 ;;
+esac
+[[ $version =~ ^[0-9][A-Za-z0-9.+~^]*$ ]] || { echo "Invalid RPM version: $version" >&2; exit 64; }
+release=
+messages=()
+while (( $# )); do
+  case "$1" in
+    -m)
+      (( $# >= 2 )) && [[ -n ${2//[[:space:]]/} && $2 != *$'\n'* && $2 != *$'\r'* ]] || {
+        echo '-m requires a nonempty, single-line changelog message' >&2; exit 64;
+      }
+      messages+=("$2"); shift 2 ;;
+    --release)
+      (( $# >= 2 )) && [[ $2 =~ ^[1-9][0-9]*$ ]] || { echo '--release requires a positive integer' >&2; exit 64; }
+      release=$2; shift 2 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+done
+old_version=$(awk '/^Version:/ {print $2; exit}' "$spec")
+old_release=$(awk '/^Release:/ {sub(/%.*/, "", $2); print $2; exit}' "$spec")
+[[ $old_release =~ ^[1-9][0-9]*$ ]] || { echo "Expected a literal RPM Release in $spec" >&2; exit 1; }
+if [[ -z $release ]]; then
+  if [[ $old_version == "$version" ]]; then release=$((old_release + 1)); else release=1; fi
+fi
+[[ $old_version != "$version" || $old_release != "$release" ]] || {
+  echo 'Package already has that version and release; increase --release for a packaging change.' >&2; exit 1;
+}
+if (( ${#messages[@]} == 0 )); then messages=("Update $target to $version-$release"); fi
+printf -v changelog_message -- '- %s\n' "${messages[@]}"
+temporary=$(mktemp "$spec.XXXXXX")
+trap 'rm -f -- "$temporary"' EXIT
+STRATA_CHANGELOG_MESSAGE="$changelog_message" LC_ALL=C awk \
+  -v version="$version" -v release="$release" -v date="$(LC_ALL=C date '+%a %b %d %Y')" '
+  /^Epoch:/ && !seenVersion {epoch=$2 ":"}
+  /^Version:/ && !seenVersion { $0="Version:        " version; seenVersion=1 }
+  /^Release:/ && !seenRelease { $0="Release:        " release "%{?dist}"; seenRelease=1 }
+  { print }
+  /^%changelog$/ {
+    print "* " date " Strata Maintainers <maintainers@strata.dev> - " epoch version "-" release
+    printf "%s\n", ENVIRON["STRATA_CHANGELOG_MESSAGE"]
+  }
+' "$spec" > "$temporary"
+chmod --reference="$spec" "$temporary"
+mv -- "$temporary" "$spec"
+if [[ $target == config ]]; then printf '%s\n' "$version" > runtime-version; fi
+printf '%s: %s-%s (release tag unchanged)\n' "$target" "$version" "$release"

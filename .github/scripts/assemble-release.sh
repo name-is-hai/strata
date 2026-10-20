@@ -9,12 +9,7 @@ versions=$(for spec in packaging/*.spec; do
   rpmspec -q --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' "$spec" || exit 1
 done)
 while IFS=$'\t' read -r name evr; do expected[$name]=$evr; done <<< "$versions"
-version=$(<VERSION)
-for spec in strata-config hyprland-desktop hyprland-utilities; do
-  [[ $(rpmspec -q --srpm --qf '%{VERSION}' "packaging/$spec.spec") == "$version" ]] || {
-    echo "VERSION disagrees with $spec.spec" >&2; exit 1;
-  }
-done
+bin/strata-release-version --check
 
 while IFS= read -r -d '' file; do
   header=$(rpm -qp --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}' "$file")

@@ -41,7 +41,6 @@ jobs:
           version=$(<VERSION)
           [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$TAG" == "v$version" ]]
-          [[ $(<runtime-version) == "$version" ]]
           bin/strata-release-version --check
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -53,6 +52,7 @@ jobs:
         run: |
           node scripts/tests/release-plan.js
           bash scripts/tests/release-base.sh
+          bash scripts/tests/release-version.sh
 
   plan:
     needs: validate
@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [config, desktop, hyprland, utilities, fonts]
+        target: [config, desktop, ghostty, zen, uwsm, lock-auth, hyprland, utilities, fonts]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -222,6 +222,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
       - uses: actions/download-artifact@v8.0.2
         with:
           name: release-assets
@@ -233,4 +237,4 @@ jobs:
           TAG: ${{ needs.validate.outputs.tag }}
         run: |
           gh release create "$TAG" assets/* --verify-tag --draft \
-            --title "Strata $TAG" --generate-notes
+            --title "Strata $TAG" --notes-file .github/release-notes.md

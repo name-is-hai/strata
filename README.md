@@ -50,8 +50,9 @@ strata-update --check  # Check now without installing
 strata-update          # Review and install available Strata package updates
 ```
 
-To publish an update, update the release versions and push a matching version
-tag, such as `v1.0.1`. GitHub builds changed targets, reuses verified unchanged
+To publish an update, bump only changed RPMs with `strata-package-version`,
+then set the independent release version with `strata-release-version` and
+push its matching tag, such as `v1.1.2`. GitHub builds changed targets, reuses verified unchanged
 RPMs from the previous release, and verifies the complete repository
 and creates a draft release. Test it, then publish the draft to deploy its DNF
 repository to Pages. Installed machines then detect the newer RPM versions.

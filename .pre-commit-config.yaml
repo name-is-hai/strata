@@ -15,3 +15,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(\.github/|scripts/tests/release-)
+      - id: strata-release-version
+        name: test independent release and RPM versions
+        entry: bash scripts/tests/release-version.sh
+        language: system
+        pass_filenames: false
+        files: ^(bin/strata-(release-version|package-version)|packaging/|scripts/tests/release-version.sh)

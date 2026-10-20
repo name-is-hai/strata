@@ -5,10 +5,15 @@ const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 
 const inputs = {
-  config: ['LICENSE', 'bin', 'config', 'defaults', 'docs', 'native', 'packaging',
+  config: ['LICENSE', 'bin', 'config', 'defaults', 'docs', 'native',
+    'packaging/strata-config.spec', 'packaging/casting',
     'runtime-version', 'scripts', 'shell', 'systemd', 'third_party', 'themes'],
-  desktop: ['packaging/hyprland-desktop.spec', 'packaging/hyprland-desktop-LICENSE',
-    'packaging/zen-browser', 'packaging/zen-browser.desktop'],
+  desktop: ['packaging/hyprland-desktop.spec', 'packaging/hyprland-desktop-LICENSE'],
+  ghostty: ['packaging/ghostty.spec'],
+  zen: ['packaging/zen-browser.spec', 'packaging/zen-browser', 'packaging/zen-browser.desktop'],
+  uwsm: ['packaging/uwsm.spec'],
+  'lock-auth': ['packaging/strata-lock-auth.spec', 'packaging/strata-lock-password',
+    'packaging/hyprland-desktop-LICENSE'],
   hyprland: ['packaging/hyprland-minimal.spec'],
   utilities: ['packaging/hyprland-utilities.spec'],
   fonts: ['packaging/jetbrains-mono-nerd-fonts.spec']
@@ -35,10 +40,12 @@ function fingerprints() {
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
     'packaging/hyprland-desktop-LICENSE', 'packaging/zen-browser',
-    'packaging/zen-browser.desktop', 'packaging/strata-lock-password'
+    'packaging/zen-browser.desktop', 'packaging/strata-lock-password',
+    'packaging/ghostty.spec', 'packaging/zen-browser.spec', 'packaging/uwsm.spec'
   ]);
   const extraPackaging = git(['ls-tree', '-rz', 'HEAD', '--', 'packaging']).toString()
-    .split('\0').filter(row => row && !knownPackaging.has(row.slice(row.indexOf('\t') + 1))).join('\0');
+    .split('\0').filter(row => row && !knownPackaging.has(row.slice(row.indexOf('\t') + 1)) &&
+      !row.slice(row.indexOf('\t') + 1).startsWith('packaging/casting/')).join('\0');
   return Object.fromEntries(targets.map(target => [target,
     digest(Buffer.concat([git(['ls-tree', '-rz', 'HEAD', '--', ...common, ...inputs[target]]),
       Buffer.from(extraPackaging)]))]));
@@ -50,14 +57,15 @@ function plan(previous, output, force) {
   let baseline;
   try {
     baseline = readJSON(path.join(previous, 'release-manifest.json'));
-    if (baseline.schema !== 1 || baseline.fedora !== 44 || baseline.arch !== 'x86_64') {
+    if (baseline.schema !== 2 || baseline.fedora !== 44 || baseline.arch !== 'x86_64') {
       throw Error('incompatible manifest');
     }
   } catch {
+    baseline = undefined;
     console.log('No compatible previous release manifest; build all targets.');
   }
   const hashes = fingerprints();
-  const result = {schema: 1, fedora: 44, arch: 'x86_64',
+  const result = {schema: 2, fedora: 44, arch: 'x86_64',
     commit: git(['rev-parse', 'HEAD']).toString().trim(), targets: {}};
   for (const target of targets) {
     const prior = baseline?.targets?.[target];
@@ -102,7 +110,7 @@ function plan(previous, output, force) {
 
 function record(planFile, incoming, assets) {
   const current = readJSON(planFile);
-  const manifest = {schema: 1, fedora: 44, arch: 'x86_64', commit: current.commit, targets: {}};
+  const manifest = {schema: 2, fedora: 44, arch: 'x86_64', commit: current.commit, targets: {}};
   const owned = new Set();
   for (const target of targets) {
     const dir = path.join(incoming, `rpms-${target}`);

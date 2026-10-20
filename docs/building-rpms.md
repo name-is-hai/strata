@@ -10,10 +10,9 @@ bin/strata-build-rpms config
 bin/strata-build-rpms desktop
 ```
 
-The `desktop` target includes the Zen Browser and matching engine RPMs. It downloads the pinned
-official Zen Linux archive during the build and writes `zen-browser` plus
-`zen-browser-engine` beside the
-other desktop RPMs.
+The `desktop` target builds only the desktop dependency metapackages.
+Use `bin/strata-build-rpms ghostty`, `zen` or `uwsm` to build each application
+independently. The `zen` target produces both the browser and matching engine RPM.
 
 Use `all` to build every source package. Results are written to
 `build-output/RPMS/`. Test those RPMs in a VM. Publication uses CI-built
@@ -23,8 +22,8 @@ The `config` target uses one source spec, `packaging/strata-config.spec`, to bui
 five runtime RPMs: `strata-config`, `strata-casting`, `strata-waycast`,
 `strata-doubletake` and `strata-cast`. The desktop and backends share one
 release version and source archive while remaining separately installable.
-The same `config` target also builds `strata-lock-auth` from its own spec,
-including the password PAM policy. Use `config` for casting builds as well;
+Use `bin/strata-build-rpms lock-auth` for the independent password PAM policy
+package. Use `config` for casting builds as well;
 there is no separate `casting` target.
 
 These tools live in `bin/` and are also installed as `strata build rpms`,
@@ -86,7 +85,7 @@ podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo \
   '
 ```
 
-Local assembly requires matching RPMs for all six specs. It generates
+Local assembly requires matching RPMs for all specs under `packaging/`. It generates
 ignored `packages/` and `repodata/` directories, plus release assets under
 `build-output/release/`. It does not publish anything or install packages
 on the host. The generated repository can also be checked with

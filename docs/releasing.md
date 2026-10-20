@@ -1,78 +1,83 @@
 # Releasing Strata
 
-GitHub prepares Fedora 44 x86_64 RPMs when a version tag is pushed. It builds
-changed `config`, `desktop`, `hyprland`, `utilities` and `fonts` targets on
-separate runners and reuses verified unchanged targets from the previous stable
-release, then combines their runtime packages. Debug and source RPMs are excluded from
-the public repository. The `config` target also builds `strata-lock-auth`
-from its own small spec; its PAM policy keeps Fedora’s login authentication
-stack and preserves local changes on upgrade. No package is taken from Git.
+A GitHub release has its own version in `VERSION`. Each RPM spec has an
+independent Version and Release. A release can combine newly built RPMs with
+verified, unchanged RPMs from the previous stable release. Reused RPMs keep
+their original versions and checksums; they are never renamed or relabeled.
 
 ## Start a release
 
-1. Run `bin/strata-release-version 1.1.2 -m "Fix greeter display scaling"`
-   with the new version and changelog message. Repeat `-m` for additional bullets;
-   the messages go into each spec's new release entry when its version changes.
-   Without `-m`, the command supplies a generic version update message. This updates
-   `VERSION`, `runtime-version`, and the Strata versions in the config, desktop
-   and utilities specs, resets their releases to 1 and adds changelog entries.
-   Alternatively, edit only `VERSION`
-   and run `bin/strata-release-version` to synchronize the remaining files.
-   RPM epochs and upstream package versions remain unchanged. Local builds and
-   CI check consistency before starting compilation.
-2. Commit and push the source changes, including the workflows. CI builds new
-   runtime RPMs; there is no need to copy local build output into Git.
-3. Create and push the matching tag, for example:
+1. Update only the packages that changed. For example, after changing shell
+   code, bump config with `bin/strata-package-version config 1.1.2 -m "Fix greeter scaling"`.
+   To rebuild a package without changing its upstream version, keep that version:
+   `bin/strata-package-version ghostty 1.3.1 -m "Fix packaging"` increments
+   its RPM Release. Use `--release NUMBER` to choose a release explicitly.
+   Updating Ghostty to a new upstream version is similarly
+   `bin/strata-package-version ghostty NEW_VERSION -m "Update Ghostty"`.
+   Only that target's spec and changelog change. Config also updates
+   `runtime-version`, which identifies the installed config package.
+2. Run `bin/strata-release-version 1.1.2 -m "Describe this release"`.
+   This changes only `VERSION` and `.github/release-notes.md`; it never bumps
+   RPMs. Repeat `-m` for additional release-note bullets. Package changelogs
+   belong to `strata-package-version -m`, while release notes describe the
+   GitHub release. Editing only `VERSION` and running the release command
+   without a version also works. Omitting `-m` preserves existing matching notes.
+3. Commit and push the source changes. CI uses committed inputs, not local
+   build output. Create and push the matching new tag:
 
    ```bash
-   git tag -a v1.0.1 -m 'Strata 1.0.1'
-   git push origin v1.0.1
+   git tag -a v1.1.2 -m 'Strata 1.1.2'
+   git push origin v1.1.2
    ```
 
-The **Build Strata release** workflow can also be started manually from
-GitHub Actions with an existing tag. The tag must match `VERSION` and
-`runtime-version`. Every build uses the same resolved commit.
+The release tag must match `VERSION` and the release-note heading.
+`runtime-version` must match `strata-config.spec`, independently of the tag.
+Every final RPM must match its own spec's Epoch, Version, Release and architecture.
+Local builds and CI validate these relationships before publishing.
+Changing package source without increasing its RPM Version or Release will not
+make DNF recognize a new update; bump the changed package before tagging.
 
-Release planning scripts explicitly run on Node.js 24. Workflow actions use
-current stable versions with Node.js 24 runtimes, including the Pages actions.
+The **Build Strata release** workflow can also be started manually with an
+existing matching tag. All jobs use the same resolved commit. Planning runs
+on Node.js 24, and workflow actions use Node.js 24 runtimes.
 
 ## Reusing unchanged packages
 
-Before building, CI downloads the most recently published stable release other
-than the requested tag. It checks the archive and `release-manifest.json`
-against `SHA256SUMS`. An older release without a manifest, a failed download,
-or an invalid checksum causes a full build.
+CI downloads the most recently published stable release other than the requested
+tag. It verifies the repository archive and manifest against `SHA256SUMS`.
+Missing or invalid baseline assets cause a full build. Each reused RPM is
+checked individually against its recorded digest.
 
-The planner fingerprints tracked Git file contents and modes for each target:
-
-| Target | Inputs |
+| Target | Build inputs and outputs |
 | --- | --- |
-| Config | Everything copied into its source archive: scripts, shell, config, defaults, themes, docs, native and vendored sources, packaging and licenses. This includes lock-auth inputs. |
-| Desktop | Desktop spec, Zen launcher/desktop file and local license. |
-| Hyprland | Hyprland spec, including its pinned upstream dependency versions. |
-| Utilities | Utilities spec and pinned upstream versions. |
-| Fonts | Font spec and upstream version. |
+| Config | Config spec, shell, commands, defaults, themes, documentation, native and vendored code, runtime version and casting service files. Builds config and its casting backends together. |
+| Desktop | Dependency metapackage spec and its local license. No application compilation. |
+| Ghostty | Standalone `packaging/ghostty.spec`. |
+| Zen | Standalone `packaging/zen-browser.spec`, launcher and desktop file. Includes the matching engine RPM. |
+| UWSM | Standalone `packaging/uwsm.spec`. |
+| Lock auth | PAM spec, policy and license. |
+| Hyprland | Compositor, portal and GUI utility spec. |
+| Utilities | Utility spec; Hypridle, Hyprpicker and Hyprsunset remain one target. |
+| Fonts | Font spec. |
 
-Builder, planner or release-workflow changes rebuild every target. Unmapped
-packaging files, including patches, also invalidate every target conservatively.
-Changed or deleted files and spec versions change the fingerprint. Each reused
-RPM must still exist and match the digest recorded by the previous build;
-otherwise its entire target is rebuilt.
+`VERSION` and release notes do not affect RPM fingerprints. A Ghostty spec
+update rebuilds only Ghostty; it does not rebuild config, desktop, Zen or UWSM.
+The config source archive includes only its casting packaging assets, not other
+packages' specs. Its installed documentation and commands remain build inputs.
 
-Reuse operates per build target, not individual subpackage. Changing the desktop
-spec rebuilds Ghostty, UWSM, Zen and the desktop packages together. Config's
-archive includes packaging files, so a spec change also rebuilds config.
+Reuse operates per target, so a config change still rebuilds its casting
+backends, and a utilities change rebuilds its grouped utilities. Builder,
+planner or build-workflow changes invalidate all targets. Unmapped packaging
+files conservatively invalidate all targets until assigned an explicit owner.
 
-To rebuild everything, manually run **Build Strata release** with an existing
-tag and enable **force_full**. Use this when you want fresh Fedora build
-dependencies or need to refresh upstream downloads even though tracked inputs
-are unchanged. The first release after adding this feature performs a full
-build to establish the manifest.
+The first release using this split performs a full build because the manifest
+format has changed. Later releases can reuse unchanged targets. Enable
+**force_full** in a manual run to rebuild all targets deliberately.
 
 ## Build and verification
 
 The workflow requires matching runtime RPMs for every package defined in the
-six specs, either built now or verified for reuse. It checks RPM digests, exact source versions, missing packages,
+specs under `packaging/`, either built now or verified for reuse. It checks RPM digests, exact source versions, missing packages,
 duplicates, file sizes and regenerated DNF metadata. It also resolves a fresh
 Fedora dependency transaction with weak dependencies disabled, Quickshell's
 COPR and RPM Fusion Free enabled. That check does not install the desktop.

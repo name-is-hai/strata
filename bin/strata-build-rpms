@@ -12,15 +12,18 @@ ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fed
 
 usage() {
   cat <<'USAGE'
-Usage: bin/strata-build-rpms [config|desktop|zen|hyprland|utilities|fonts|all]...
+Usage: bin/strata-build-rpms [config|desktop|ghostty|zen|uwsm|lock-auth|hyprland|utilities|fonts|all]...
 
 Build selected Strata RPM source packages on this host through rootless Podman.
 All compilers and build dependencies remain in the disposable container.
 Pass multiple targets to reuse the same build container and DNF dependencies.
 
-  config      Strata config, casting backends and lock authentication RPMs
-  desktop     desktop meta-packages plus Zen Browser, Ghostty, and UWSM
-  zen         Zen Browser packages only; no Ghostty/UWSM compilation
+  config      Strata config and casting backend RPMs
+  desktop     desktop dependency meta-packages only
+  ghostty     Ghostty terminal emulator
+  zen         Zen Browser and matching engine
+  uwsm        Universal Wayland Session Manager
+  lock-auth   Fedora PAM policy for the lock screen
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
   utilities   Hyprland utilities, including Hyprcursor theme-tool dependencies
   fonts       jetbrains-mono-nerd-fonts
@@ -40,7 +43,7 @@ USAGE
 (( $# > 0 )) || { usage >&2; exit 2; }
 for target in "$@"; do
   case "$target" in
-    config|desktop|zen|hyprland|utilities|fonts|all) ;;
+    config|desktop|ghostty|zen|uwsm|lock-auth|hyprland|utilities|fonts|all) ;;
     *) usage >&2; exit 2 ;;
   esac
 done
@@ -137,7 +140,7 @@ podman "${podman_args[@]}" \
       source_root="/tmp/strata-config-${version}"
       rm -rf "$source_root"
       mkdir -p "$source_root"
-      copy_source_tree LICENSE bin config defaults docs native packaging \
+      copy_source_tree LICENSE bin config defaults docs native packaging/casting \
         runtime-version scripts shell systemd third_party
       # Themes are optional: a minimal Strata checkout can intentionally omit
       # all bundled artwork and terminal-theme templates.
@@ -149,16 +152,7 @@ podman "${podman_args[@]}" \
 
     build_spec() {
       spec=$1
-      mode=${2:-full}
-      build_key="$spec:$mode"
-      spec_defines=()
-      rpm_options=()
-      rpm_build_mode=-ba
-      if [[ $mode == zen_only ]]; then
-        spec_defines=(-d "_with_zen_only 1")
-        rpm_options=(--with zen_only)
-        rpm_build_mode=-bb
-      fi
+      build_key="$spec"
       for completed in "${built_specs[@]}"; do
         [[ $completed != "$build_key" ]] || return 0
       done
@@ -167,13 +161,9 @@ podman "${podman_args[@]}" \
       fi
       # -R derives the directory from RPM _sourcedir. Local Source0 is already
       # generated for Strata; spectool fetches its pinned upstream archives.
-      spectool -g -R -d "_topdir $topdir" "${spec_defines[@]}" "/src/packaging/$spec"
-      if [[ $mode == zen_only ]]; then
-        dnf install -y --setopt=install_weak_deps=False patchelf
-      else
-        dnf builddep -y --setopt=install_weak_deps=False "/src/packaging/$spec"
-      fi
-      rpmbuild "$rpm_build_mode" "/src/packaging/$spec" --define "_topdir $topdir" "${rpm_options[@]}"
+      spectool -g -R -d "_topdir $topdir" "/src/packaging/$spec"
+      dnf builddep -y --setopt=install_weak_deps=False "/src/packaging/$spec"
+      rpmbuild -ba "/src/packaging/$spec" --define "_topdir $topdir"
       built_specs+=("$build_key")
     }
 
@@ -182,10 +172,12 @@ podman "${podman_args[@]}" \
       case "$target" in
         config)
           build_spec strata-config.spec
-          build_spec strata-lock-auth.spec
           ;;
         desktop) build_spec hyprland-desktop.spec ;;
-        zen) build_spec hyprland-desktop.spec zen_only ;;
+        ghostty) build_spec ghostty.spec ;;
+        zen) build_spec zen-browser.spec ;;
+        uwsm) build_spec uwsm.spec ;;
+        lock-auth) build_spec strata-lock-auth.spec ;;
         hyprland) build_spec hyprland-minimal.spec ;;
         utilities) build_spec hyprland-utilities.spec ;;
         fonts) build_spec jetbrains-mono-nerd-fonts.spec ;;
@@ -194,6 +186,9 @@ podman "${podman_args[@]}" \
           build_spec hyprland-utilities.spec
           build_spec jetbrains-mono-nerd-fonts.spec
           build_spec hyprland-desktop.spec
+          build_spec ghostty.spec
+          build_spec zen-browser.spec
+          build_spec uwsm.spec
           build_spec strata-config.spec
           build_spec strata-lock-auth.spec
           ;;

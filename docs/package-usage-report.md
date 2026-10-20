@@ -2,6 +2,10 @@
 
 Audit date: 2026-10-19. Target: the working tree prepared for Strata 1.0.0.
 
+Packaging now has separate Ghostty, Zen and UWSM specs and an independent
+lock-auth build target. Dependency inventories below describe the earlier
+audit; use the current specs and [release guide](releasing.md) for build targets.
+
 This report reviews the five RPM specs, installer, shipped configuration,
 commands, shell plugins, and native capture code. It distinguishes a package
 with no shipped caller from a service, library, plugin, or desktop application

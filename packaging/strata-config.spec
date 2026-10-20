@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.1
+Version:        1.1.2
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -363,6 +363,10 @@ install -Dpm644 packaging/casting/strata-wireless.xml %{buildroot}%{_prefix}/lib
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-1
+- Separate release versions from RPM versions and add selective package updates
+- Build and reuse Ghostty, Zen, UWSM and lock authentication independently
+
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-1
 - Align the Strata package version with release 1.1.1
 
