@@ -182,8 +182,19 @@ jobs:
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:ro,Z" -w /repo \
             registry.fedoraproject.org/fedora:44 bash -euc '
-              dnf install -y --setopt=install_weak_deps=False dnf-plugins-core \
-                https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+              dnf install -y --setopt=install_weak_deps=False dnf-plugins-core
+              repo_ready=0
+              for base in https://download1.rpmfusion.org https://mirrors.rpmfusion.org; do
+                if dnf install -y --setopt=install_weak_deps=False \
+                    "$base/free/fedora/rpmfusion-free-release-44.noarch.rpm"; then
+                  repo_ready=1
+                  break
+                fi
+              done
+              if (( repo_ready == 0 )); then
+                echo "RPM Fusion repository setup failed from all endpoints." >&2
+                exit 1
+              fi
               dnf copr enable -y errornointernet/quickshell
               result=0
               dnf --assumeno --setopt=install_weak_deps=False \

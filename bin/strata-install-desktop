@@ -83,25 +83,32 @@ has_nvidia_hardware() {
   return 1
 }
 
-install_casting_repository() {
-  local fedora_release
+install_rpmfusion_release() {
+  local edition=$1 fedora_release base
+  if rpm -q "rpmfusion-$edition-release" >/dev/null 2>&1; then return 0; fi
   fedora_release=$(rpm -E '%fedora')
-  if ! rpm -q rpmfusion-free-release >/dev/null 2>&1; then
-    dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_release}.noarch.rpm"
-  fi
+  # Try the official download server before the redirector, which can select
+  # an unavailable third-party mirror during initial repository setup.
+  for base in https://download1.rpmfusion.org https://mirrors.rpmfusion.org; do
+    if dnf install -y --setopt=install_weak_deps=False \
+        "$base/$edition/fedora/rpmfusion-$edition-release-${fedora_release}.noarch.rpm"; then
+      return 0
+    fi
+  done
+  echo "RPM Fusion $edition repository setup failed from all endpoints." >&2
+  return 1
+}
+
+install_casting_repository() {
+  install_rpmfusion_release free
 }
 
 install_nvidia_driver() {
-  local fedora_release
-  fedora_release=$(rpm -E '%fedora')
-
   if rpm -q akmod-nvidia >/dev/null 2>&1; then
     echo "NVIDIA driver packages are already installed."
   else
     echo "NVIDIA graphics hardware detected; installing the current RPM Fusion driver."
-    if ! rpm -q rpmfusion-nonfree-release >/dev/null 2>&1; then
-      dnf install -y "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_release}.noarch.rpm"
-    fi
+    install_rpmfusion_release nonfree
     dnf install -y --refresh akmod-nvidia xorg-x11-drv-nvidia-cuda
   fi
 
