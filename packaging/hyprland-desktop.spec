@@ -208,6 +208,12 @@ export ZIG_GLOBAL_CACHE_DIR=%{strata_ghostty_cache}
 DESTDIR=%{buildroot} zig build --prefix %{_prefix} --system "$ZIG_GLOBAL_CACHE_DIR/p" -Doptimize=ReleaseFast -Dcpu=baseline
 popd
 
+# Upstream installs SDK files alongside the terminal. Keep its runtime library,
+# but omit unused headers, linker symlink and pkg-config metadata.
+rm -rf %{buildroot}%{_includedir}/ghostty
+rm -f %{buildroot}/usr/lib/libghostty-vt.so \
+    %{buildroot}%{_datadir}/pkgconfig/libghostty-vt.pc
+
 %endif
 
 # Zen's official Linux release is a prebuilt, self-contained application.
@@ -317,21 +323,6 @@ official release source using Zig only inside Strata's build container.
 %{_mandir}/man5/ghostty.5*
 %{_userunitdir}/app-com.mitchellh.ghostty.service
 
-%package -n ghostty-vt-devel
-Epoch:          0
-Version:        %{ghostty_version}
-Release:        1%{?dist}
-Summary:        Development files for Ghostty's terminal library
-Requires:       ghostty%{?_isa} = %{ghostty_version}-1%{?dist}
-
-%description -n ghostty-vt-devel
-Headers and pkg-config metadata for applications using libghostty-vt.
-
-%files -n ghostty-vt-devel
-%{_includedir}/ghostty
-/usr/lib/libghostty-vt.so
-%{_datadir}/pkgconfig/libghostty-vt.pc
-
 %endif
 
 %package -n zen-browser
@@ -376,6 +367,7 @@ separately to keep each downloadable RPM within the repository file-size limit.
 
 %changelog
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-1
+- Stop publishing unused Ghostty development files; retain the terminal runtime
 - Align the Strata package version with release 1.1.1
 
 * Mon Oct 19 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.0.1-1

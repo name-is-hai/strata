@@ -7,7 +7,6 @@ License:        BSD-3-Clause
 URL:            https://hypr.land/
 
 %global hypridle_version 0.1.8
-%global hyprlock_version 0.9.6
 %global hyprsunset_version 0.4.0
 %global hyprpicker_version 0.4.7
 %global hyprland_version 0.56.2
@@ -19,7 +18,6 @@ URL:            https://hypr.land/
 %global hyprgraphics_version 0.5.1
 
 Source0:        https://github.com/hyprwm/hypridle/archive/refs/tags/v%{hypridle_version}.tar.gz#/hypridle-%{hypridle_version}.tar.gz
-Source1:        https://github.com/hyprwm/hyprlock/archive/refs/tags/v%{hyprlock_version}.tar.gz#/hyprlock-%{hyprlock_version}.tar.gz
 Source2:        https://github.com/hyprwm/hyprsunset/archive/refs/tags/v%{hyprsunset_version}.tar.gz#/hyprsunset-%{hyprsunset_version}.tar.gz
 Source3:        https://github.com/hyprwm/hyprpicker/archive/refs/tags/v%{hyprpicker_version}.tar.gz#/hyprpicker-%{hyprpicker_version}.tar.gz
 Source10:       https://github.com/hyprwm/hyprland-protocols/archive/refs/tags/v%{hyprland_protocols_version}.tar.gz#/hyprland-protocols-%{hyprland_protocols_version}.tar.gz
@@ -41,7 +39,6 @@ BuildRequires:  libwebp-devel
 BuildRequires:  libxkbcommon-devel
 BuildRequires:  librsvg2-devel
 BuildRequires:  mesa-libgbm-devel
-BuildRequires:  pam-devel
 BuildRequires:  pango-devel
 BuildRequires:  pixman-devel
 BuildRequires:  pugixml-devel
@@ -68,14 +65,6 @@ Requires:       hyprland%{?_isa} = %{hyprland_version}-%{hyprland_release}%{?dis
 %description -n hypridle
 Hyprland's idle management daemon with timeout and resume hooks.
 
-%package -n hyprlock
-Version:        %{hyprlock_version}
-Summary:        Hyprland lock screen
-Requires:       hyprland%{?_isa} = %{hyprland_version}-%{hyprland_release}%{?dist}
-
-%description -n hyprlock
-GPU-accelerated session lock screen for Hyprland and other Wayland compositors.
-
 %package -n hyprsunset
 Version:        %{hyprsunset_version}
 Summary:        Blue-light filter for Hyprland
@@ -95,7 +84,6 @@ Native Wayland color picker using the compositor screencopy protocols.
 %prep
 %setup -q -c -T
 tar -xzf %{SOURCE0}
-tar -xzf %{SOURCE1}
 tar -xzf %{SOURCE2}
 tar -xzf %{SOURCE3}
 tar -xzf %{SOURCE10}
@@ -158,16 +146,6 @@ COMMON_ARGS="-G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%{_prefi
 cmake -S hypridle-%{hypridle_version} -B hypridle-build $COMMON_ARGS
 cmake --build hypridle-build --parallel %{_smp_build_ncpus}
 
-cmake -S hyprlock-%{hyprlock_version} -B hyprlock-build $COMMON_ARGS \
-    -DHYPRLOCK_COMMIT=b222d9b -DHYPRLOCK_VERSION_COMMIT=b222d9b \
-    -DOPENGL_opengl_LIBRARY=%{_libdir}/libOpenGL.so \
-    -DOPENGL_gles3_LIBRARY=%{_libdir}/libGLESv2.so \
-    -DOPENGL_GLES3_INCLUDE_DIR=%{_includedir} \
-    -DOPENGL_egl_LIBRARY=%{_libdir}/libEGL.so \
-    -DOPENGL_EGL_INCLUDE_DIR=%{_includedir} \
-    -DOPENGL_INCLUDE_DIR=%{_includedir}
-cmake --build hyprlock-build --parallel %{_smp_build_ncpus}
-
 cmake -S hyprsunset-%{hyprsunset_version} -B hyprsunset-build $COMMON_ARGS
 cmake --build hyprsunset-build --parallel %{_smp_build_ncpus}
 
@@ -176,7 +154,6 @@ cmake --build hyprpicker-build --parallel %{_smp_build_ncpus}
 
 %install
 DESTDIR=%{buildroot} cmake --install hypridle-build
-DESTDIR=%{buildroot} cmake --install hyprlock-build
 DESTDIR=%{buildroot} cmake --install hyprsunset-build
 DESTDIR=%{buildroot} cmake --install hyprpicker-build
 
@@ -187,12 +164,6 @@ DESTDIR=%{buildroot} cmake --install hyprpicker-build
 %{_bindir}/hypridle
 %{_userunitdir}/hypridle.service
 %{_datadir}/hypr/hypridle.conf
-
-%files -n hyprlock
-%license hyprlock-%{hyprlock_version}/LICENSE
-%{_bindir}/hyprlock
-%config(noreplace) %{_sysconfdir}/pam.d/hyprlock
-%{_datadir}/hypr/hyprlock.conf
 
 %files -n hyprsunset
 %license hyprsunset-%{hyprsunset_version}/LICENSE
@@ -206,6 +177,7 @@ DESTDIR=%{buildroot} cmake --install hyprpicker-build
 
 %changelog
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1.1.1-1
+- Stop building the unused Hyprlock package; Strata provides its own lock screen
 - Align the Strata package version with release 1.1.1
 
 * Mon Oct 19 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0.1-1

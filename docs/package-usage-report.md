@@ -7,7 +7,8 @@ commands, shell plugins, and native capture code. It distinguishes a package
 with no shipped caller from a service, library, plugin, or desktop application
 that does not need a literal command invocation. After the audit, the user approved removing `hyprlock`, `playerctl`, and
 `pavucontrol` from default requirements. Those dependency edges are now removed;
-the independently installable Hyprlock RPM remains available. The user also approved
+the Hyprlock build and RPM were subsequently removed, along with the unused
+`ghostty-vt-devel` RPM. Ghostty's terminal and runtime library are retained. The user also approved
 removing Buildah and Skopeo from default requirements; those edges are removed. Other recommendations
 remain pending. Personal configuration and installed packages were not modified.
 
@@ -20,7 +21,8 @@ requirement is removed. Disk savings therefore remain unmeasured.
 
 | Package | Evidence | Decision and consequence |
 | --- | --- | --- |
-| `hyprlock` | Previously required by [strata-config.spec](../packaging/strata-config.spec) and the [utilities metapackage](../packaging/hyprland-utilities.spec). [strata-system-lock](../bin/strata-system-lock) calls the Quickshell lock screen. No executable `hyprlock` invocation was found in shipped defaults. | Approved and removed from both default requirement lists. Its independently installable RPM is retained. |
+| `hyprlock` | Previously required by [strata-config.spec](../packaging/strata-config.spec) and the [utilities metapackage](../packaging/hyprland-utilities.spec). [strata-system-lock](../bin/strata-system-lock) calls the Quickshell lock screen. No executable `hyprlock` invocation was found in shipped defaults. | Removed from default requirements and no longer built or published. |
+| `ghostty-vt-devel` | SDK headers, linker symlink and pkg-config metadata. No shipped component builds against this SDK. | No longer packaged or published. Ghostty and its versioned runtime library remain. |
 | `playerctl` | Previously required by [desktop services](../packaging/hyprland-desktop.spec). [Media key bindings](../defaults/hypr/bindings/media.lua) call `strata-shell media`; the [media service](../shell/plugins/services/media/Service.qml) uses Quickshell MPRIS directly. No shipped command invokes `playerctl`. | Approved and removed from default requirements. Personal scripts may still use its CLI. |
 | `pavucontrol` | Previously required by desktop services. The [audio panel](../shell/plugins/panels/audio/Panel.qml) provides native controls. Its only runtime-source name match is an explanatory comment in the sound player; no launch action was found. | Approved and removed from default requirements. It can still be installed separately. This does not mean every Pavucontrol feature has an equivalent in Strata. |
 | `fastfetch` | Required by desktop apps. Only a commented-out example in [the menu extension template](../defaults/strata/extensions/strata-menu.jsonc) launches it. | Optional information utility; removing the default requirement does not disable an active shipped action. |
@@ -140,8 +142,6 @@ library dependencies are outside this inventory. `BuildRequires` are excluded.
 
 **ghostty**: no explicit runtime `Requires` (generated dependencies may apply).
 
-**ghostty-vt-devel**: `ghostty%{?_isa} = %{ghostty_version}-1%{?dist}`.
-
 **zen-browser**: `alsa-lib`, `gtk3`, `libXtst`, `mesa-libgbm`, `nss`.
 
 ### hyprland-minimal.spec
@@ -157,8 +157,6 @@ library dependencies are outside this inventory. `BuildRequires` are excluded.
 **hyprland-utilities**: `hypridle%{?_isa} = %{hypridle_version}-%{release}`, `hyprsunset%{?_isa} = %{hyprsunset_version}-%{release}`, `hyprpicker%{?_isa} = %{hyprpicker_version}-%{release}`, `hyprcursor >= 0.1.11`, `hyprlang`.
 
 **hypridle**: `hyprland%{?_isa} = %{hyprland_version}-%{hyprland_release}%{?dist}`.
-
-**hyprlock**: `hyprland%{?_isa} = %{hyprland_version}-%{hyprland_release}%{?dist}`.
 
 **hyprsunset**: `hyprland%{?_isa} = %{hyprland_version}-%{hyprland_release}%{?dist}`.
 
