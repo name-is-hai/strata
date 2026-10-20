@@ -6,6 +6,8 @@ Summary:        Universal Wayland Session Manager
 License:        MIT
 URL:            https://github.com/Vladimir-csp/uwsm
 Source0:        https://github.com/Vladimir-csp/uwsm/archive/refs/tags/v%{version}.tar.gz#/uwsm-%{version}.tar.gz
+# Python and shell scripts have no compiled debug symbols or debug sources.
+%global debug_package %{nil}
 BuildRequires:  meson
 BuildRequires:  ninja-build
 BuildRequires:  python3-devel
