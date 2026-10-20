@@ -10,10 +10,13 @@ stack and preserves local changes on upgrade. No package is taken from Git.
 
 ## Start a release
 
-1. Update `VERSION`, `runtime-version` and the Strata versions/releases in the
-   config, desktop and utilities specs. Update their `%changelog` sections.
-   Keep RPM Epoch 1 for config, casting and desktop packages. Upstream package
-   versions remain independent.
+1. Run `bin/strata-release-version 1.1.1` with the new version. This updates
+   `VERSION`, `runtime-version`, and the Strata versions in the config, desktop
+   and utilities specs, resets their releases to 1 and adds changelog entries.
+   Add any release details to those entries. Alternatively, edit only `VERSION`
+   and run `bin/strata-release-version` to synchronize the remaining files.
+   RPM epochs and upstream package versions remain unchanged. Local builds and
+   CI check consistency before starting compilation.
 2. Commit and push the source changes, including the workflows. CI builds new
    runtime RPMs; there is no need to copy local build output into Git.
 3. Create and push the matching tag, for example:

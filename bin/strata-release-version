@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# strata:summary=Set or check the release version across Strata package sources
+set -euo pipefail
+repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
+cd "$repo_root"
+check=false
+if [[ ${1:-} == --check ]]; then check=true; shift; fi
+if (( $# > 1 )) || [[ ${1:-} == -* ]]; then
+  echo 'Usage: strata-release-version [VERSION | --check]' >&2
+  exit 64
+fi
+version=${1:-$(<VERSION)}
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+  echo "Invalid release version: $version" >&2; exit 64;
+}
+specs=(packaging/strata-config.spec packaging/hyprland-desktop.spec packaging/hyprland-utilities.spec)
+# Validate all inputs before changing any files.
+for file in VERSION runtime-version "${specs[@]}"; do [[ -f $file ]] || { echo "Missing $file" >&2; exit 1; }; done
+for spec in "${specs[@]}"; do
+  [[ $(awk '/^Version:/ {print $2; exit}' "$spec") =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    echo "Expected a literal Strata Version in $spec" >&2; exit 1;
+  }
+done
+if $check; then
+  result=0
+  for file in VERSION runtime-version; do
+    [[ $(<"$file") == "$version" ]] || { echo "$file disagrees with VERSION ($version)" >&2; result=1; }
+  done
+  for spec in "${specs[@]}"; do
+    [[ $(awk '/^Version:/ {print $2; exit}' "$spec") == "$version" ]] || {
+      echo "$spec disagrees with VERSION ($version). Run bin/strata-release-version." >&2; result=1;
+    }
+  done
+  exit "$result"
+fi
+for spec in "${specs[@]}"; do
+  [[ $(awk '/^Version:/ {print $2; exit}' "$spec") != "$version" ]] || continue
+  temporary=$(mktemp "$spec.XXXXXX")
+  LC_ALL=C awk -v version="$version" -v date="$(LC_ALL=C date '+%a %b %d %Y')" '
+    /^Epoch:/ && !seenVersion {epoch=$2 ":"}
+    /^Version:/ && !seenVersion { $0="Version:        " version; seenVersion=1 }
+    /^Release:/ && !seenRelease { $0="Release:        1%{?dist}"; seenRelease=1 }
+    { print }
+    /^%changelog$/ {
+      print "* " date " Strata Maintainers <maintainers@strata.dev> - " epoch version "-1"
+      print "- Align the Strata package version with release " version
+      print ""
+    }
+  ' "$spec" > "$temporary"
+  chmod --reference="$spec" "$temporary"
+  mv -- "$temporary" "$spec"
+done
+printf '%s\n' "$version" > VERSION
+printf '%s\n' "$version" > runtime-version
+printf 'Strata release version: %s\n' "$version"

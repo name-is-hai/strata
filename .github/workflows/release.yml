@@ -42,6 +42,7 @@ jobs:
           [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$TAG" == "v$version" ]]
           [[ $(<runtime-version) == "$version" ]]
+          bin/strata-release-version --check
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v7.1.0

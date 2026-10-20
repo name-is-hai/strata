@@ -46,6 +46,7 @@ for target in "$@"; do
 done
 
 repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
+"$repo_root/bin/strata-release-version" --check
 output_dir=${STRATA_BUILD_OUTPUT:-"$repo_root/build-output"}
 
 command -v podman >/dev/null 2>&1 || {

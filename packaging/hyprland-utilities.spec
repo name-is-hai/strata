@@ -1,5 +1,5 @@
 Name:           hyprland-utilities
-Version:        1.0.1
+Version:        1.1.1
 Release:        1%{?dist}
 Summary:        Tagged Hyprland desktop utility collection
 
@@ -205,6 +205,9 @@ DESTDIR=%{buildroot} cmake --install hyprpicker-build
 %{_mandir}/man1/hyprpicker.1*
 
 %changelog
+* Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1.1.1-1
+- Align the Strata package version with release 1.1.1
+
 * Mon Oct 19 2026 Vu Dao Ngoc Hai <nameishai@users.noreply.github.com> - 1.0.1-1
 - Align the utilities collection with Strata 1.0.1
 - Retain independent versions for upstream utility packages
