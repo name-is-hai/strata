@@ -65,15 +65,27 @@ The config source archive includes only its casting packaging assets, not other
 packages' specs. Its installed documentation and commands remain build inputs.
 
 Reuse operates per target, so a config change still rebuilds its casting
-backends, and a utilities change rebuilds its grouped utilities. Builder,
-planner or build-workflow changes invalidate all targets. Unmapped packaging
-files conservatively invalidate all targets until assigned an explicit owner.
+backends, and a utilities change rebuilds its grouped utilities.
+
+Build ownership is declared in `packaging/build/targets.json`: each target tracks
+its own definition, spec, local sources and optional source-preparation recipe.
+Add new patches and local sources to their target's inputs; unassigned packaging
+files stop planning with an error. Changing one target's definition affects only
+that target. CI takes its target matrix from this list.
+
+`packaging/build/common.sh` controls shared compiler/dependency setup, and
+`packaging/build/environment.sh` defines the Fedora image. Changes to either
+invalidate all targets. Put shared build behavior in these files so reuse tracks
+it. The Podman wrapper and `packaging/build/run.sh` only dispatch builds and
+collect artifacts. Planner and workflow edits do not invalidate binary inputs.
+The wrapper still affects config because config ships the commands in `bin/`.
+CI image overrides must be recorded in the shared environment file.
 
 Zen is an optional per-user installation from the official tarball and updates itself; it
 is not an RPM target. See [Zen installation](zen.md) for fresh installs and
 migration from the former browser RPMs.
 
-The first release using the independent-target layout performs a full build
+The first release using the scoped-input manifest (schema 3) performs a full build
 because the manifest format changed. Later releases can reuse unchanged targets. Enable
 **force_full** in a manual run to rebuild all targets deliberately.
 

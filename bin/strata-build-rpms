@@ -2,13 +2,9 @@
 # strata:summary=Build Strata RPMs in a rootless Podman container
 set -euo pipefail
 
-fedora_release=${STRATA_FEDORA_RELEASE:-44}
-image=${STRATA_BUILD_IMAGE:-"registry.fedoraproject.org/fedora:${fedora_release}"}
 build_cpus=${STRATA_BUILD_CPUS:-1}
 fedora_release_baseurl=${STRATA_FEDORA_RELEASE_BASEURL:-}
 fedora_updates_baseurl=${STRATA_FEDORA_UPDATES_BASEURL:-}
-dnf_cache_volume=${STRATA_DNF_CACHE_VOLUME:-"strata-dnf-cache-f${fedora_release}"}
-ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fedora_release}"}
 
 usage() {
   cat <<'USAGE'
@@ -49,6 +45,15 @@ done
 
 repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
 "$repo_root/bin/strata-release-version" --check
+source "$repo_root/packaging/build/environment.sh"
+fedora_release=${STRATA_FEDORA_RELEASE:-$strata_default_fedora_release}
+image=${STRATA_BUILD_IMAGE:-"$strata_build_registry:$fedora_release"}
+if [[ ${GITHUB_ACTIONS:-} == true && ( $fedora_release != "$strata_default_fedora_release" || $image != "$strata_build_registry:$strata_default_fedora_release" ) ]]; then
+  echo "Set the CI build image in packaging/build/environment.sh so RPM reuse tracks it." >&2
+  exit 2
+fi
+dnf_cache_volume=${STRATA_DNF_CACHE_VOLUME:-"strata-dnf-cache-f${fedora_release}"}
+ghostty_cache_volume=${STRATA_GHOSTTY_CACHE_VOLUME:-"strata-ghostty-cache-f${fedora_release}"}
 output_dir=${STRATA_BUILD_OUTPUT:-"$repo_root/build-output"}
 
 command -v podman >/dev/null 2>&1 || {
@@ -106,94 +111,6 @@ podman "${podman_args[@]}" \
   -v "$ghostty_cache_volume:/var/cache/strata:Z" \
   -w /src \
   "$image" \
-  bash -euo pipefail -c '
-    topdir=/build/rpmbuild
-    mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SRPMS}
-
-    # A direct official endpoint is an opt-in escape hatch for a stale or
-    # unreachable metalink mirror. Normal builds keep Fedora mirror choice.
-    if [[ -n ${STRATA_FEDORA_RELEASE_BASEURL:-} ]]; then
-      sed -ri "/^(metalink|mirrorlist)=/d" /etc/yum.repos.d/fedora.repo
-      sed -ri "0,/^#baseurl=/s|^#baseurl=.*|baseurl=${STRATA_FEDORA_RELEASE_BASEURL}|" /etc/yum.repos.d/fedora.repo
-    fi
-    if [[ -n ${STRATA_FEDORA_UPDATES_BASEURL:-} ]]; then
-      sed -ri "/^(metalink|mirrorlist)=/d" /etc/yum.repos.d/fedora-updates.repo
-      sed -ri "0,/^#baseurl=/s|^#baseurl=.*|baseurl=${STRATA_FEDORA_UPDATES_BASEURL}|" /etc/yum.repos.d/fedora-updates.repo
-    fi
-
-    dnf install -y --setopt=install_weak_deps=False \
-      rpm-build rpmdevtools dnf-plugins-core createrepo_c
-    cp -a /src/packaging/. "$topdir/SOURCES/"
-
-    # Only copy sources into RPM archives. Local builds and imported themes
-    # can carry large caches or nested Git histories that are not package data.
-    copy_source_tree() {
-      tar -C /src --exclude=.git --exclude=__pycache__ --exclude="*.py[cod]" \
-        --exclude=target --exclude=third_party/strata-snip/build \
-        --exclude=third_party/strata-snip/stage -cf - "$@" |
-        tar -C "$source_root" -xf -
-    }
-
-    make_config_source() {
-      version=$(rpmspec -q --srpm --qf "%{VERSION}" /src/packaging/strata-config.spec)
-      source_root="/tmp/strata-config-${version}"
-      rm -rf "$source_root"
-      mkdir -p "$source_root"
-      copy_source_tree LICENSE bin config defaults docs native packaging/casting \
-        runtime-version scripts shell systemd third_party
-      # Themes are optional: a minimal Strata checkout can intentionally omit
-      # all bundled artwork and terminal-theme templates.
-      [[ -e /src/themes ]] && copy_source_tree themes
-      tar -C /tmp -czf "$topdir/SOURCES/strata-config-${version}.tar.gz" "strata-config-${version}"
-    }
-
-    built_specs=()
-
-    build_spec() {
-      spec=$1
-      build_key="$spec"
-      for completed in "${built_specs[@]}"; do
-        [[ $completed != "$build_key" ]] || return 0
-      done
-      if [[ $spec == strata-config.spec ]]; then
-        make_config_source
-      fi
-      # -R derives the directory from RPM _sourcedir. Local Source0 is already
-      # generated for Strata; spectool fetches its pinned upstream archives.
-      spectool -g -R -d "_topdir $topdir" "/src/packaging/$spec"
-      dnf builddep -y --setopt=install_weak_deps=False "/src/packaging/$spec"
-      rpmbuild -ba "/src/packaging/$spec" --define "_topdir $topdir"
-      built_specs+=("$build_key")
-    }
-
-    mkdir -p /out/RPMS /out/SRPMS
-    for target in $STRATA_TARGETS; do
-      case "$target" in
-        config)
-          build_spec strata-config.spec
-          ;;
-        desktop) build_spec hyprland-desktop.spec ;;
-        ghostty) build_spec ghostty.spec ;;
-        uwsm) build_spec uwsm.spec ;;
-        lock-auth) build_spec strata-lock-auth.spec ;;
-        hyprland) build_spec hyprland-minimal.spec ;;
-        utilities) build_spec hyprland-utilities.spec ;;
-        fonts) build_spec jetbrains-mono-nerd-fonts.spec ;;
-        all)
-          build_spec hyprland-minimal.spec
-          build_spec hyprland-utilities.spec
-          build_spec jetbrains-mono-nerd-fonts.spec
-          build_spec hyprland-desktop.spec
-          build_spec ghostty.spec
-          build_spec uwsm.spec
-          build_spec strata-config.spec
-          build_spec strata-lock-auth.spec
-          ;;
-      esac
-      # Keep completed packages even if a later target fails.
-      cp -a "$topdir/RPMS/." /out/RPMS/
-      cp -a "$topdir/SRPMS/." /out/SRPMS/
-    done
-  '
+  bash /src/packaging/build/run.sh
 
 echo "Built RPMs are in: $output_dir/RPMS"

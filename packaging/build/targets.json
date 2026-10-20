@@ -1,0 +1,54 @@
+{
+  "config": {
+    "spec": "strata-config.spec",
+    "recipe": "packaging/build/config-source.sh",
+    "inputs": [
+      "LICENSE",
+      "bin",
+      "config",
+      "defaults",
+      "docs",
+      "native",
+      "packaging/casting",
+      "runtime-version",
+      "scripts",
+      "shell",
+      "systemd",
+      "third_party",
+      "themes"
+    ]
+  },
+  "desktop": {
+    "spec": "hyprland-desktop.spec",
+    "inputs": [
+      "packaging/hyprland-desktop-LICENSE"
+    ]
+  },
+  "ghostty": {
+    "spec": "ghostty.spec",
+    "inputs": []
+  },
+  "uwsm": {
+    "spec": "uwsm.spec",
+    "inputs": []
+  },
+  "lock-auth": {
+    "spec": "strata-lock-auth.spec",
+    "inputs": [
+      "packaging/strata-lock-password",
+      "packaging/hyprland-desktop-LICENSE"
+    ]
+  },
+  "hyprland": {
+    "spec": "hyprland-minimal.spec",
+    "inputs": []
+  },
+  "utilities": {
+    "spec": "hyprland-utilities.spec",
+    "inputs": []
+  },
+  "fonts": {
+    "spec": "jetbrains-mono-nerd-fonts.spec",
+    "inputs": []
+  }
+}

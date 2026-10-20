@@ -6,8 +6,8 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {plan, record, targets} = require('../../.github/scripts/release-plan.js');
 const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/release.yml'), 'utf8');
-const matrix = workflow.match(/target: \[([^\]]+)\]/)[1].split(',').map(s => s.trim());
-assert.deepEqual(matrix.slice().sort(), targets.slice().sort(), 'CI builds every planner target');
+assert.ok(workflow.includes('target: $' + '{{ fromJSON(needs.plan.outputs.targets) }}'), 'CI uses declared target matrix');
+const buildDefinitions = fs.readFileSync(path.join(__dirname, '../../packaging/build/targets.json'), 'utf8');
 const original = process.cwd();
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'strata-release-plan-'));
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -42,6 +42,10 @@ try {
     'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password',
     'packaging/ghostty.spec', 'packaging/uwsm.spec',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
+  put('packaging/build/targets.json', buildDefinitions);
+  for (const file of ['common.sh', 'environment.sh', 'config-source.sh', 'run.sh']) {
+    put('packaging/build/' + file, 'original\n');
+  }
   commit();
   assert.deepEqual(choices(), all(false), 'first release builds everything');
 
@@ -57,7 +61,10 @@ try {
   put('assets/SHA256SUMS', '');
   record('out/plan.json', 'incoming', 'assets');
   fs.copyFileSync('assets/release-manifest.json', 'previous/release-manifest.json');
+  process.env.GITHUB_OUTPUT = path.join(fixture, 'out/github-output');
   assert.deepEqual(choices(), all(true), 'unchanged targets reuse every package');
+  assert.ok(fs.readFileSync(process.env.GITHUB_OUTPUT, 'utf8').includes('targets=' + JSON.stringify(targets)), 'matrix output matches targets');
+  delete process.env.GITHUB_OUTPUT;
   plan('previous', 'out', true);
   assert.ok(targets.every(t => !read('out/plan.json').targets[t].reuse), 'force rebuild');
   assert.ok(!fs.existsSync('out/reused'), 'force rebuild clears stale reused packages');
@@ -92,11 +99,28 @@ try {
   assert.deepEqual(choices(), {...all(true), config: false}, 'casting assets affect only config');
   put('packaging/casting/strata-castd.service', 'original\n'); commit();
   put('packaging/new-fix.patch', 'patch'); commit();
-  assert.deepEqual(choices(), all(false), 'unmapped packaging inputs conservatively rebuild all targets');
-  fs.unlinkSync('packaging/new-fix.patch'); commit();
-  put('bin/strata-build-rpms', 'new compiler flags'); commit();
-  assert.deepEqual(choices(), all(false), 'builder changes rebuild all targets');
-  put('bin/strata-build-rpms', 'original\n'); commit();
+  assert.throws(choices, /Assign packaging files/, 'unmapped packaging sources must have an owner');
+  const declared = JSON.parse(buildDefinitions);
+  declared.ghostty.inputs.push('packaging/new-fix.patch');
+  put('packaging/build/targets.json', JSON.stringify(declared)); commit();
+  assert.deepEqual(choices(), {...all(true), ghostty: false}, 'declared patch and definition affect only owner');
+  fs.unlinkSync('packaging/new-fix.patch');
+  put('packaging/build/targets.json', buildDefinitions); commit();
+  for (const file of ['.github/workflows/release.yml', '.github/scripts/release-plan.js', 'packaging/build/run.sh']) {
+    put(file, 'changed dispatch'); commit();
+    assert.deepEqual(choices(), all(true), file + ' does not change binary inputs');
+    put(file, 'original\n'); commit();
+  }
+  for (const file of ['bin/strata-build-rpms', 'packaging/build/config-source.sh']) {
+    put(file, 'changed config input'); commit();
+    assert.deepEqual(choices(), {...all(true), config: false}, file + ' affects only config');
+    put(file, 'original\n'); commit();
+  }
+  for (const file of ['packaging/build/common.sh', 'packaging/build/environment.sh']) {
+    put(file, 'changed shared settings'); commit();
+    assert.deepEqual(choices(), all(false), file + ' rebuilds every target');
+    put(file, 'original\n'); commit();
+  }
 
   put('previous/packages/fonts.rpm', 'corrupt');
   assert.deepEqual(choices(), {...all(true), fonts: false}, 'corrupt package rebuilds its target');
@@ -106,9 +130,9 @@ try {
   assert.equal(choices().config, false, 'one corrupt RPM prevents reuse of the entire target');
   assert.ok(!fs.existsSync('out/reused/config'));
   const legacy = read('previous/release-manifest.json');
-  legacy.schema = 1;
+  legacy.schema = 2;
   put('previous/release-manifest.json', JSON.stringify(legacy));
-  assert.deepEqual(choices(), all(false), 'old combined-target manifests require a fresh baseline');
+  assert.deepEqual(choices(), all(false), 'old broad-input manifests require a fresh baseline');
   put('previous/release-manifest.json', '{}');
   assert.deepEqual(choices(), all(false), 'old or malformed manifest builds all targets');
 

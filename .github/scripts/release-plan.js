@@ -4,22 +4,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 
-const inputs = {
-  config: ['LICENSE', 'bin', 'config', 'defaults', 'docs', 'native',
-    'packaging/strata-config.spec', 'packaging/casting',
-    'runtime-version', 'scripts', 'shell', 'systemd', 'third_party', 'themes'],
-  desktop: ['packaging/hyprland-desktop.spec', 'packaging/hyprland-desktop-LICENSE'],
-  ghostty: ['packaging/ghostty.spec'],
-  uwsm: ['packaging/uwsm.spec'],
-  'lock-auth': ['packaging/strata-lock-auth.spec', 'packaging/strata-lock-password',
-    'packaging/hyprland-desktop-LICENSE'],
-  hyprland: ['packaging/hyprland-minimal.spec'],
-  utilities: ['packaging/hyprland-utilities.spec'],
-  fonts: ['packaging/jetbrains-mono-nerd-fonts.spec']
-};
-const common = ['bin/strata-build-rpms', '.github/scripts/release-plan.js',
-  '.github/workflows/release.yml'];
-const targets = Object.keys(inputs);
+const definitions = JSON.parse(fs.readFileSync(path.join(__dirname, '../../packaging/build/targets.json'), 'utf8'));
+const targets = Object.keys(definitions);
+const common = ['packaging/build/common.sh', 'packaging/build/environment.sh'];
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const readJSON = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const writeJSON = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
@@ -32,21 +19,28 @@ function git(args) {
 }
 
 function fingerprints() {
-  // Unknown packaging files may be patches or local sources referenced by a
-  // spec. Include them for every target rather than risk missing a dependency.
-  const knownPackaging = new Set([
-    'packaging/strata-config.spec', 'packaging/strata-lock-auth.spec',
-    'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
-    'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
-    'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password',
-    'packaging/ghostty.spec', 'packaging/uwsm.spec'
-  ]);
-  const extraPackaging = git(['ls-tree', '-rz', 'HEAD', '--', 'packaging']).toString()
-    .split('\0').filter(row => row && !knownPackaging.has(row.slice(row.indexOf('\t') + 1)) &&
-      !row.slice(row.indexOf('\t') + 1).startsWith('packaging/casting/')).join('\0');
-  return Object.fromEntries(targets.map(target => [target,
-    digest(Buffer.concat([git(['ls-tree', '-rz', 'HEAD', '--', ...common, ...inputs[target]]),
-      Buffer.from(extraPackaging)]))]));
+  const declared = JSON.parse(git(['show', 'HEAD:packaging/build/targets.json']).toString());
+  const inputs = {};
+  const safePath = value => typeof value === 'string' && /^[A-Za-z0-9_./-]+$/.test(value) &&
+    !value.startsWith('/') && !value.split('/').some(part => part === '..' || part === '.');
+  for (const [target, definition] of Object.entries(declared)) {
+    if (!/^[a-z][a-z0-9-]*$/.test(target) ||
+        !/^[a-z0-9-]+\.spec$/.test(definition.spec) || !Array.isArray(definition.inputs)) {
+      throw Error('Invalid build target definition: ' + target);
+    }
+    const paths = [...common, 'packaging/' + definition.spec, ...definition.inputs,
+      ...(definition.recipe ? [definition.recipe] : [])];
+    if (!paths.every(safePath)) throw Error('Invalid build input path: ' + target);
+    inputs[target] = paths;
+  }
+  const owned = [...Object.values(inputs).flat(), 'packaging/build/targets.json', 'packaging/build/run.sh'];
+  const unassigned = git(['ls-tree', '-rz', 'HEAD', '--', 'packaging']).toString().split('\0')
+    .filter(Boolean).map(row => row.slice(row.indexOf('\t') + 1))
+    .filter(file => !owned.some(input => file === input || file.startsWith(input + '/')));
+  if (unassigned.length) throw Error('Assign packaging files to targets in packaging/build/targets.json: ' + unassigned.join(', '));
+  return Object.fromEntries(Object.entries(declared).map(([target, definition]) => [target,
+    digest(Buffer.concat([Buffer.from(JSON.stringify(definition) + '\n'),
+      git(['ls-tree', '-rz', 'HEAD', '--', ...inputs[target]])]))]));
 }
 
 function plan(previous, output, force) {
@@ -55,7 +49,7 @@ function plan(previous, output, force) {
   let baseline;
   try {
     baseline = readJSON(path.join(previous, 'release-manifest.json'));
-    if (baseline.schema !== 2 || baseline.fedora !== 44 || baseline.arch !== 'x86_64') {
+    if (baseline.schema !== 3 || baseline.fedora !== 44 || baseline.arch !== 'x86_64') {
       throw Error('incompatible manifest');
     }
   } catch {
@@ -63,7 +57,7 @@ function plan(previous, output, force) {
     console.log('No compatible previous release manifest; build all targets.');
   }
   const hashes = fingerprints();
-  const result = {schema: 2, fedora: 44, arch: 'x86_64',
+  const result = {schema: 3, fedora: 44, arch: 'x86_64',
     commit: git(['rev-parse', 'HEAD']).toString().trim(), targets: {}};
   for (const target of targets) {
     const prior = baseline?.targets?.[target];
@@ -102,13 +96,14 @@ function plan(previous, output, force) {
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(process.env.GITHUB_OUTPUT,
       'reuse=' + JSON.stringify(Object.fromEntries(targets.map(t => [t, result.targets[t].reuse]))) + '\n' +
-      'has_reuse=' + targets.some(t => result.targets[t].reuse) + '\n');
+      'has_reuse=' + targets.some(t => result.targets[t].reuse) + '\n' +
+      'targets=' + JSON.stringify(targets) + '\n');
   }
 }
 
 function record(planFile, incoming, assets) {
   const current = readJSON(planFile);
-  const manifest = {schema: 2, fedora: 44, arch: 'x86_64', commit: current.commit, targets: {}};
+  const manifest = {schema: 3, fedora: 44, arch: 'x86_64', commit: current.commit, targets: {}};
   const owned = new Set();
   for (const target of targets) {
     const dir = path.join(incoming, `rpms-${target}`);

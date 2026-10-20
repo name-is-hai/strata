@@ -49,6 +49,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-24.04
     outputs:
+      targets: ${{ steps.plan.outputs.targets }}
       reuse: ${{ steps.plan.outputs.reuse }}
       has_reuse: ${{ steps.plan.outputs.has_reuse }}
     steps:
@@ -94,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [config, desktop, ghostty, uwsm, lock-auth, hyprland, utilities, fonts]
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
