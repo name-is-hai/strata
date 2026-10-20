@@ -1,4 +1,4 @@
-# Strata 1.1.2
+# Strata 1.1.3
 
-- Build and reuse Ghostty, Zen, UWSM and lock authentication independently
-- Separate release numbering from package versions and support selective RPM changelogs
+- Build and reuse desktop applications independently
+- Fix standalone UWSM packaging by disabling empty debug packages
