@@ -1,5 +1,4 @@
-# Strata 1.1.7
+# Strata 1.1.8
 
-- Control notification silencing with a switch in the center header
-- Show snoozed sources in a compact popup only when notifications are snoozed
-- Display remaining snooze time beside each source and offer Resume all
+- Send volume shortcuts directly to the running shell instead of launching a script per press
+- Preserve volume steps, held-key repeat and routing-aware fallback for virtual outputs

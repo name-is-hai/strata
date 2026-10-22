@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.3
+Version:        1.1.4
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -381,6 +381,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.4-1
+- Route volume up, volume down and mute directly to the running shell
+- Preserve held-key repeat, lock-screen bindings and routing-aware fallback for virtual outputs
+
 * Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.3-1
 - Move notification silencing to a header switch before search
 - Show a compact snoozed-source popup only while snoozes are active
