@@ -68,7 +68,6 @@ Example `shell.json` (bar subtree only shown):
 | `strata.media` | MPRIS now-playing — scrolling track + artist, cover-art popup | left = play/pause · middle = next · scroll = prev/next · right = popup |
 | `strata.indicators` | Manual state indicators | left = indicator action |
 | `strata.tray` | System tray | hover = reveal drawer · right on chevron = manage |
-| `strata.microphone` | Mic icon + scroll volume | left = mute toggle · middle = audio panel · scroll = source volume |
 
 | `strata.audio` | Volume icon + popup with master slider, output-device picker, per-app mixer | left = popup · right = mute · middle = popup · scroll = volume |
 | `strata.network` | Wi-Fi/Ethernet icon + popup with Wi-Fi scan, signal, connect, DNS provider selection | left = popup |

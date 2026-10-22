@@ -2,9 +2,10 @@
 # strata:summary=Install missing Strata user configuration files
 set -euo pipefail
 
-source_root=/usr/share/strata/user-config
-home_source=/usr/share/strata/user-home
-shell_source=/usr/share/strata/shell
+strata_root=/usr/share/strata
+source_root=$strata_root/user-config
+home_source=$strata_root/user-home
+shell_source=$strata_root/shell
 force=0
 dry_run=0
 
@@ -97,6 +98,20 @@ fi
 if [[ -n $shell_destination && ! -e $shell_destination && ! -L $shell_destination ]]; then
     run ln -s "$shell_source" "$shell_destination"
     (( dry_run )) || printf 'Linked %s\n' "$shell_destination"
+fi
+
+# Seed the desktop before its first login. Updating defaults must never reset
+# an existing theme or wallpaper, including when --force refreshes config files.
+current=$HOME/.local/state/strata/current
+if [[ ! -e $current/theme && ! -L $current/theme && ! -e $current/theme.name &&
+      ! -e $current/background && ! -L $current/background ]]; then
+    default_theme=$(jq -er '.theme | select(type == "string" and test("^[a-zA-Z0-9_-]+$"))' "$strata_root/default/theme.json")
+    default_background=$(jq -er '.background | select(type == "string" and length > 0 and . != "." and . != ".." and (contains("/") | not))' "$strata_root/default/theme.json")
+    wallpaper=$strata_root/themes/$default_theme/backgrounds/$default_background
+    [[ -f $wallpaper ]] || { echo "Default wallpaper is missing: $wallpaper" >&2; exit 1; }
+    run env STRATA_PATH="$strata_root" PATH="$strata_root/bin:$PATH" STRATA_THEME_HEADLESS=1 \
+        "$strata_root/bin/strata-theme-set" "$default_theme"
+    run ln -nsf "$wallpaper" "$current/background"
 fi
 
 echo "Strata configuration is ready."

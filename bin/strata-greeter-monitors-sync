@@ -27,5 +27,5 @@ fi
 if [[ ${1:-} == --print ]]; then
   printf '%s\n' "$rows"
 else
-  pkexec /usr/bin/strata-greeter-monitors-install "$rows"
+  pkexec /usr/share/strata/bin/strata-greeter-monitors-install "$rows"
 fi

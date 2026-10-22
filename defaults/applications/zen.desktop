@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Install Zen Browser
-Comment=Browse the web
-Exec=strata-launch-floating-terminal-with-presentation strata-install-browser zen
-Terminal=false
-Type=Application
-Icon=web-browser
-Categories=Settings;
-StartupNotify=true

@@ -39,7 +39,9 @@ done
 install -d -o root -g root -m 0755 /etc/strata /etc/greetd
 
 if [[ ! -f /usr/share/strata/greeter/background.jpg || ! -f /usr/share/strata/greeter/background.sha256 ]]; then
-  fallback="$strata_root/themes/lawson-night/backgrounds/wallhaven-1k6ljv.jpg"
+  default_theme=$(jq -er '.theme' "$strata_root/default/theme.json")
+  default_background=$(jq -er '.background' "$strata_root/default/theme.json")
+  fallback="$strata_root/themes/$default_theme/backgrounds/$default_background"
   temporary=$(mktemp /tmp/strata-greeter-wallpaper.XXXXXX.jpg)
   trap 'rm -f -- "$temporary"' EXIT
   ffmpeg -nostdin -hide_banner -loglevel error -y -i "$fallback" \

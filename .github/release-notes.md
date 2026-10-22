@@ -1,5 +1,7 @@
-# Strata 1.1.5
+# Strata 1.1.6
 
-- Reuse unchanged RPMs when release workflow or planner code changes
-- Track package sources and build recipes per target with explicit ownership
-- Establish a new scoped-input baseline for subsequent releases
+- Use one installed location for Strata commands and privileged helpers
+- Remove bundled browser installers; launch the user-selected default browser
+- Keep Stage and Mouse as regular plugins and remove the standalone Microphone widget
+- Clean up all saved state when removing plugins and reject unknown plugin IDs
+- Initialize fresh desktops with the Lawson Night theme and wallpaper

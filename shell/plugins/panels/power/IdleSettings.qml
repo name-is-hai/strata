@@ -56,7 +56,7 @@ Column {
     root.errorText = ""
     if (field === "hibernate") {
       root.pendingHibernateSeconds = Number(value)
-      hibernateProcess.command = ["pkexec", "/usr/bin/strata-configure-hibernate", String(value)]
+      hibernateProcess.command = ["pkexec", "/usr/share/strata/bin/strata-configure-hibernate", String(value)]
       hibernateProcess.running = true
     } else {
       settingsProcess.command = ["strata-idle-settings", "set", root.profile, field, String(value), root.powerSource]

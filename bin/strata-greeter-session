@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
+# strata:summary=Start the isolated Strata login session
+# strata:hidden=true
 set -euo pipefail
+
+# greetd starts outside the user's UWSM environment.
+export STRATA_PATH=/usr/share/strata
+export PATH="$STRATA_PATH/bin:$PATH"
 
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=Hyprland
@@ -27,7 +33,7 @@ exec >"${HOME:-/var/lib/greetd}/strata-greeter.log" 2>&1
 # output's GPU instead, retaining the other cards for hotplug/lid reopening.
 # Respect an explicitly configured device order.
 if [[ -z ${AQ_DRM_DEVICES:-} ]]; then
-  devices=$(/usr/bin/strata-greeter-gpu "$STRATA_MAIN_MONITOR" || true)
+  devices=$(/usr/share/strata/bin/strata-greeter-gpu "$STRATA_MAIN_MONITOR" || true)
   if [[ -n $devices ]]; then
     export AQ_DRM_DEVICES=$devices
     printf 'Closed-lid greeter DRM order: %s\n' "$AQ_DRM_DEVICES"

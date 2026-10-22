@@ -260,6 +260,6 @@ for key in "${keys[@]}"; do
   [[ ${installed[$key]:-} == "${desired[$key]}" ]] || same=false
 done
 if [[ $same != true ]]; then
-  pkexec /usr/bin/strata-greeter-theme-install "${arguments[@]}"
+  pkexec /usr/share/strata/bin/strata-greeter-theme-install "${arguments[@]}"
 fi
-pkexec /usr/bin/strata-greeter-theme-install --sync-files "$state_home"
+pkexec /usr/share/strata/bin/strata-greeter-theme-install --sync-files "$state_home"

@@ -30,7 +30,7 @@ POLICY_DIRS=(
 # The path etc/sudoers.d/strata-theme-browser names. The privileged half always
 # runs from there rather than from whichever copy was invoked, so the rule
 # matches even where $STRATA_PATH points at a checkout.
-PACKAGED_PATH=/usr/bin/strata-theme-set-browser-policy
+PACKAGED_PATH=/usr/share/strata/bin/strata-theme-set-browser-policy
 
 usage() {
   echo "Usage: strata-theme-set-browser-policy <rrggbb>" >&2

@@ -22,4 +22,4 @@ if [[ -r $destination && -r $source_hash_file && -r $output_hash_file ]] &&
   if [[ $(<"$output_hash_file") == "${output_hash%% *}" ]]; then exit 0; fi
 fi
 
-pkexec /usr/bin/strata-greeter-background-install "$background"
+pkexec /usr/share/strata/bin/strata-greeter-background-install "$background"

@@ -122,7 +122,7 @@ fn trusted_daemon() -> Option<std::path::PathBuf> {
     let executable = std::env::current_exe().ok()?;
     let allowed = [
         util::home().join(".local/bin/strata-castd"),
-        std::path::PathBuf::from("/usr/bin/strata-castd"),
+        std::path::PathBuf::from("/usr/share/strata/bin/strata-castd"),
     ];
     let text = executable.to_str()?;
     // The path goes into a unit file: refuse anything systemd would parse
@@ -155,7 +155,9 @@ fn legacy_units() -> Vec<String> {
         .unwrap_or(UNIT_HEAD);
     [
         util::home().join(".local/bin/strata-castd"),
+        // Recognize units from before commands moved into the runtime directory.
         std::path::PathBuf::from("/usr/bin/strata-castd"),
+        std::path::PathBuf::from("/usr/share/strata/bin/strata-castd"),
     ]
     .iter()
     .flat_map(|path| {
@@ -254,7 +256,7 @@ pub fn main(args: &[String]) {
     if !available {
         println!(
             "{}",
-            json!({"ok": false, "error": "cast service unavailable (the backend must be installed at ~/.local/bin/strata-castd or /usr/bin/strata-castd)"})
+            json!({"ok": false, "error": "cast service unavailable (the backend must be installed at ~/.local/bin/strata-castd or /usr/share/strata/bin/strata-castd)"})
         );
         return;
     }
@@ -285,7 +287,7 @@ mod tests {
     #[test]
     fn unit_writes_fresh_and_rewrites_its_own() {
         let dir = scratch("own");
-        let exe = Path::new("/usr/bin/strata-castd");
+        let exe = Path::new("/usr/share/strata/bin/strata-castd");
         assert!(install_unit(&dir, exe));
         let written = std::fs::read_to_string(dir.join(UNIT_NAME)).expect("unit");
         assert!(written.starts_with(UNIT_MARKER));
@@ -309,7 +311,7 @@ mod tests {
     #[test]
     fn unit_leaves_foreign_files_and_symlinks_alone() {
         let dir = scratch("foreign");
-        let exe = Path::new("/usr/bin/strata-castd");
+        let exe = Path::new("/usr/share/strata/bin/strata-castd");
         let foreign = "[Unit]\nDescription=someone else's castd\n[Service]\nExecStart=/opt/castd\n";
         std::fs::write(dir.join(UNIT_NAME), foreign).expect("foreign");
         assert!(!install_unit(&dir, exe));
@@ -329,7 +331,7 @@ mod tests {
 
     #[test]
     fn unit_is_bounded_but_keeps_pkexec_usable() {
-        let unit = format!("{UNIT_HEAD}ExecStart=\"/usr/bin/strata-castd\"\n{UNIT_TAIL}");
+        let unit = format!("{UNIT_HEAD}ExecStart=\"/usr/share/strata/bin/strata-castd\"\n{UNIT_TAIL}");
         for line in [
             "UMask=0077",
             "TasksMax=1024",

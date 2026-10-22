@@ -60,7 +60,7 @@ checked individually against its recorded digest.
 | Fonts | Font spec. |
 
 `VERSION` and release notes do not affect RPM fingerprints. A Ghostty spec
-update rebuilds only Ghostty; it does not rebuild config, desktop, Zen or UWSM.
+update rebuilds only Ghostty; it does not rebuild config, desktop or UWSM.
 The config source archive includes only its casting packaging assets, not other
 packages' specs. Its installed documentation and commands remain build inputs.
 
@@ -81,9 +81,8 @@ collect artifacts. Planner and workflow edits do not invalidate binary inputs.
 The wrapper still affects config because config ships the commands in `bin/`.
 CI image overrides must be recorded in the shared environment file.
 
-Zen is an optional per-user installation from the official tarball and updates itself; it
-is not an RPM target. See [Zen installation](zen.md) for fresh installs and
-migration from the former browser RPMs.
+Chromium is supplied by Fedora as a desktop dependency. Other browsers can be
+installed independently; Strata launches the user's system default browser.
 
 The first release using the scoped-input manifest (schema 3) performs a full build
 because the manifest format changed. Later releases can reuse unchanged targets. Enable

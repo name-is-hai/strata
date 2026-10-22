@@ -49,10 +49,9 @@ strata_security_require_source_root() {
   command_source=$(/usr/bin/readlink -e -- "$1") || return 1
 
   # A runtime root selects the code used by this invocation. Accept the
-  # canonical checkout containing the entrypoint or the package's bin links.
+  # canonical checkout or installed directory containing the entrypoint.
   if [[ ${STRATA_PATH:-} != /* || $(/usr/bin/realpath -e -- "$STRATA_PATH") != "$STRATA_PATH" ]] ||
-    ! { [[ $command_source == "$STRATA_PATH/bin/$command_name" ]] ||
-      [[ $STRATA_PATH == "/usr/share/strata" && $command_source == "/usr/bin/$command_name" ]]; }; then
+    [[ $command_source != "$STRATA_PATH/bin/$command_name" ]]; then
     echo "STRATA_PATH does not match this Strata command." >&2
     return 1
   fi

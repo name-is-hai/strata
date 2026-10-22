@@ -10,14 +10,11 @@ if (($# != 1)) || [[ $1 != /* || ! -f $1 || -L $1 ]]; then
   exit 2
 fi
 
-snip_bin=""
-if [[ -x "$HOME/.local/bin/strata-snip" ]]; then
-  snip_bin="$HOME/.local/bin/strata-snip"
-elif command -v strata-snip >/dev/null 2>&1; then
+snip_bin="${STRATA_SNIP_BIN:-/usr/share/strata/bin/strata-snip}"
+if [[ -z ${STRATA_SNIP_BIN:-} && ! -x $snip_bin ]] && command -v strata-snip >/dev/null 2>&1; then
   snip_bin=$(command -v strata-snip)
 fi
-
-if [[ -z $snip_bin ]]; then
+if [[ ! -x $snip_bin ]]; then
   echo "strata-edit-screenshot: Strata Snip is not installed" >&2
   exit 1
 fi

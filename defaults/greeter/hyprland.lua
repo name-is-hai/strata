@@ -69,5 +69,5 @@ hl.config({
 
 hl.on("hyprland.start", function()
     apply_monitor_policy()
-    hl.exec_cmd("/usr/bin/strata-greeter-quickshell")
+    hl.exec_cmd("/usr/share/strata/bin/strata-greeter-quickshell")
 end)

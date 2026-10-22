@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 
 # strata:summary=Set the default browser for Strata and XDG handlers
-# strata:args=[chromium|chrome|brave|brave-origin|edge|firefox|zen]
+# strata:args=[chromium|chrome|brave|brave-origin|edge|firefox|desktop-id.desktop]
 # strata:examples=strata default browser firefox | strata default browser brave
-
-installing=false
-if [[ ${1:-} == "--install" ]]; then
-  installing=true
-  shift
-fi
 
 if (($# == 0)); then
   case "$(env -u BROWSER xdg-settings get default-web-browser)" in
@@ -18,35 +12,38 @@ if (($# == 0)); then
   brave-origin.desktop) echo "brave-origin" ;;
   microsoft-edge.desktop) echo "edge" ;;
   firefox.desktop) echo "firefox" ;;
-  zen.desktop|zen-browser.desktop) echo "zen" ;;
   *) env -u BROWSER xdg-settings get default-web-browser ;;
   esac
   exit 0
 fi
 
+[[ $# == 1 ]] || { echo 'Choose one installed browser or desktop entry ID.' >&2; exit 1; }
+
 case "$1" in
-chromium) browser="chromium"; command="chromium"; desktop_id="chromium.desktop"; name="Chromium"; glyph= ;;
-chrome) browser="chrome"; command="google-chrome-stable"; desktop_id="google-chrome.desktop"; name="Chrome"; glyph=󰊯 ;;
-brave) browser="brave"; command="brave"; desktop_id="brave-browser.desktop"; name="Brave"; glyph=󰖟 ;;
-brave-origin) browser="brave-origin"; command="brave-origin"; desktop_id="brave-origin.desktop"; name="Brave Origin"; glyph=󰖟 ;;
-edge) browser="edge"; command="microsoft-edge-stable"; desktop_id="microsoft-edge.desktop"; name="Edge"; glyph=󰇩 ;;
-firefox) browser="firefox"; command="firefox"; desktop_id="firefox.desktop"; name="Firefox"; glyph=󰈹 ;;
-zen) browser="zen"; command="$HOME/.tarball-installations/zen/zen"; desktop_id="zen.desktop"; name="Zen"; glyph=󰖟 ;;
+chromium) desktop_id="chromium.desktop"; name="Chromium"; glyph= ;;
+chrome) desktop_id="google-chrome.desktop"; name="Chrome"; glyph=󰊯 ;;
+brave) desktop_id="brave-browser.desktop"; name="Brave"; glyph=󰖟 ;;
+brave-origin) desktop_id="brave-origin.desktop"; name="Brave Origin"; glyph=󰖟 ;;
+edge) desktop_id="microsoft-edge.desktop"; name="Edge"; glyph=󰇩 ;;
+firefox) desktop_id="firefox.desktop"; name="Firefox"; glyph=󰈹 ;;
+*.desktop)
+  desktop_id=$1
+  [[ $desktop_id != */* ]] || { echo 'Use an installed desktop entry ID.' >&2; exit 1; }
+  name=${desktop_id%.desktop}; glyph=󰖟
+  ;;
 *)
-  echo "Usage: strata-default-browser <chromium|chrome|brave|brave-origin|edge|firefox|zen>"
+  echo "Usage: strata-default-browser <chromium|chrome|brave|brave-origin|edge|firefox|desktop-id.desktop>"
   exit 1
   ;;
 esac
 
-if strata-cmd-missing "$command"; then
-  if [[ $installing == "false" ]]; then
-    printf -v install_command '%q ' "${BASH_SOURCE[0]}" --install "$browser"
-    exec strata-launch-floating-terminal-with-presentation "$install_command"
-  else
-    strata-install-browser "$browser" || exit 1
-  fi
-fi
+IFS=: read -ra data_dirs <<< "${XDG_DATA_HOME:-$HOME/.local/share}:$HOME/.nix-profile/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+found=false
+for directory in "${data_dirs[@]}"; do
+  if [[ -f $directory/applications/$desktop_id ]]; then found=true; break; fi
+done
+$found || { echo "Browser desktop entry is not installed: $desktop_id. Install it first, then select it as your default." >&2; exit 1; }
 
 env -u BROWSER xdg-settings set default-web-browser "$desktop_id" || exit 1
 
-strata-notification-send -g $glyph "$name is now the default browser"
+strata-notification-send -g "$glyph" "$name is now the default browser"

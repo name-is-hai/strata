@@ -9,15 +9,23 @@ default_browser=$(strata-cmd-default-browser) || {
 }
 IFS=: read -ra data_dirs <<< "${XDG_DATA_HOME:-$HOME/.local/share}:$HOME/.nix-profile/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 browser_exec=
+desktop_entry=
 for directory in "${data_dirs[@]}"; do
   entry=$directory/applications/$default_browser
   [[ -r $entry ]] || continue
+  desktop_entry=$entry
   browser_exec=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$entry" | head -1)
   break
 done
-# A user-owned Zen installation takes precedence over a remaining system RPM.
-if [[ $default_browser == zen.desktop || $default_browser == zen-browser.desktop ]] && [[ -x $HOME/.local/bin/zen-browser ]]; then
-  browser_exec=$HOME/.local/bin/zen-browser
+[[ -n $desktop_entry ]] || { echo "The default browser entry is unavailable: $default_browser" >&2; exit 1; }
+# Let GLib interpret the full desktop entry, including Flatpak commands,
+# quoted paths and browser-supplied launch arguments.
+private=false
+for argument in "$@"; do [[ $argument != --private ]] || private=true; done
+if ! $private; then
+  exec systemd-run --user --quiet --collect --unit="strata-browser-$(date +%s%N)" \
+    --property=StandardOutput=null --property=StandardError=null \
+    uwsm-app -- gio launch "$desktop_entry" "$@"
 fi
 [[ -n $browser_exec ]] && command -v -- "$browser_exec" >/dev/null || {
   echo "The default browser entry is unavailable: $default_browser" >&2
@@ -25,7 +33,7 @@ fi
 }
 
 case "${default_browser,,}" in
-  *zen*|*firefox*) private_flag=--private-window ;;
+  *firefox*) private_flag=--private-window ;;
   *edge*) private_flag=--inprivate ;;
   *)
     if "$browser_exec" --help 2>/dev/null | grep -q MOZ_LOG; then private_flag=--private-window
@@ -47,6 +55,5 @@ if ! strata-cmd-browser-handoff "$browser_exec" "${arguments[@]}"; then
 fi
 if [[ -n $url && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
   focus_class=$(basename "$browser_exec" -stable)
-  [[ $default_browser != *zen* ]] || focus_class=zen
   strata-hyprland-focus-app "^${focus_class}.*$" || true
 fi

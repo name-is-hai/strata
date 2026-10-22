@@ -18,7 +18,7 @@ name=$(hyprctl monitors -j 2>/dev/null |
 # The greeter starts before this user's compositor exists, so persist Main
 # when the user saves the layout, never when a display temporarily disappears.
 if [[ ${1:-} == --save ]]; then
-  pkexec /usr/bin/strata-main-monitor-install "$name" || true
+  pkexec /usr/share/strata/bin/strata-main-monitor-install "$name" || true
 fi
 
 # XWayland can start just after Hyprland's start event. Give its RandR screen a

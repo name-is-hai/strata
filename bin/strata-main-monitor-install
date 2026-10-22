@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# strata:summary=Save the selected primary display for the greeter
+# strata:hidden=true
 set -euo pipefail
 
 output=${1:-}

@@ -38,11 +38,17 @@ sudo reboot
 The installer uses `install_weak_deps=False`, so Fedora does not add optional
 Node/npm documentation solely because Neovim is installed.
 
-## Zen Browser
+Fresh configurations start with the Lawson Night theme and its
+`wallhaven-1k6ljv.jpg` wallpaper. Existing theme and wallpaper selections are
+preserved during updates. The shipped selection is defined in
+[`defaults/theme.json`](defaults/theme.json).
 
-Zen is optional. Choose **Install Zen Browser** or run `strata-install-browser zen`
-to install its official tarball for your user. Zen then manages its own updates;
-other browser choices remain unchanged. See [Zen installation and RPM migration](docs/zen.md).
+## Browser
+
+Chromium is preinstalled. Install any other browser you prefer and make it the
+system default from that browser's settings. Strata's browser shortcuts follow
+the system default automatically. You can also select an installed desktop entry
+with `strata-default-browser org.example.Browser.desktop`.
 
 ## Strata update notifications
 

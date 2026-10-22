@@ -7,18 +7,13 @@
   "license": "MIT",
   "homepage": "https://github.com/marcho78/omarchy-stage-control",
   "description": "Theme-aware window and workspace stage with four-finger gestures",
-  "kinds": ["service", "panel", "bar-widget"],
+  "kinds": [
+    "service",
+    "panel"
+  ],
   "keepLoaded": true,
   "entryPoints": {
     "service": "Service.qml",
-    "panel": "Panel.qml",
-    "barWidget": "BarWidget.qml"
-  },
-  "barWidget": {
-    "displayName": "Stage",
-    "description": "Stores Stage settings without showing a bar item",
-    "category": "Workspaces",
-    "allowMultiple": false,
-    "defaultSection": "right"
+    "panel": "Panel.qml"
   }
 }

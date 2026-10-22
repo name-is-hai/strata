@@ -166,7 +166,10 @@ register_route() {
 }
 
 register_command() {
-  local file="$1"
+  local file="$1" magic=""
+  # Native helpers share the command directory but have no script metadata.
+  LC_ALL=C IFS= read -r -N 4 magic < "$file" || true
+  [[ $magic == $'\177ELF' ]] && return 0
   local file_binary="${file##*/}"
   local group=""
   local name=""

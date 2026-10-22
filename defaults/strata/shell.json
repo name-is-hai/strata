@@ -1,78 +1,107 @@
 {
-  "version": 1,
-  "idle": {
-    "lock": 300
-  },
   "bar": {
-    "position": "top",
-    "transparent": false,
     "centerAnchor": "strata.clock",
+    "enabled": true,
+    "id": "strata.bar",
     "layout": {
-      "left": [
+      "center": [
         {
-          "id": "strata.menu"
+          "id": "strata.privacy",
+          "showMicrophone": false
+        },
+        {
+          "discoveryEnabled": false,
+          "id": "strata.cast",
+          "lastTab": "screen"
+        },
+        {
+          "id": "strata.indicators"
         },
         {
           "id": "strata.system-update"
         },
         {
-          "id": "strata.workspaces"
-        },
-        {
-          "id": "strata.stage-control"
-        }
-      ],
-      "center": [
-        {
-          "id": "strata.indicators"
-        },
-        {
-          "id": "strata.clock",
+          "birthYear": 0,
           "format": "d MMM yyyy HH:mm:ss",
-          "formatAlt": "d MMM yyyy HH:mm:ss",
+          "formatAlt": "d MMMM 'W'ww yyyy",
+          "id": "strata.clock",
+          "lifeExpectancy": 90,
           "verticalFormat": "HH\n—\nmm"
         },
         {
-          "id": "strata.language-input"
+          "allowDefaultActionOnCardClick": true,
+          "alwaysShow": false,
+          "badge": "Highlight",
+          "browserGrouping": "hostname",
+          "compact": true,
+          "displayMode": "active",
+          "displayName": "",
+          "id": "strata.notifications",
+          "offerSnoozeWhenSharing": true,
+          "playSound": true,
+          "popupPosition": "top-center",
+          "showCountdown": true
+        }
+      ],
+      "left": [
+        {
+          "id": "strata.menu"
+        },
+        {
+          "id": "strata.workspaces"
+        },
+        {
+          "id": "strata.media"
         }
       ],
       "right": [
         {
-          "id": "strata.tray"
+          "hidden": [
+            "Fcitx",
+            "blueman",
+            "udiskie"
+          ],
+          "id": "strata.tray",
+          "pinned": []
         },
         {
-          "id": "strata.notifications",
-          "badge": "Highlight",
-          "alwaysShow": false,
-          "allowDefaultActionOnCardClick": true
-        },
-        {
-          "id": "strata.bluetooth",
-          "settingsCommand": "blueman-manager"
-        },
-        {
-          "id": "strata.network",
-          "settingsCommand": "nm-connection-editor"
-        },
-        {
-          "id": "strata.media"
+          "id": "strata.language-input"
         },
         {
           "id": "strata.audio"
         },
         {
-          "id": "strata.cast",
-          "discoveryEnabled": false,
-          "lastTab": "screen"
+          "id": "strata.bluetooth"
         },
         {
-          "id": "strata.power"
+          "id": "strata.network"
+        },
+        {
+          "id": "strata.power",
+          "showPercentage": false
         }
       ]
-    }
+    },
+    "position": "top",
+    "transparent": false
   },
-  "plugins": [],
   "disabledPlugins": [
-    "strata.microphone"
-  ]
+    "strata.active-window",
+    "strata.spacer"
+  ],
+  "idle": {
+    "lock": 300
+  },
+  "plugins": [
+    {
+      "desktopLayoutVersion": 1,
+      "dim": 50,
+      "groupByApp": true,
+      "id": "strata.stage-control",
+      "macShortcuts": true,
+      "threeFingerLeft": "off",
+      "threeFingerRight": "off"
+    }
+  ],
+  "version": 1
 }

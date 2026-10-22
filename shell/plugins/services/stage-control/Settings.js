@@ -106,21 +106,14 @@ function overrides(defaults, settings) {
   return out
 }
 
-// Strata Stage's own entry, without its id, from the copy of the bar configuration
-// the Strata shell hands plugins (its `barConfig`). With its bar icon, Strata Stage's
-// entry lives in bar.layout, where the shell's updateEntryInline() writes it.
-function entryInBar(barConfig, pluginId) {
-  var layout = isPlainObject(barConfig) && isPlainObject(barConfig.layout) ? barConfig.layout : {}
-  var sections = ["left", "center", "right"]
-  for (var s = 0; s < sections.length; s++) {
-    var entries = Array.isArray(layout[sections[s]]) ? layout[sections[s]] : []
-    for (var i = 0; i < entries.length; i++) {
-      var entry = entries[i]
-      if (isPlainObject(entry) && entry.id === pluginId) {
-        var copy = clone(entry)
-        delete copy.id
-        return copy
-      }
+// Strata Stage's top-level plugin entry, without the identifying id.
+function pluginEntry(config, pluginId) {
+  var entries = config && Array.isArray(config.plugins) ? config.plugins : []
+  for (var i = 0; i < entries.length; i++) {
+    if (isPlainObject(entries[i]) && entries[i].id === pluginId) {
+      var copy = clone(entries[i])
+      delete copy.id
+      return copy
     }
   }
   return {}

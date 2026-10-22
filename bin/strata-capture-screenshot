@@ -23,13 +23,10 @@ for arg in "$@"; do
   esac
 done
 
-# Strata Snip is the native frozen-frame selector. Prefer the per-user
-# installation even when an older UWSM session has not yet picked ~/.local/bin
-# up in PATH.
-snip_bin="${STRATA_SNIP_BIN:-}"
-if [[ -z $snip_bin && -x "$HOME/.local/bin/strata-snip" ]]; then
-  snip_bin="$HOME/.local/bin/strata-snip"
-elif [[ -z $snip_bin ]] && command -v strata-snip >/dev/null 2>&1; then
+# Packaged tools live in one canonical directory. Keep the explicit override
+# for development and the ImageMagick fallback when the native tool is absent.
+snip_bin="${STRATA_SNIP_BIN:-/usr/share/strata/bin/strata-snip}"
+if [[ -z ${STRATA_SNIP_BIN:-} && ! -x $snip_bin ]] && command -v strata-snip >/dev/null 2>&1; then
   snip_bin="$(command -v strata-snip)"
 fi
 if [[ -n $snip_bin && -x $snip_bin ]]; then

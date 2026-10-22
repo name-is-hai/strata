@@ -12,8 +12,8 @@ bin/strata-build-rpms desktop
 
 The `desktop` target builds only the desktop dependency metapackages.
 Use `bin/strata-build-rpms ghostty` or `uwsm` to build each application
-independently. Zen is a per-user, self-updating tarball installation and is
-not built or published as an RPM. See [Zen installation](zen.md).
+independently. Chromium is a Fedora dependency; Strata does not build a browser
+RPM or ship a browser-specific tarball installer.
 
 Use `all` to build every source package. Results are written to
 `build-output/RPMS/`. Test those RPMs in a VM. Publication uses CI-built

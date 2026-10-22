@@ -37,6 +37,87 @@ report() {
   jq -n --slurpfile manifest "$manifest" --arg token "$token" --arg source "$source" --arg status "$status" --arg notes "$notes" \
     '{id:$manifest[0].id,name:$manifest[0].name,version:$manifest[0].version,kinds:$manifest[0].kinds,token:$token,source:$source,status:$status,notes:$notes}'
 }
+# An absent folder may still have settings from an older uninstall. Require
+# actual owned data before reporting a successful cleanup.
+has_saved_plugin() {
+  local id=$1 file encoded review
+  file="$HOME/.config/strata/shell.json"
+  if [[ -f $file ]] && jq -e --arg id "$id" '
+    [ .bar.id?, .bar.centerAnchor?,
+      (.bar.layout? // {} | .[]? | .[]? | .id?),
+      (.plugins? // [] | .[]? | .id?),
+      (.disabledPlugins? // [] | .[]?),
+      (.cloneSourceRestores? // [] | .[]?),
+      (.disabledPluginEntries? // {} | keys[]?)
+    ] | any(. == $id)
+  ' "$file" >/dev/null 2>&1; then return 0; fi
+  file="$HOME/.local/state/strata/menu-usage.json"
+  encoded=${id//./%2E}
+  if [[ -f $file && ! -L $file ]] && jq -e --arg id "$id" --arg encoded "$encoded" '
+    (.entries // {} | keys) | any(
+      . == $id or . == ("setup.plugin-open-" + $encoded) or endswith(".entry-" + $encoded)
+    )
+  ' "$file" >/dev/null 2>&1; then return 0; fi
+  for review in "$cache_dir"/review-*; do
+    [[ -d $review && ! -L $review && -f $review/review.json && ! -L $review/review.json ]] || continue
+    if jq -e --arg id "$id" '.id == $id' "$review/review.json" >/dev/null 2>&1; then return 0; fi
+  done
+  return 1
+}
+
+# Disable keeps settings for re-enabling; removal permanently forgets them.
+forget_plugin() {
+  local id=$1 state_file temporary review encoded
+  source strata-shell-config
+  commit "$NORMALIZE
+    | .bar.layout |= with_entries(.value |= map(select(.id != \$id)))
+    | .plugins |= map(select(.id != \$id))
+    | if .bar.id == \$id then del(.bar.id, .bar.enabled) else . end
+    | if .bar.centerAnchor == \$id then del(.bar.centerAnchor) else . end
+    | if (.disabledPlugins | type) == \"array\" then
+        .disabledPlugins |= map(select(. != \$id))
+        | if .disabledPlugins == [] then del(.disabledPlugins) else . end
+      else . end
+    | if (.disabledPluginEntries | type) == \"object\" then
+        del(.disabledPluginEntries[\$id])
+        | if .disabledPluginEntries == {} then del(.disabledPluginEntries) else . end
+      else . end
+    | if (.cloneSourceRestores | type) == \"array\" then
+        .cloneSourceRestores |= map(select(. != \$id))
+        | if .cloneSourceRestores == [] then del(.cloneSourceRestores) else . end
+      else . end
+  " --arg id "$id"
+
+  # Only the menu's generated plugin rows belong to the removed plugin.
+  # Keep unrelated launcher history, including similarly named plugins.
+  state_file="$HOME/.local/state/strata/menu-usage.json"
+  if [[ -f $state_file && ! -L $state_file ]]; then
+    encoded=${id//./%2E}
+    temporary=$(mktemp "${state_file}.XXXXXX")
+    if jq --arg id "$id" --arg encoded "$encoded" '
+      if (.entries | type) == "object" then
+        .entries |= with_entries(select(
+          .key != ("setup.plugin-open-" + $encoded)
+          and (.key | endswith(".entry-" + $encoded) | not)
+          and .key != $id
+        ))
+      else . end
+    ' "$state_file" > "$temporary"; then
+      mv -- "$temporary" "$state_file"
+    else
+      rm -f -- "$temporary"
+      fail 'Could not clear plugin launcher history.'
+    fi
+  fi
+  # Inspection copies retain the same plugin code; discard only matching reviews.
+  for review in "$cache_dir"/review-*; do
+    [[ -d $review && ! -L $review && -f $review/review.json && ! -L $review/review.json ]] || continue
+    if jq -e --arg id "$id" '.id == $id' "$review/review.json" >/dev/null 2>&1; then
+      rm -rf -- "$review"
+    fi
+  done
+}
+
 case ${1:---help} in
   inspect)
     source=${2:-}; [[ -n $source ]] || fail 'Enter a local plugin folder or an HTTPS Git repository URL.'
@@ -92,11 +173,17 @@ case ${1:---help} in
   remove)
     id=${2:-}; safe_id "$id" || fail 'Only user-installed plugins can be removed.'
     target=$plugin_dir/$id
-    [[ ! -L $target && -d $target && -f $target/manifest.json ]] || fail 'User plugin not found.'
-    [[ $(jq -r .id "$target/manifest.json") == "$id" ]] || fail 'Plugin folder and manifest ID do not match.'
-    reply=$(strata-shell shell setPluginEnabled "$id" false)
-    [[ $reply == ok ]] || fail "Could not disable plugin before removal: $reply"
-    rm -rf -- "$target"
+    if [[ -e $target || -L $target ]]; then
+      [[ ! -L $target && -d $target && -f $target/manifest.json && ! -L $target/manifest.json ]] || fail 'Invalid user plugin folder.'
+      [[ $(jq -r .id "$target/manifest.json") == "$id" ]] || fail 'Plugin folder and manifest ID do not match.'
+      reply=$(strata-shell shell setPluginEnabled "$id" false)
+      [[ $reply == ok ]] || fail "Could not disable plugin before removal: $reply"
+    elif ! has_saved_plugin "$id"; then
+      fail "Plugin not found: $id (no installed files or saved entries)."
+    fi
+    # This also repairs stale configuration when a plugin was already deleted.
+    forget_plugin "$id"
+    [[ ! -d $target ]] || rm -rf -- "$target"
     strata-shell -q shell rescanPlugins >/dev/null || true
     jq -n --arg id "$id" '{id:$id,removed:true}'
     ;;

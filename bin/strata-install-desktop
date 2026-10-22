@@ -74,6 +74,10 @@ if (( EUID != 0 )); then
   exec sudo --preserve-env=STRATA_REPO_URL,STRATA_INSTALL_USER,STRATA_DOTFILES_REPO,STRATA_DOTFILES_DIR "$0" "${original_args[@]}"
 fi
 
+# sudo does not inherit the UWSM session PATH. Installed commands live here only.
+export STRATA_PATH=/usr/share/strata
+export PATH="$STRATA_PATH/bin:$PATH"
+
 has_nvidia_hardware() {
   local device
   for device in /sys/bus/pci/devices/*; do

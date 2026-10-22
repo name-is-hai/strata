@@ -21,12 +21,6 @@ repos:
         language: system
         pass_filenames: false
         files: ^(bin/strata-(release-version|package-version)|packaging/|scripts/tests/release-version.sh)
-      - id: strata-user-zen
-        name: test self-updating Zen installation and profile migration
-        entry: bash scripts/tests/zen-install.sh
-        language: system
-        pass_filenames: false
-        files: ^(bin/strata-(install-zen|install-browser|default-browser)|defaults/(applications/zen.desktop|browser/zen-browser)|scripts/tests/zen-install.sh)
       - id: strata-default-browser
         name: test system default browser selection and launch
         entry: bash scripts/tests/default-browser.sh

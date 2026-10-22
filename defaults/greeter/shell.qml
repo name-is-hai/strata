@@ -42,7 +42,7 @@ ShellRoot {
     onTriggered: {
       if (!root.activeScreenName) return
       cursorMove.running = false
-      cursorMove.command = ["/usr/bin/strata-place-cursor-on-main", root.activeScreenName]
+      cursorMove.command = ["/usr/share/strata/bin/strata-place-cursor-on-main", root.activeScreenName]
       cursorMove.running = true
     }
   }
@@ -71,7 +71,7 @@ ShellRoot {
 
   Process {
     id: bridge
-    command: ["/usr/bin/strata-greetd-ipc"]
+    command: ["/usr/share/strata/bin/strata-greetd-ipc"]
     running: true
     stdinEnabled: true
     stdout: SplitParser {

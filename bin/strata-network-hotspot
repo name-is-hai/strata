@@ -2,7 +2,7 @@
 # strata:summary=Manage the Strata Wi-Fi hotspot
 set -euo pipefail
 PROFILE=StrataHotspot
-helper=/usr/bin/strata-hotspot-ap
+helper=/usr/share/strata/bin/strata-hotspot-ap
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/strata"
 blocked_file="$state_dir/hotspot-blocked"
 allowed_file="$state_dir/hotspot-allowed"

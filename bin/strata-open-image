@@ -10,14 +10,12 @@ if (( $# != 1 )) || [[ ! -f $1 || ! -r $1 ]]; then
   exit 2
 fi
 
-# Desktop applications do not necessarily inherit the interactive shell PATH.
-# Keep local development builds usable without putting a user's path in a
-# system desktop entry; packaged installations resolve the binary from PATH.
-if [[ -x $HOME/.local/bin/strata-snip ]]; then
-  snip_bin=$HOME/.local/bin/strata-snip
-elif command -v strata-snip >/dev/null 2>&1; then
+# Desktop applications can start outside UWSM, so prefer the packaged path.
+snip_bin="${STRATA_SNIP_BIN:-/usr/share/strata/bin/strata-snip}"
+if [[ -z ${STRATA_SNIP_BIN:-} && ! -x $snip_bin ]] && command -v strata-snip >/dev/null 2>&1; then
   snip_bin=$(command -v strata-snip)
-else
+fi
+if [[ ! -x $snip_bin ]]; then
   echo 'strata-open-image: Strata Snip is not installed' >&2
   exit 1
 fi

@@ -16,6 +16,8 @@ QtObject {
   property var bar: null
   property var barConfig: ({})
   property var idleConfig: ({})
+  // Only this plugin's top-level settings, never another plugin's config.
+  property var pluginConfig: ({})
 
   property var _serviceLookup: null
   property var _firstPartyServiceLookup: null

@@ -48,8 +48,12 @@ their own geometry inside the shared canvas.
 
 Built-ins can be disabled; only user-installed plugins can be
 uninstalled. A disabled plugin retains its settings and bar position for
-re-enabling. Plugins that provide a service and bar widget stop both when
-disabled. The selected bar can also be disabled; the menu and shortcuts remain
+re-enabling. Uninstalling a user plugin permanently removes its folder, all bar
+placements, saved settings and positions, disabled markers, clone restore markers,
+generated launcher history and matching installer review copies. Running
+`strata-plugin remove <id>` also clears leftovers from an earlier uninstall.
+An ID with no installed files or saved data returns a not-found error.
+Plugins that provide a service and bar widget stop both when disabled. The selected bar can also be disabled; the menu and shortcuts remain
 available to turn it back on, with its widget layout preserved.
 
 Installation accepts an HTTPS Git repository or a local folder with a root
@@ -69,7 +73,7 @@ extensions need adapting to Strata's plugin contract before installation.
 | Bluetooth     | `strata.bluetooth`       | `bar-widget`            | `panels/bluetooth/Panel.qml`          |
 | Clock         | `strata.clock`           | `bar-widget`            | `panels/clock/BarWidget.qml`          |
 | Display Layout | `strata.monitor`        | `panel`                 | `panels/monitor/Panel.qml`            |
-| Mouse         | `strata.mouse`           | `service`, `bar-widget` | `panels/mouse/Service.qml`, `panels/mouse/Panel.qml` |
+| Mouse         | `strata.mouse`           | `service`, `panel` | `panels/mouse/Service.qml`, `panels/mouse/Panel.qml` |
 | Privacy       | `strata.privacy`          | `service` | `services/privacy/Service.qml` |
 | Network       | `strata.network`         | `bar-widget`            | `panels/network/Panel.qml`            |
 | Battery & power | `strata.power`         | `service`, `bar-widget`  | `panels/power/Service.qml`, `panels/power/Panel.qml` |
@@ -79,7 +83,7 @@ extensions need adapting to Strata's plugin contract before installation.
 | Night light   | `strata.nightlight`      | `service`               | `services/nightlight/Service.qml`     |
 | Cursor locator | `strata.wiggle` | `service` | `services/wiggle/Service.qml` |
 | Window switcher | `strata.window-switcher` | `service`             | `services/window-switcher/Service.qml` |
-| Stage         | `strata.stage-control`  | `service`, `panel`, `bar-widget` | `services/stage-control/Service.qml` |
+| Stage         | `strata.stage-control`  | `service`, `panel` | `services/stage-control/Service.qml` |
 | Lock screen   | `strata.lock`            | `service`               | `lock/Service.qml`                    |
 | OSD           | `strata.osd`             | `panel`                 | `osd/Osd.qml`                         |
 | Polkit agent  | `strata.polkit`          | `service`               | `polkit/PolkitAgent.qml`              |

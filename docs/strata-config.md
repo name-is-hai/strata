@@ -394,7 +394,7 @@ repository. `packaging/strata-config.spec` maps the desktop source as follows.
 
 | Source                          | Installed path                       |
 | ------------------------------- | ------------------------------------ |
-| `bin/`                          | `/usr/bin` and `/usr/share/strata/bin` |
+| `bin/` and bundled executables   | `/usr/share/strata/bin` only          |
 | `shell/`                        | `/usr/share/strata/shell`            |
 | `defaults/`                     | `/usr/share/strata/default` (Strata shell config also under `/usr/share/strata/config/strata`) |
 | `themes/`                       | `/usr/share/strata/themes`           |
@@ -402,6 +402,12 @@ repository. `packaging/strata-config.spec` maps the desktop source as follows.
 | `runtime-version`               | `/usr/share/strata/version`          |
 | `config/hypr`, `config/uwsm`, `config/xdg-desktop-portal` | `/usr/share/strata/user-config` |
 | `scripts/`                      | Development tests and Git-hook adapter; not installed |
+
+Commands have one installed location: `/usr/share/strata/bin`, with no copies
+or compatibility links in `/usr/bin`. UWSM adds it to `PATH`; the greeter and
+installer initialize it themselves, and system services and privileged helpers
+use absolute paths. Outside a Strata session, use the full command path or add
+`export PATH=/usr/share/strata/bin:$PATH` to that session's environment.
 
 `defaults/` is the single source directory for shipped desktop defaults, assets,
 and templates. Its `strata/` subdirectory also contains shell defaults,

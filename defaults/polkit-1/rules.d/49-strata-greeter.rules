@@ -6,10 +6,10 @@
 // accepts only connector names and boolean states, publishing a fixed list.
 polkit.addRule(function(action, subject) {
     if (action.id === "org.freedesktop.policykit.exec" &&
-        (action.lookup("program") === "/usr/bin/strata-greeter-background-install" ||
-         action.lookup("program") === "/usr/bin/strata-greeter-theme-install" ||
-         action.lookup("program") === "/usr/bin/strata-greeter-monitors-install" ||
-         action.lookup("program") === "/usr/bin/strata-main-monitor-install") &&
+        (action.lookup("program") === "/usr/share/strata/bin/strata-greeter-background-install" ||
+         action.lookup("program") === "/usr/share/strata/bin/strata-greeter-theme-install" ||
+         action.lookup("program") === "/usr/share/strata/bin/strata-greeter-monitors-install" ||
+         action.lookup("program") === "/usr/share/strata/bin/strata-main-monitor-install") &&
         subject.local && subject.active) {
         return polkit.Result.YES;
     }

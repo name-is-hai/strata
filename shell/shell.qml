@@ -51,7 +51,7 @@ ShellRoot {
         right: [{ id: "strata.audio" }]
       }
     },
-    plugins: []
+    plugins: [{ id: "strata.stage-control" }]
   })
 
   property var defaultsConfig: builtinShellConfig
@@ -391,6 +391,15 @@ ShellRoot {
     return shell.serviceFor(shell.pluginRegistry.resolveEnabledId(requestedId))
   }
 
+  function publicPluginConfig(pluginId) {
+    var entries = shell.shellConfig && Array.isArray(shell.shellConfig.plugins) ? shell.shellConfig.plugins : []
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i] && entries[i].id === pluginId)
+        return JSON.parse(JSON.stringify(entries[i]))
+    }
+    return { id: pluginId }
+  }
+
   function barEntryConfigured(pluginId) {
     var location = shell.pluginRegistry.findEntryLocation(shell.shellConfig, pluginId)
     return location && location.kind === "bar"
@@ -601,6 +610,7 @@ ShellRoot {
       bar: shell.pluginBarStateFor(cacheKey, key),
       barConfig: shell.publicBarConfig(),
       idleConfig: shell.publicIdleConfigFor(manifest),
+      pluginConfig: shell.publicPluginConfig(key),
       _serviceLookup: function(requestedId) {
         return allowOwnService ? shell.pluginServiceFor(key, requestedId) : null
       },
@@ -867,6 +877,7 @@ ShellRoot {
       var shellManifest = descriptor ? plugins[descriptor.pluginId] : null
       shellApi.barConfig = shell.publicBarConfig()
       shellApi.idleConfig = shell.publicIdleConfigFor(shellManifest)
+      shellApi.pluginConfig = shell.publicPluginConfig(shellApi.pluginId)
     }
     for (var entryKey in _pluginBarEntryShellApis)
       _pluginBarEntryShellApis[entryKey].barConfig = shell.publicBarConfig()

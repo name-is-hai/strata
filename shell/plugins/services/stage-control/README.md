@@ -11,4 +11,5 @@ Stage owns four-finger vertical swipes: up opens the full window and desktop
 stage, down opens the current app's windows. The existing four-finger horizontal
 swipe remains Hyprland's native workspace gesture. The stage uses Strata's
 accent, surface colors, font, wallpaper, menu, and lock command. Its settings
-are stored on the `strata.stage-control` bar entry in Strata's `shell.json`.
+are stored in the `strata.stage-control` entry in `shell.json`'s top-level
+`plugins` array. Stage has no bar widget.

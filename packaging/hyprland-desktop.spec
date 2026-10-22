@@ -105,7 +105,7 @@ the Strata Hyprland session.
 %package apps
 Summary:        Fedora applications for the Strata desktop
 
-# Standalone web apps; Zen is installed per user and updates itself.
+# Preinstalled browser and standalone web apps.
 Requires:       chromium
 
 # File management, archives, previews, and storage administration.

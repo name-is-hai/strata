@@ -40,11 +40,8 @@ Item {
 
   // ---- settings ----------------------------------------------------------------
   //
-  // Strata Stage reads and writes no files. It keeps its
-  // settings inline on its own shell.json entry (only what differs from
-  // Defaults.js), together with the desktops it keeps: the shell writes the
-  // entry (updateEntryInline) and hands plugins a copy of the bar
-  // configuration it lives in (barConfig), which is where Strata Stage reads it back.
+  // The shell stores overrides and saved desktops in shell.json's plugins[].
+  // Stage has no bar entry and performs no configuration file IO itself.
 
   readonly property var defaults: Defaults.DEFAULTS
   readonly property var schema: Defaults.SCHEMA
@@ -54,21 +51,22 @@ Item {
 
   readonly property string uiFont: Style.font.family
 
-  // Strata Stage's entry as the shell last saved it: settings, kept desktops
-  // and desktop names.
-  //
-  // While the shell saves an entry it hands plugins a copy of its configuration
-  // from just before the save, and nothing refreshes that copy afterwards. So a
-  // copy that arrives during Strata Stage's own save, or that still shows the entry as
-  // it was before that save, is old news and must not undo it.
   property bool saving: false
-  property string entryBeforeSave: ""
+
+  function currentEntry() {
+    if (!shell) return {}
+    // First-party services receive the host; local clones get only their own config.
+    if ("pluginConfig" in shell) {
+      var entry = Settings.clone(shell.pluginConfig || {})
+      delete entry.id
+      return entry
+    }
+    return Settings.pluginEntry(shell.shellConfig, pluginId)
+  }
 
   function loadEntry() {
     if (saving || persistTimer.running) return
-    var entry = Settings.entryInBar(shell ? shell.barConfig : null, pluginId)
-    if (entryBeforeSave !== "" && JSON.stringify(entry) === entryBeforeSave) return
-    entryBeforeSave = ""
+    var entry = currentEntry()
     var oldLayout = entry.desktopLayoutVersion !== 1
     pinned = oldLayout ? Model.upgradeLegacyDesktops(entry.desktops) : Model.cleanDesktops(entry.desktops)
     pinnedVersion++
@@ -86,7 +84,8 @@ Item {
   Connections {
     target: root.shell
     ignoreUnknownSignals: true
-    function onBarConfigChanged() { root.loadEntry() }
+    function onShellConfigChanged() { root.loadEntry() }
+    function onPluginConfigChanged() { root.loadEntry() }
   }
 
   function setSetting(key, value) {
@@ -111,7 +110,6 @@ Item {
       entry.desktopLayoutVersion = 1
       if (Object.keys(root.pinned).length > 0) entry.desktops = Settings.clone(root.pinned)
       if (Object.keys(root.desktopNames).length > 0) entry.desktopNames = Settings.clone(root.desktopNames)
-      root.entryBeforeSave = JSON.stringify(Settings.entryInBar(root.shell.barConfig, root.pluginId))
       root.saving = true
       try {
         root.shell.updateEntryInline(root.pluginId, entry)

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# strata:summary=Launch the greeter after the Wayland socket is ready
+# strata:hidden=true
 set -u
 runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 wayland_display=${WAYLAND_DISPLAY:-}
