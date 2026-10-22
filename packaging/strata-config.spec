@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.4
+Version:        1.1.5
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -219,6 +219,8 @@ install -Dpm 0644 defaults/udev/70-strata-wiggle.rules %{buildroot}%{_prefix}/li
 install -d %{buildroot}%{_datadir}/strata/user-config
 cp -a config/hypr config/uwsm config/xdg-desktop-portal config/gtk-3.0 config/gtk-4.0 config/imv \
     %{buildroot}%{_datadir}/strata/user-config/
+install -Dpm 0644 defaults/strata/shell.toml \
+    %{buildroot}%{_datadir}/strata/user-config/strata/shell.toml
 
 install -d %{buildroot}%{_datadir}/icons
 cp -a defaults/icons/Win11OSX %{buildroot}%{_datadir}/icons/
@@ -227,7 +229,7 @@ install -d %{buildroot}%{_datadir}/strata/default
 cp -a defaults/. %{buildroot}%{_datadir}/strata/default/
 
 install -d %{buildroot}%{_datadir}/strata/config/strata
-cp -a defaults/strata/shell.json defaults/strata/extensions defaults/strata/hooks \
+cp -a defaults/strata/shell.json defaults/strata/shell.toml defaults/strata/extensions defaults/strata/hooks \
     %{buildroot}%{_datadir}/strata/config/strata/
 
 install -Dpm 0644 systemd/strata-stay-awake.service \
@@ -381,6 +383,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.5-1
+- Add scrollable display layout and compact resolution selection
+- Set compact bar defaults and document personal shell overrides
+- Stop installing personal dotfiles during desktop setup
+
 * Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.4-1
 - Route volume up, volume down and mute directly to the running shell
 - Preserve held-key repeat, lock-screen bindings and routing-aware fallback for virtual outputs

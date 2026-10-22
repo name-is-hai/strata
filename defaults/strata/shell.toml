@@ -1,0 +1,26 @@
+# Personal shell appearance overrides. Uncomment only what you want to change.
+# Missing settings inherit from the current theme; changes apply live.
+#
+# Full current-theme settings and values:
+#   ~/.local/state/strata/current/theme/shell.toml
+# Documented source template ({{ ... }} expressions are theme-generated colors):
+#   /usr/share/strata/default/themed/shell.toml.tpl
+#
+# Examples below are reference values, not active overrides. Bar dimensions
+# are measured at a 12px base font and scale with text when enabled.
+
+[font]
+# base-size = 14           # Base text size in pixels
+
+[bar]
+# scale-with-font = true  # Scale bar dimensions and icons with base-size
+# size-horizontal = 26    # Height of a top/bottom bar
+# size-vertical = 25      # Width of a left/right bar
+# icon-size = 11          # Visible icon artwork size
+# icon-slot = 23          # Space reserved for a regular icon
+# status-slot = 21        # Space reserved for each status indicator
+
+[spacing]
+# scale = 1.0             # Multiplier for shared spacing and control sizes
+# scale-with-font = true  # Scale spacing with base-size
+# panel-padding = 18      # Override an individual spacing token in pixels

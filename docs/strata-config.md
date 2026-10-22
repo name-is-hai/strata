@@ -38,6 +38,34 @@ Secret Service clients use the login keyring unlocked with your login password.
 The keyring password must match the login password; passwordless logins can
 still require a separate unlock. Existing keyring data is retained.
 
+## Shell appearance overrides
+
+`~/.config/strata/shell.toml` contains personal overrides, not a complete copy
+of the theme. Missing keys inherit the current theme's values. Changes apply
+live, and your overrides survive theme changes.
+
+Fresh configuration includes commented examples for text size, bar dimensions,
+icons, and spacing. For the full settings and values supplied by your current
+theme, open `~/.local/state/strata/current/theme/shell.toml`. The documented
+source template is `/usr/share/strata/default/themed/shell.toml.tpl`
+([source](../defaults/themed/shell.toml.tpl)); its `{{ ... }}` expressions are
+rendered into colors when applying a theme.
+
+Copy only the sections and keys you want to override into your personal file.
+For example:
+
+```toml
+[font]
+base-size = 16
+
+[bar]
+icon-size = 18
+```
+
+Avoid copying all theme colors into your overrides unless you want those colors
+to stay fixed when switching themes. Existing user files remain unchanged when
+running `strata-apply-config` without `--force`.
+
 ## Bar icon size
 
 Set `[bar] icon-size = 16` in `~/.config/strata/shell.toml` to size bar

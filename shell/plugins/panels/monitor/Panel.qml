@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -167,21 +168,12 @@ Panel {
   }
 
   function refreshRatesForCurrent() {
-    if (!current) return []
-    var prefix = current.width + "x" + current.height + "@"
-    var seen = ({})
-    var rates = []
-    var modes = current.availableModes || []
-    for (var i = 0; i < modes.length; i++) {
-      var text = String(modes[i] || "")
-      if (text.indexOf(prefix) !== 0) continue
-      var rate = parseFloat(text.slice(prefix.length))
-      if (!(rate > 0)) continue
-      var key = String(Math.round(rate * 100))
-      if (!seen[key]) { seen[key] = true; rates.push(rate) }
-    }
-    rates.sort(function(a, b) { return a - b })
-    return rates
+    return current ? Logic.refreshRates(current, current.width, current.height) : []
+  }
+
+  function setCurrentResolution(width, height) {
+    if (!current) return
+    arrangement = Logic.setResolution(arrangement, selected, width, height)
   }
 
   function refreshLabel(rate) {
@@ -293,6 +285,7 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
+      viewport.contentY = 0
       error = ""
       lastSide = ""
       brightnessByMonitor = ({})
@@ -503,7 +496,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(viewport.contentHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -524,11 +517,34 @@ Panel {
         else if (text === "u") root.discard()
       }
 
+      Flickable {
+        id: viewport
+        objectName: "displayLayoutViewport"
+        readonly property int controlInset: Math.max(1, Style.space(2))
+        anchors.fill: parent
+        clip: true
+        contentWidth: width
+        contentHeight: column.implicitHeight + controlInset * 2
+        flickableDirection: Flickable.VerticalFlick
+        boundsBehavior: Flickable.StopAtBounds
+        onHeightChanged: returnToBounds()
+        ScrollBar.vertical: PanelScrollBar {
+          id: scrollBar
+          foreground: root.foreground
+          parent: viewport.parent
+          anchors.top: viewport.top
+          anchors.bottom: viewport.bottom
+          anchors.right: viewport.right
+          anchors.rightMargin: Style.space(4) - panel.padding
+        }
+      }
+
       Column {
         id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        parent: viewport.contentItem
+        x: viewport.controlInset
+        y: viewport.controlInset
+        width: Math.max(0, viewport.width - viewport.controlInset * 2)
         spacing: Style.space(12)
 
         // ---------- Hero: icon · title/status · actions ----------
@@ -684,6 +700,7 @@ Panel {
               MouseArea {
                 id: grab
                 anchors.fill: parent
+                preventStealing: true
                 hoverEnabled: true
                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 property real grabX: 0
@@ -957,6 +974,36 @@ Panel {
               }
             }
 
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              text: "RESOLUTION"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Dropdown {
+              id: resolutionPicker
+              objectName: "displayResolutionPicker"
+              width: parent.width
+              showLabel: false
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              updateValueOnSelection: false
+              value: root.current ? root.current.width + "x" + root.current.height : ""
+              options: Logic.resolutions(root.current).map(function(mode) {
+                return { value: mode.width + "x" + mode.height,
+                  label: mode.width + " × " + mode.height }
+              })
+              onChanged: function(value) {
+                var dimensions = value.split("x")
+                root.setCurrentResolution(Number(dimensions[0]), Number(dimensions[1]))
+              }
+            }
           }
 
           Column {

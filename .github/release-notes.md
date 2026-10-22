@@ -1,4 +1,5 @@
-# Strata 1.1.8
+# Strata 1.1.9
 
-- Send volume shortcuts directly to the running shell instead of launching a script per press
-- Preserve volume steps, held-key repeat and routing-aware fallback for virtual outputs
+- Add a scrollable Display Layout panel with a compact resolution selector.
+- Use compact bar defaults and provide documented shell appearance overrides.
+- Remove automatic personal dotfiles installation.

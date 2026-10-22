@@ -3,7 +3,6 @@
 set -euo pipefail
 
 repo_url=${STRATA_REPO_URL:-https://name-is-hai.github.io/strata}
-dotfiles_repo=${STRATA_DOTFILES_REPO:-https://github.com/name-is-hai/dotfiles.git}
 enable_greetd=0
 install_user=${STRATA_INSTALL_USER:-${SUDO_USER:-}}
 local_rpms_dir=
@@ -56,8 +55,7 @@ Installs the Strata desktop from the configured static DNF repository.
   --nvidia-only     Install/configure NVIDIA only, then exit.
 
 When run as a normal user, the installer also applies Strata's user
-configuration and personal dotfiles for that user without replacing existing
-configuration files.
+configuration for that user without replacing existing configuration files.
 USAGE
       exit 0
       ;;
@@ -71,7 +69,7 @@ done
 
 if (( EUID != 0 )); then
   export STRATA_INSTALL_USER=${install_user:-$USER}
-  exec sudo --preserve-env=STRATA_REPO_URL,STRATA_INSTALL_USER,STRATA_DOTFILES_REPO,STRATA_DOTFILES_DIR "$0" "${original_args[@]}"
+  exec sudo --preserve-env=STRATA_REPO_URL,STRATA_INSTALL_USER "$0" "${original_args[@]}"
 fi
 
 # sudo does not inherit the UWSM session PATH. Installed commands live here only.
@@ -246,34 +244,6 @@ if [[ -n $install_user ]]; then
     else
       echo "Could not install Mise; rerun the installer once network access is available." >&2
     fi
-  fi
-
-  # Personal dotfiles remain a separate, portable repository. Clone it into
-  # the conventional personal project location on a first install; on later
-  # runs only fast-forward an existing Git checkout and never replace an
-  # unrelated directory.
-  dotfiles_dir=${STRATA_DOTFILES_DIR:-"$install_home/Project/dotfiles"}
-  dotfiles_ready=0
-  if [[ -d $dotfiles_dir/.git ]]; then
-    if runuser -u "$install_user" -- env HOME="$install_home" git -C "$dotfiles_dir" pull --ff-only; then
-      dotfiles_ready=1
-    else
-      echo "Could not update dotfiles at $dotfiles_dir; leaving the existing checkout untouched." >&2
-    fi
-  elif [[ -e $dotfiles_dir ]]; then
-    echo "Not replacing existing non-Git dotfiles directory: $dotfiles_dir" >&2
-  else
-    runuser -u "$install_user" -- install -d "$(dirname "$dotfiles_dir")"
-    if runuser -u "$install_user" -- env HOME="$install_home" git clone "$dotfiles_repo" "$dotfiles_dir"; then
-      dotfiles_ready=1
-    else
-      echo "Could not clone personal dotfiles from $dotfiles_repo." >&2
-    fi
-  fi
-
-  if (( dotfiles_ready )); then
-    runuser -u "$install_user" -- env HOME="$install_home" \
-      XDG_CONFIG_HOME="$install_home/.config" bash "$dotfiles_dir/install.sh"
   fi
 
   if (( restart_shell )); then

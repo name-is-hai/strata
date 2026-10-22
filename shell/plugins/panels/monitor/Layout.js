@@ -355,6 +355,62 @@ function setScale(rects, index, scale) {
   return move(out, index, cx - me.w / 2, cy - me.h / 2)
 }
 
+function resolutions(monitor) {
+  if (!monitor) return []
+  var result = [{ width: monitor.width, height: monitor.height }]
+  var seen = ({})
+  seen[monitor.width + "x" + monitor.height] = true
+  var modes = monitor.availableModes || []
+  for (var i = 0; i < modes.length; i++) {
+    var match = /^(\d+)x(\d+)@/.exec(String(modes[i]))
+    if (!match || !(Number(match[1]) > 0) || !(Number(match[2]) > 0)) continue
+    var key = Number(match[1]) + "x" + Number(match[2])
+    if (seen[key]) continue
+    seen[key] = true
+    result.push({ width: Number(match[1]), height: Number(match[2]) })
+  }
+  result.sort(function(a, b) { return b.width * b.height - a.width * a.height || b.width - a.width })
+  return result
+}
+
+function refreshRates(monitor, width, height) {
+  if (!monitor) return []
+  var prefix = width + "x" + height + "@"
+  var rates = []
+  var modes = monitor.availableModes || []
+  for (var i = 0; i < modes.length; i++) {
+    var text = String(modes[i])
+    if (text.indexOf(prefix) !== 0) continue
+    var rate = parseFloat(text.slice(prefix.length))
+    if (!(rate > 0) || !isFinite(rate)) continue
+    if (!rates.some(function(existing) { return Math.abs(existing - rate) < 0.01 })) rates.push(rate)
+  }
+  rates.sort(function(a, b) { return a - b })
+  return rates
+}
+
+function setResolution(rects, index, width, height) {
+  var out = copy(rects)
+  var me = out[index]
+  if (!me) return out
+  var rates = refreshRates(me, width, height)
+  if (rates.length === 0) return out
+  var cx = me.x + me.w / 2
+  var cy = me.y + me.h / 2
+  // Prefer the closest supported rate; for equal distances choose the higher.
+  var rate = rates[0]
+  for (var i = 1; i < rates.length; i++) {
+    if (Math.abs(rates[i] - me.refreshRate) <= Math.abs(rate - me.refreshRate)) rate = rates[i]
+  }
+  me.width = Number(width)
+  me.height = Number(height)
+  me.refreshRate = rate
+  var size = logicalSize(me.width, me.height, me.scale, me.transform)
+  me.w = size.w
+  me.h = size.h
+  return move(out, index, cx - me.w / 2, cy - me.h / 2)
+}
+
 function setRefreshRate(rects, index, refreshRate) {
   var out = copy(rects)
   var me = out[index]
@@ -410,7 +466,8 @@ function sameLayout(a, b) {
   for (var i = 0; i < a.length; i++) {
     if (a[i].name !== b[i].name || a[i].x !== b[i].x || a[i].y !== b[i].y) return false
     if (a[i].disabled !== b[i].disabled || a[i].mirrorOf !== b[i].mirrorOf) return false
-    if (a[i].transform !== b[i].transform || a[i].workspace !== b[i].workspace
+    if (a[i].width !== b[i].width || a[i].height !== b[i].height
+        || a[i].transform !== b[i].transform || a[i].workspace !== b[i].workspace
         || a[i].scale !== b[i].scale || Math.abs(a[i].refreshRate - b[i].refreshRate) > 0.01) return false
   }
   return true
@@ -533,6 +590,8 @@ function isSaved(text, monitors, workspaces) {
     }
     var mirror = /mirror\s*=\s*(["'])(.*?)\1/.exec(block.text)
     if ((mirror ? mirror[2] : "") !== String(monitors[i].mirrorOf || "")) return false
+    var mode = MODE_FIELD.exec(block.text)
+    if (!mode || mode[2] !== modeString(monitors[i])) return false
     var position = block ? POSITION_FIELD.exec(block.text) : null
     if (!position || position[2] !== positionString(monitors[i])) return false
 
@@ -628,6 +687,7 @@ function liveOf(monitor, live) {
 function isUnmoved(monitor, live) {
   var before = liveOf(monitor, live)
   return before !== null && before.x === monitor.x && before.y === monitor.y
+    && before.width === monitor.width && before.height === monitor.height
     && before.transform === monitor.transform && before.scale === monitor.scale
     && before.disabled === monitor.disabled && before.mirrorOf === monitor.mirrorOf
     && Math.abs(before.refreshRate - monitor.refreshRate) <= 0.01

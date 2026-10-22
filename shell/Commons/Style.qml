@@ -304,7 +304,7 @@ QtObject {
 
   function barTokenUnscaledCanvas() {
     var legacy = Number(barOverrides["icon-canvas"])
-    return isFinite(legacy) && legacy > 0 ? legacy : 16
+    return isFinite(legacy) && legacy > 0 ? legacy : 11
   }
 
   function boolToken(value, fallback) {
@@ -346,8 +346,8 @@ QtObject {
 
   readonly property QtObject bar: QtObject {
     readonly property int sizeHorizontal: root.barToken("size-horizontal", 26)
-    readonly property int sizeVertical:   root.barToken("size-vertical",   28)
-    readonly property int iconSlot:       root.barToken("icon-slot",       27)
+    readonly property int sizeVertical:   root.barToken("size-vertical",   25)
+    readonly property int iconSlot:       root.barToken("icon-slot",       23)
     // One visual size; retain the old property names for plugin compatibility.
     // Older themes can still supply icon-canvas, but icon-font is derived.
     readonly property int iconSize:       root.barToken("icon-size", root.barTokenUnscaledCanvas())

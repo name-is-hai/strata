@@ -14,7 +14,7 @@ active           = "{{ red }}"
 # scale-with-font enabled, these grow/shrink with [font] base-size.
 scale-with-font  = true
 size-horizontal  = 26
-size-vertical    = 28
+size-vertical    = 25
 
 # Bar icon geometry, in px. Override these in a theme or in
 # ~/.config/strata/shell.toml.
@@ -35,8 +35,8 @@ size-vertical    = 28
 # icon-size   = 18
 # status-slot = 23
 #
-icon-slot   = 27
-icon-size   = 16
+icon-slot   = 23
+icon-size   = 11
 status-slot = 21
 
 [hyprland]
