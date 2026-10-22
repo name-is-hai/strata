@@ -42,8 +42,7 @@ Panel {
     function settings(): string { root.openSettings(); return "ok" }
     function options(page: string): string {
       if (["main", "snooze", "sources"].indexOf(page) < 0) return "invalid"
-      moreMenu.open()
-      moreMenu.page = page
+      root.showOptions(page)
       return "ok"
     }
     function state(): string { return JSON.stringify({open:root.opened,settings:root.editingSettings,entries:root.entries.length,rows:root.rows.length,error:root.settingsError}) }
@@ -77,6 +76,61 @@ Panel {
 
   readonly property bool dnd: store ? store.doNotDisturb : false
   function toggleDnd() { if (store) store.toggleDnd() }
+  readonly property bool hasSnoozes: !!root.service && root.service.anySnooze
+  onHasSnoozesChanged: if (!hasSnoozes && moreMenu.page === "sources") moreMenu.close()
+  function showOptions(page) {
+    if (page === "sources" && !hasSnoozes) return
+    if (moreMenu.visible) moreMenu.page = page
+    else { moreMenu.requestedPage = page; moreMenu.open() }
+  }
+
+  function snoozeTimeLeft(until) {
+    var minutes = Math.max(0, Math.ceil((Number(until) * 1000 - root.now) / 60000))
+    if (minutes === 0) return root.tr("Resuming…")
+    var hours = Math.floor(minutes / 60)
+    var remaining = minutes % 60
+    var duration = hours > 0 ? hours + "h" + (remaining ? " " + remaining + "m" : "") : minutes + "m"
+    return root.tr("%1 left", duration)
+  }
+
+  component SnoozedSourceRow: Button {
+    id: sourceRow
+    required property string sourceKey
+    required property string sourceLabel
+    required property double snoozedUntil
+    readonly property string timeLeft: root.snoozeTimeLeft(snoozedUntil)
+    height: Style.space(30)
+    tooltipText: sourceLabel + " · " + timeLeft
+    Accessible.name: tooltipText
+    focusable: true
+    foreground: root.foreground
+    onClicked: { root.service.unsnooze(sourceKey); moreMenu.close() }
+
+    Text {
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(10)
+      anchors.right: remainingTime.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      text: sourceRow.sourceLabel
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      color: root.foreground
+    }
+    Text {
+      id: remainingTime
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      text: sourceRow.timeLeft
+      textFormat: Text.PlainText
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      color: Util.alpha(root.foreground, 0.65)
+    }
+  }
 
   property bool editingSettings: false
   property string settingsError: ""
@@ -527,7 +581,7 @@ Panel {
             id: title
             anchors.left: parent.left
             anchors.leftMargin: Style.space(16)
-            width: Math.max(0, searchControl.x - x - Style.space(8))
+            width: Math.max(0, silenceSwitch.x - x - Style.space(8))
             opacity: root.searching ? 0 : 1
             visible: opacity > 0
             Behavior on opacity { NumberAnimation { duration: 100 } }
@@ -566,6 +620,17 @@ Panel {
             spacing: Style.space(4)
 
             NotificationAction {
+              objectName: "snoozedNotificationsButton"
+              visible: root.hasSnoozes
+              iconName: "snooze"
+              foreground: Color.accent
+              tooltipText: root.tr("Snoozed notifications")
+              onClicked: {
+                if (moreMenu.visible && moreMenu.page === "sources") moreMenu.close()
+                else root.showOptions("sources")
+              }
+            }
+            NotificationAction {
               objectName: "clearAllNotifications"
               iconName: "trash"
               tooltipText: root.tr("Clear all notifications")
@@ -580,7 +645,37 @@ Panel {
               iconName: "more"
               tooltipText: root.tr("More options")
               foreground: Qt.alpha(root.foreground, 0.65)
-              onClicked: moreMenu.visible ? moreMenu.close() : moreMenu.open()
+              onClicked: moreMenu.visible ? moreMenu.close() : root.showOptions("main")
+            }
+          }
+
+          ToggleSwitch {
+            id: silenceSwitch
+            objectName: "silenceNotificationsSwitch"
+            anchors.right: searchControl.left
+            anchors.rightMargin: Style.space(4)
+            anchors.verticalCenter: parent.verticalCenter
+            trackHeight: Style.space(18)
+            checked: root.dnd
+            busy: !!root.store && root.store.dndBusy
+            enabled: !!root.store
+            foreground: root.foreground
+            activeFocusOnTab: true
+            hasCursor: activeFocus
+            onToggled: if (enabled && !busy) root.toggleDnd()
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: root.tr("Silence notifications")
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled && !busy) root.toggleDnd()
+            Keys.onReturnPressed: if (enabled && !busy) root.toggleDnd()
+            Keys.onEnterPressed: if (enabled && !busy) root.toggleDnd()
+            Keys.onSpacePressed: if (enabled && !busy) root.toggleDnd()
+
+            PanelToolTip {
+              visible: silenceSwitch.containsMouse
+              text: root.dnd ? root.tr("Allow notifications") : root.tr("Silence notifications")
+              fontFamily: root.fontFamily
             }
           }
 
@@ -589,14 +684,18 @@ Panel {
             objectName: "notificationOverflowMenu"
             popupType: Controls.Popup.Item
             property string page: "main"
+            property string requestedPage: "main"
             x: Math.max(0, header.width - width - Style.space(12))
             y: header.height - Style.space(6)
-            width: Math.min(Style.space(280), header.width - Style.space(24))
+            width: Math.min(Style.space(page === "sources" ? 220 : 280), header.width - Style.space(24))
             padding: Style.space(6)
             implicitHeight: optionsColumn.implicitHeight + padding * 2
             closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
-            onAboutToShow: page = "main"
-            onOpened: if (page === "main") muteButton.forceActiveFocus()
+            onAboutToShow: { page = requestedPage; requestedPage = "main" }
+            onOpened: {
+              if (page === "main") snoozeButton.forceActiveFocus()
+              else if (page === "sources") resumeAllButton.forceActiveFocus()
+            }
             onClosed: Qt.callLater(function() { if (root.opened && !root.editingSettings) moreButton.forceActiveFocus() })
             background: BorderSurface {
               color: Color.popups.background
@@ -610,25 +709,15 @@ Panel {
               spacing: Style.space(3)
               Button {
                 width: parent.width
-                visible: moreMenu.page !== "main"
+                visible: moreMenu.page === "snooze"
                 text: "‹  Back"
                 leftAlign: true
                 focusable: true
                 foreground: root.foreground
-                onClicked: { moreMenu.page = "main"; muteButton.forceActiveFocus() }
+                onClicked: { moreMenu.page = "main"; snoozeButton.forceActiveFocus() }
               }
               Button {
-                id: muteButton
-                width: parent.width
-                visible: moreMenu.page === "main"
-                text: root.dnd ? root.tr("Allow notifications") : root.tr("Silence notifications")
-                leftAlign: true
-                focusable: true
-                foreground: root.foreground
-                enabled: !!root.store && !root.store.dndBusy
-                onClicked: { root.toggleDnd(); moreMenu.close() }
-              }
-              Button {
+                id: snoozeButton
                 width: parent.width
                 visible: moreMenu.page === "main"
                 text: "Snooze notifications  ›"
@@ -636,26 +725,6 @@ Panel {
                 focusable: true
                 foreground: root.foreground
                 onClicked: moreMenu.page = "snooze"
-              }
-              Button {
-                width: parent.width
-                visible: moreMenu.page === "main"
-                text: "Resume a snoozed source  ›"
-                leftAlign: true
-                focusable: true
-                foreground: root.foreground
-                enabled: root.service && root.service.snoozeCount > 0
-                onClicked: moreMenu.page = "sources"
-              }
-              Button {
-                width: parent.width
-                visible: moreMenu.page === "main"
-                text: "Resume snoozed notifications"
-                leftAlign: true
-                focusable: true
-                foreground: root.foreground
-                enabled: root.service && root.service.anySnooze
-                onClicked: { root.service.unsnoozeAll(); moreMenu.close() }
               }
               Button {
                 width: parent.width
@@ -681,21 +750,48 @@ Panel {
                   }
                 }
               }
+              Text {
+                visible: moreMenu.page === "sources"
+                width: parent.width
+                padding: Style.space(6)
+                text: root.tr("Snoozed notifications")
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                color: Util.alpha(root.foreground, 0.65)
+              }
+              SnoozedSourceRow {
+                width: parent.width
+                visible: moreMenu.page === "sources" && root.service && root.service.globalSnoozeUntil > 0
+                sourceKey: root.service ? root.service.globalKey : "*"
+                sourceLabel: root.tr("Everything")
+                snoozedUntil: root.service ? root.service.globalSnoozeUntil : 0
+              }
               Repeater {
                 model: {
                   if (moreMenu.page !== "sources" || !root.service) return []
                   root.service.snoozeRevision
                   return root.service.liveSnoozes()
                 }
-                delegate: Button {
+                delegate: SnoozedSourceRow {
                   required property var modelData
                   width: parent.width
-                  text: modelData.label
-                  leftAlign: true
-                  focusable: true
-                  foreground: root.foreground
-                  onClicked: { root.service.unsnooze(modelData.key); moreMenu.close() }
+                  sourceKey: modelData.key
+                  sourceLabel: modelData.label
+                  snoozedUntil: modelData.until
                 }
+              }
+              Button {
+                id: resumeAllButton
+                width: parent.width
+                visible: moreMenu.page === "sources" && root.hasSnoozes
+                text: root.tr("Resume all")
+                focusable: true
+                fontSize: Style.font.caption
+                verticalPadding: Style.space(4)
+                foreground: Color.accent
+                onClicked: { root.service.unsnoozeAll(); moreMenu.close() }
               }
             }
           }
@@ -705,7 +801,7 @@ Panel {
             anchors.right: actions.left
             anchors.rightMargin: Style.space(4)
             anchors.verticalCenter: parent.verticalCenter
-            width: root.searching ? actions.x - Style.space(20) : Style.space(32)
+            width: root.searching ? Math.max(Style.space(32), actions.x - silenceSwitch.width - Style.space(24)) : Style.space(32)
             height: Style.space(32)
             radius: Style.cornerRadius * 2
             color: root.searching ? Qt.alpha(root.foreground, 0.055) : "transparent"

@@ -1,8 +1,8 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.2
-Release:        4%{?dist}
+Version:        1.1.3
+Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX
@@ -381,6 +381,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.3-1
+- Move notification silencing to a header switch before search
+- Show a compact snoozed-source popup only while snoozes are active
+- Display remaining snooze time and support resuming individual sources or all notifications
+
 * Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.2-4
 - Keep all bundled commands in /usr/share/strata/bin and update privileged launch paths
 - Remove browser installers and follow the system default browser

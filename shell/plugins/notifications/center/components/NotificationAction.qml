@@ -39,6 +39,7 @@ Rectangle {
     readonly property color ink: root.highlighted ? root.hoverForeground : root.foreground
     readonly property var paths: ({
       search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+      snooze: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2M4 3 2 5M20 3l2 2"/>',
       bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
       bellOff: '<path d="M9 3a6 6 0 0 1 9 5c0 2 .3 3.5.7 4.6M6 6C6 7 6 8 6 8c0 7-3 7-3 9h14M10 21h4M3 3l18 18"/>',
       trash: '<path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/>',

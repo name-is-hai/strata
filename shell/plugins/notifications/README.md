@@ -14,8 +14,11 @@ or separate Foamy configuration is needed. Existing history and quiet state
 stay in the same store. Retention stays at your existing hours setting; the
 center can also set the maximum entry count (default 100). X removes an entry
 from live popups and history; clearing the center does the same for all entries.
-Right-clicking the bell still toggles Do Not Disturb. More also offers timed
-snooze and resume. The normal popup cards and their actions are unchanged.
+Right-clicking the bell still toggles Do Not Disturb. The center header also
+has a Silence notifications switch. More offers timed snooze; while anything
+is snoozed, a small clock button appears in the header. Its compact popup lists
+snoozed sources with their remaining time and lets you resume one source or all of them. The normal
+popup cards and their actions are unchanged.
 
 Settings are organized into Center, Popups, and Quiet & privacy tabs, with
 grouped controls and automatic saving. The header and tabs stay visible while
@@ -26,5 +29,5 @@ Strata's shared service, output-aware panel geometry, fonts and theme colors.
 There is no extra notification daemon, archive watcher, or popup-settings
 helper process. Fresh RPM installs include it through the existing shell tree.
 
-The options button uses one themed popup with Back navigation for snooze
-choices and paused sources, avoiding nested platform menus.
+The options and snooze buttons share one themed popup, avoiding nested
+platform menus.
