@@ -87,39 +87,6 @@ selected-border-alpha = 1.0
 pressed-fill-alpha   = 0.22
 selection-fill-alpha = 0.35
 
-[spacing]
-# `scale` multiplies shared margins, gaps, padding, controls, and panel
-# dimensions; components keep their proportions. With scale-with-font
-# enabled, those dimensions grow/shrink with [font] base-size too. Per-token
-# overrides (in px) below pin individual values without affecting the rest
-# of the scale. Uncomment any to tune a specific surface.
-scale = 1.0
-scale-with-font = true
-# xxs                       = 2
-# xs                        = 3
-# sm                        = 4
-# md                        = 6
-# lg                        = 8
-# xl                        = 10
-# xxl                       = 12
-# xxxl                      = 14
-# huge                      = 18
-# control-gap               = 8
-# control-padding-x         = 10
-# control-padding-y         = 6
-# input-padding-y           = 7
-# control-height            = 28
-# popup-row-height          = 28
-# row-gap                   = 8
-# row-padding-x             = 12
-# label-gap                 = 4
-# panel-gap                 = 14
-# panel-padding             = 18
-# popup-padding             = 14
-# dropdown-width            = 240
-# searchable-dropdown-width = 260
-# number-field-width        = 120
-# searchable-popup-min-height = 220
 
 [font]
 # base-size is the rem root for the type scale. Every Style.font.<token>

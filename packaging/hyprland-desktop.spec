@@ -2,7 +2,7 @@ Name:           hyprland-desktop
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.1
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT AND Unicode-DFS-2016
@@ -89,6 +89,10 @@ Requires:       gnome-keyring-pam
 Requires:       libsecret
 
 # Removable media, network shares, and per-user directories.
+# FUSE 2 compatibility for AppImages, plus FUSE 3 filesystem support.
+Requires:       fuse
+Requires:       fuse-libs
+Requires:       fuse3
 Requires:       gvfs
 Requires:       gvfs-mtp
 Requires:       gvfs-smb
@@ -152,6 +156,9 @@ install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %license LICENSE
 
 %changelog
+* Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-3
+- Install FUSE 2 compatibility and FUSE 3 filesystem support by default
+
 * Tue Oct 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-2
 - Drop the Zen RPM dependency; Strata config supplies the per-user browser integration
 

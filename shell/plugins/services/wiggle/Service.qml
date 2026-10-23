@@ -522,6 +522,7 @@ Item {
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.namespace: "strata-wiggle-cursor"
+      // defaults/hypr/looknfeel.lua orders this above other overlay panels.
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
       anchors { top: true; bottom: true; left: true; right: true }

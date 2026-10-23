@@ -1,5 +1,5 @@
-# Strata 1.1.9
+# Strata 1.1.10
 
-- Add a scrollable Display Layout panel with a compact resolution selector.
-- Use compact bar defaults and provide documented shell appearance overrides.
-- Remove automatic personal dotfiles installation.
+- Keep the enlarged mouse cursor visible above notification and settings panels.
+- Remove spacing overrides and keep automatic spacing tied to text size.
+- Install FUSE 2 compatibility and FUSE 3 support by default.

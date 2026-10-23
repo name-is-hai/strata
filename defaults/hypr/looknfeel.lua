@@ -74,4 +74,16 @@ hl.layer_rule({
     animation = "none",
 })
 
+-- The enlarged pointer shares the overlay layer with panels. Hyprland sorts
+-- layer surfaces by descending reservation order and paints them in that
+-- order, so a negative value keeps this input-transparent cursor above panels
+-- even when a panel is mapped later. Its motion is animated by QML already.
+hl.layer_rule({
+    name = "strata-wiggle-cursor",
+    match = { namespace = "^strata-wiggle-cursor$" },
+    order = -1000,
+    no_anim = true,
+    animation = "none",
+})
+
 return true

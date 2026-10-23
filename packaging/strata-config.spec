@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.5
+Version:        1.1.6
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -383,6 +383,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.6-1
+- Keep the enlarged mouse cursor above overlay panels
+- Remove spacing overrides and scale spacing automatically with text size
+
 * Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.5-1
 - Add scrollable display layout and compact resolution selection
 - Set compact bar defaults and document personal shell overrides

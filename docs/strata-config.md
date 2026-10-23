@@ -45,7 +45,9 @@ of the theme. Missing keys inherit the current theme's values. Changes apply
 live, and your overrides survive theme changes.
 
 Fresh configuration includes commented examples for text size, bar dimensions,
-icons, and spacing. For the full settings and values supplied by your current
+and icons. Spacing automatically follows the base text size; `[spacing]`
+overrides are not supported. Bar dimensions and icon slots belong to `[bar]`.
+For the full settings and values supplied by your current
 theme, open `~/.local/state/strata/current/theme/shell.toml`. The documented
 source template is `/usr/share/strata/default/themed/shell.toml.tpl`
 ([source](../defaults/themed/shell.toml.tpl)); its `{{ ... }}` expressions are

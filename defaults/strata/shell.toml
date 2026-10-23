@@ -19,8 +19,3 @@
 # icon-size = 11          # Visible icon artwork size
 # icon-slot = 23          # Space reserved for a regular icon
 # status-slot = 21        # Space reserved for each status indicator
-
-[spacing]
-# scale = 1.0             # Multiplier for shared spacing and control sizes
-# scale-with-font = true  # Scale spacing with base-size
-# panel-padding = 18      # Override an individual spacing token in pixels

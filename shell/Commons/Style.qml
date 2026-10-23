@@ -17,12 +17,11 @@ import Quickshell.Io
 // shell picks them up by re-running `hyprctl getoption` on startup and
 // after theme IPC applies a theme.
 //
-// Typography, spacing, and bar size come from theme/shell.toml.
+// Typography and bar size come from theme/shell.toml. Spacing follows text size.
 // `[font] base-size` is the rem root; every `Style.font.<token>` derives
 // from it via the scale multipliers below unless the theme pins that
-// specific token. `[spacing] scale` multiplies shared margins, gaps,
-// padding, controls, and panel dimensions while preserving each component's
-// proportions; by default it also tracks `base-size`. `[bar]
+// specific token. Shared margins, gaps, padding, controls, and panel dimensions
+// automatically track `base-size`, preserving their proportions. `[bar]
 // size-horizontal` / `size-vertical` set the cross-axis dimension for
 // top/bottom and left/right bars at the default 12px font size; by default
 // those dimensions scale with `base-size` so larger fonts don't clip.
@@ -201,15 +200,9 @@ QtObject {
 
   // ---------------------------------------------------------- spacing
   //
-  // The spacing scale is the shell equivalent of rem for margins, gaps,
-  // and padding. Components keep their existing proportions by asking for
-  // the old pixel value through `Style.space(px)` (or `spaceReal(px)` for
-  // fractional geometry); themes can make the shell denser or roomier
-  // with `[spacing] scale`, or pin individual tokens.
-  property real spacingScale: 1.0
-  property bool spacingScaleWithFont: true
-  property var spacingOverrides: ({})
-  readonly property real effectiveSpacingScale: spacingScale * (spacingScaleWithFont ? fontScale : 1)
+  // Internal spacing follows the base text size. User settings expose [font]
+  // and [bar]; individual padding and gap overrides are intentionally absent.
+  readonly property real effectiveSpacingScale: fontScale
 
   function spaceReal(px) {
     var n = Number(px)
@@ -223,42 +216,36 @@ QtObject {
     return Math.max(1, Math.round(n))
   }
 
-  function spacingToken(key, fallback) {
-    var v = spacingOverrides[key]
-    var n = Number(v)
-    return (isFinite(n) && n >= 0) ? Math.round(n) : space(fallback)
-  }
-
   readonly property QtObject spacing: QtObject {
     readonly property real scale: root.effectiveSpacingScale
 
     readonly property int hairline: root.space(1)
-    readonly property int xxs: root.spacingToken("xxs", 2)
-    readonly property int xs: root.spacingToken("xs", 3)
-    readonly property int sm: root.spacingToken("sm", 4)
-    readonly property int md: root.spacingToken("md", 6)
-    readonly property int lg: root.spacingToken("lg", 8)
-    readonly property int xl: root.spacingToken("xl", 10)
-    readonly property int xxl: root.spacingToken("xxl", 12)
-    readonly property int xxxl: root.spacingToken("xxxl", 14)
-    readonly property int huge: root.spacingToken("huge", 18)
+    readonly property int xxs: root.space(2)
+    readonly property int xs: root.space(3)
+    readonly property int sm: root.space(4)
+    readonly property int md: root.space(6)
+    readonly property int lg: root.space(8)
+    readonly property int xl: root.space(10)
+    readonly property int xxl: root.space(12)
+    readonly property int xxxl: root.space(14)
+    readonly property int huge: root.space(18)
 
-    readonly property int controlGap: root.spacingToken("control-gap", 8)
-    readonly property int controlPaddingX: root.spacingToken("control-padding-x", 10)
-    readonly property int controlPaddingY: root.spacingToken("control-padding-y", 6)
-    readonly property int inputPaddingY: root.spacingToken("input-padding-y", 7)
-    readonly property int controlHeight: root.spacingToken("control-height", 28)
-    readonly property int popupRowHeight: root.spacingToken("popup-row-height", 28)
-    readonly property int dropdownWidth: root.spacingToken("dropdown-width", 240)
-    readonly property int searchableDropdownWidth: root.spacingToken("searchable-dropdown-width", 260)
-    readonly property int numberFieldWidth: root.spacingToken("number-field-width", 120)
-    readonly property int searchablePopupMinHeight: root.spacingToken("searchable-popup-min-height", 220)
-    readonly property int rowGap: root.spacingToken("row-gap", 8)
-    readonly property int rowPaddingX: root.spacingToken("row-padding-x", 12)
-    readonly property int labelGap: root.spacingToken("label-gap", 4)
-    readonly property int panelGap: root.spacingToken("panel-gap", 14)
-    readonly property int panelPadding: root.spacingToken("panel-padding", 18)
-    readonly property int popupPadding: root.spacingToken("popup-padding", 14)
+    readonly property int controlGap: root.space(8)
+    readonly property int controlPaddingX: root.space(10)
+    readonly property int controlPaddingY: root.space(6)
+    readonly property int inputPaddingY: root.space(7)
+    readonly property int controlHeight: root.space(28)
+    readonly property int popupRowHeight: root.space(28)
+    readonly property int dropdownWidth: root.space(240)
+    readonly property int searchableDropdownWidth: root.space(260)
+    readonly property int numberFieldWidth: root.space(120)
+    readonly property int searchablePopupMinHeight: root.space(220)
+    readonly property int rowGap: root.space(8)
+    readonly property int rowPaddingX: root.space(12)
+    readonly property int labelGap: root.space(4)
+    readonly property int panelGap: root.space(14)
+    readonly property int panelPadding: root.space(18)
+    readonly property int popupPadding: root.space(14)
   }
 
   // ---------------------------------------------------------- typography
@@ -410,17 +397,14 @@ QtObject {
     }
   }
 
-  // Pull typography, bar dimensions, state tokens, and spacing out of the
+  // Pull typography, bar dimensions, and state tokens out of the
   // shell.toml dict that Color already parsed. Called by Color.loadShell so
   // a single parse pass feeds both singletons.
   function applyShellValues(values) {
     var fontOut = {}
     var barOut = {}
     var styleOut = {}
-    var spacingOut = {}
     var nextBase = 12
-    var nextSpacingScale = 1.0
-    var nextSpacingScaleWithFont = true
     var nextBarScaleWithFont = true
     var v = values || {}
     for (var fullKey in v) {
@@ -443,15 +427,6 @@ QtObject {
           var b = parseInt(raw, 10)
           if (isFinite(b)) barOut[key] = b
         }
-      } else if (section === "spacing") {
-        if (key === "scale-with-font") {
-          nextSpacingScaleWithFont = boolToken(raw, nextSpacingScaleWithFont)
-        } else {
-          var fval = parseFloat(raw)
-          if (!isFinite(fval)) continue
-          if (key === "scale") nextSpacingScale = fval
-          else spacingOut[key] = fval
-        }
       } else if (section === "controls" || section === "style") {
         // Strings are passed through; styleRawNum/styleString coerce on read.
         // [style] is the legacy name for [controls].
@@ -462,14 +437,10 @@ QtObject {
     // either — a theme that wants display-large = 64 should be allowed to
     // ship it.
     if (!isFinite(nextBase) || nextBase < 1) nextBase = 1
-    if (!isFinite(nextSpacingScale) || nextSpacingScale < 0) nextSpacingScale = 1.0
-    spacingScale = nextSpacingScale
-    spacingScaleWithFont = nextSpacingScaleWithFont
     fontBaseSize = nextBase
     fontOverrides = fontOut
     barOverrides = barOut
     barScaleWithFont = nextBarScaleWithFont
-    spacingOverrides = spacingOut
     styleOverrides = styleOut
   }
 
