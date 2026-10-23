@@ -250,6 +250,33 @@ in `~/.config/uwsm/env` using `HYPRCURSOR_THEME` and `HYPRCURSOR_SIZE`.
 Keep an XCursor version configured with `XCURSOR_THEME` and `XCURSOR_SIZE`
 for applications that do not support Hyprcursor. Wiggle reads these settings.
 
+## Browser-based mouse configuration
+
+Open **Settings → Mouse → Device configuration** and enable the USB
+mouse you want to configure. The first approval requests administrator
+authentication and installs a rule matching that product's USB vendor and
+product IDs. The active local desktop user then receives `hidraw` access each
+time it reconnects. Other devices remain unchanged; no input-group membership
+or background privileged service is needed.
+
+The list refreshes while Mouse settings is open. Keyboards that emulate a mouse
+can appear too, so enable only the device you intend to configure. Permission
+does not add support for a model or override a browser's protected-HID policy.
+This setup covers USB cables and USB receivers; Bluetooth devices are not listed.
+
+The same setup is available from the terminal:
+
+```console
+strata-mouse-setup list
+strata-mouse-setup enable 1532:00c0
+strata-mouse-setup remove 1532:00c0
+```
+
+Rules are stored as `/etc/udev/rules.d/70-strata-mouse-VENDOR-PRODUCT.rules`.
+Saved mice remain listed when disconnected. Use **Remove access** or the
+terminal `remove` command to delete an approval, then unplug/reconnect that
+device to revoke access already granted for the current connection.
+
 ## Finding the cursor
 
 Shake a mouse or wiggle one finger rapidly on the touchpad to enlarge the pointer temporarily. Strata’s Wiggle

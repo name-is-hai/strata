@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.6
+Version:        1.1.7
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -383,6 +383,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.7-1
+- Add per-device USB mouse configuration access with removable udev approvals
+- Redesign Mouse and Display Layout with responsive columns and fixed header actions
+- Show installed and available versions in update tooltips and review
+
 * Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.6-1
 - Keep the enlarged mouse cursor above overlay panels
 - Remove spacing overrides and scale spacing automatically with text size

@@ -495,8 +495,9 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(viewport.contentHeight)
+    contentWidth: panel.fittedContentWidth(Style.space(780))
+    contentHeight: Math.min(Math.ceil(viewport.contentHeight + panel.verticalContentInset),
+      panel.availableCardHeight > 0 ? panel.availableCardHeight : Infinity)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -555,7 +556,6 @@ Panel {
           headerForeground: root.foreground
           implicitHeight: Style.space(58)
 
-
           Column {
             id: heroLabels
             anchors.left: parent.left
@@ -592,33 +592,33 @@ Panel {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(12)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(4)
+            spacing: Style.space(8)
 
-            PanelActionButton {
-              iconText: "󰎠"
-              tooltipText: "Show each display's number on its screen (i)"
+            Button {
+              enabled: root.changed && !root.busy
+              opacity: enabled ? 1 : 0.4
+              iconText: "󰄬"
+              objectName: "displayLayoutApply"
+              text: "Apply"
+              tooltipText: "Try the layout now. It lasts until Hyprland reloads."
               foreground: root.foreground
               fontFamily: root.fontFamily
-              onClicked: root.identify()
+              bordered: true
+              onClicked: root.apply()
             }
 
-            PanelActionButton {
-              visible: root.arrangement.length > 1
-              iconText: "󰡎"
-              tooltipText: "Line all displays up in a row (r)"
+            Button {
+              enabled: (root.changed || !root.saved) && !root.busy && root.arrangement.length > 0
+              opacity: enabled ? 1 : 0.4
+              iconText: "󰆓"
+              objectName: "displayLayoutSave"
+              selected: root.changed || !root.saved
+              text: "Save"
+              tooltipText: "Write the layout to ~/.config/hypr/monitors.lua.\nThe previous file is kept as a backup."
               foreground: root.foreground
               fontFamily: root.fontFamily
-              onClicked: root.lineUp()
-            }
-
-            PanelActionButton {
-              enabled: root.changed
-              opacity: enabled ? 1 : 0.35
-              iconText: "󰕌"
-              tooltipText: "Undo the changes that are not applied (u)"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              onClicked: root.discard()
+              bordered: true
+              onClicked: root.save()
             }
           }
 
@@ -628,7 +628,7 @@ Panel {
         Rectangle {
           id: canvas
           width: parent.width
-          height: Style.space(190)
+          height: Style.space(150)
           radius: Style.cornerRadius
           color: Util.alpha(root.foreground, 0.04)
           border.width: 1
@@ -756,12 +756,62 @@ Panel {
           }
         }
 
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(canvasActions.implicitHeight, layoutHint.implicitHeight)
+          Text {
+            id: layoutHint
+            anchors.left: parent.left
+            anchors.right: canvasActions.left
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Drag to arrange · Enter to apply"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+          Row {
+            id: canvasActions
+            anchors.right: parent.right
+            anchors.rightMargin: 0
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(4)
+
+            PanelActionButton {
+              iconText: "󰎠"
+              tooltipText: "Show each display's number on its screen (i)"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.identify()
+            }
+
+            PanelActionButton {
+              visible: root.arrangement.length > 1
+              iconText: "󰡎"
+              tooltipText: "Line all displays up in a row (r)"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.lineUp()
+            }
+
+            PanelActionButton {
+              enabled: root.changed
+              opacity: enabled ? 1 : 0.35
+              iconText: "󰕌"
+              tooltipText: "Undo the changes that are not applied (u)"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.discard()
+            }
+          }
+        }
+
         // Settings always follow the selected preview tile.
         Column {
           width: parent.width
           visible: root.current !== null
-          spacing: Style.space(14)
-
+          spacing: Style.space(16)
           Item {
             width: parent.width
             implicitHeight: Math.max(displayLabels.implicitHeight, displayPower.implicitHeight)
@@ -814,321 +864,332 @@ Panel {
             }
           }
 
-          Column {
+          Grid {
+            id: displaySettingsGrid
+            objectName: "displaySettingsGrid"
             width: parent.width
-            spacing: Style.space(8)
-
-            PanelSectionHeader {
-              text: "DISPLAY MODE"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Row {
-              width: parent.width
-              spacing: Style.space(6)
-
-              Button {
-                width: (parent.width - parent.spacing) / 2
-                text: "Extend"
-                iconText: "󰕰"
-                selected: root.current && !root.current.disabled && root.current.mirrorOf === ""
-                enabled: root.current && !root.current.disabled
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                bordered: true
-                tooltipText: "Use this display as its own extended desktop"
-                onClicked: root.extendCurrent()
-              }
-
-              Button {
-                width: (parent.width - parent.spacing) / 2
-                text: "Mirror"
-                iconText: "󰍺"
-                selected: root.current && root.current.mirrorOf !== ""
-                enabled: root.current && root.mainMonitor() !== null && root.mainMonitor().name !== root.current.name
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                bordered: true
-                tooltipText: "Mirror the main display on this display"
-                onClicked: root.mirrorCurrent()
-              }
-            }
-
-            Button {
-              width: parent.width
-              text: selected ? "Main display" : "Make main display"
-              iconText: "󰘔"
-              selected: root.current && !root.current.disabled && !root.current.mirrorOf
-                && root.current.x === 0 && root.current.y === 0
-              enabled: root.current && !root.current.disabled
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
-              bordered: true
-              tooltipText: "Make this the main display and place the other displays beside it"
-              onClicked: root.makeMain()
-            }
-          }
-
-          PanelSeparator { foreground: root.foreground }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "APPEARANCE"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
+            columns: width >= Style.space(620) ? 2 : 1
+            columnSpacing: Style.space(28)
+            rowSpacing: Style.space(20)
             Column {
-              width: parent.width
-              visible: root.current !== null
-              spacing: Style.space(2)
-
-              Item {
+              width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns
+              spacing: Style.space(18)
+              Column {
                 width: parent.width
-                height: Style.space(18)
+                spacing: Style.space(8)
 
-                Text {
-                  anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "Brightness"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                }
-
-                Text {
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: root.brightnessPending ? "Loading…"
-                    : root.brightnessAvailable
-                      ? Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightness) + "%"
-                      : "Unavailable"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                }
-              }
-
-              PanelSlider {
-                id: brightnessSlider
-                width: parent.width
-                visible: root.brightnessAvailable && !root.brightnessPending
-                bar: root.bar
-                minimum: 1
-                maximum: 100
-                step: 1
-                integer: true
-                value: root.brightness
-                tickCount: 0
-                onReleased: function(value) { root.setBrightness(value) }
-              }
-            }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(2)
-
-              Item {
-                width: parent.width
-                height: Style.space(18)
-
-                Text {
-                  anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "Text size"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                }
-
-                Text {
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: Math.round(textSizeSlider.dragging ? textSizeSlider.liveValue : root.textSize) + "px"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                }
-              }
-
-              PanelSlider {
-                id: textSizeSlider
-                width: parent.width
-                bar: root.bar
-                minimum: 9
-                maximum: 20
-                step: 1
-                integer: true
-                value: root.textSize
-                tickCount: 12
-                onReleased: function(value) { root.setTextSize(value) }
-              }
-            }
-
-          }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSectionHeader {
-              text: "RESOLUTION"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Dropdown {
-              id: resolutionPicker
-              objectName: "displayResolutionPicker"
-              width: parent.width
-              showLabel: false
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              updateValueOnSelection: false
-              value: root.current ? root.current.width + "x" + root.current.height : ""
-              options: Logic.resolutions(root.current).map(function(mode) {
-                return { value: mode.width + "x" + mode.height,
-                  label: mode.width + " × " + mode.height }
-              })
-              onChanged: function(value) {
-                var dimensions = value.split("x")
-                root.setCurrentResolution(Number(dimensions[0]), Number(dimensions[1]))
-              }
-            }
-          }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSectionHeader {
-              text: "DISPLAY SCALE"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Row {
-              width: parent.width
-              spacing: Style.space(4)
-
-              Repeater {
-                model: root.scaleValues
-
-                Button {
-                  required property real modelData
-                  width: (parent.width - parent.spacing * (root.scaleValues.length - 1)) / root.scaleValues.length
-                  text: modelData + "×"
-                  selected: root.current !== null && Math.abs(root.current.scale - modelData) < 0.01
+                PanelSectionHeader {
+                  text: "DISPLAY MODE"
                   foreground: root.foreground
                   fontFamily: root.fontFamily
-                  fontSize: Style.font.caption
-                  horizontalPadding: Style.space(3)
-                  verticalPadding: Style.space(5)
-                  bordered: true
-                  onClicked: root.setCurrentScale(modelData)
                 }
-              }
-            }
-          }
 
-          Column {
-            width: parent.width
-            spacing: Style.space(8)
+                Row {
+                  width: parent.width
+                  spacing: Style.space(6)
 
-            PanelSectionHeader {
-              text: "REFRESH RATE"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Flow {
-              width: parent.width
-              spacing: Style.space(5)
-
-              Repeater {
-                model: root.refreshRatesForCurrent()
-
-                Button {
-                  required property real modelData
-                  text: root.refreshLabel(modelData)
-                  selected: root.current !== null && Math.abs(root.current.refreshRate - modelData) < 0.05
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  fontSize: Style.font.caption
-                  horizontalPadding: Style.space(10)
-                  verticalPadding: Style.space(5)
-                  bordered: true
-                  onClicked: root.setCurrentRefreshRate(modelData)
-                }
-              }
-            }
-          }
-
-          PanelSeparator { foreground: root.foreground }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSectionHeader {
-              text: "POSITION & ROTATION"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Item {
-              width: parent.width
-              implicitHeight: Math.max(sideButtons.implicitHeight, rotateButton.implicitHeight)
-
-              Row {
-                id: sideButtons
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(5)
-                visible: root.arrangement.length > 1
-
-                Repeater {
-                  model: [
-                    { side: "left", icon: "󰁍", tip: "Move to the left of the others" },
-                    { side: "top", icon: "󰁝", tip: "Move above the others" },
-                    { side: "bottom", icon: "󰁅", tip: "Move below the others" },
-                    { side: "right", icon: "󰁔", tip: "Move to the right of the others" }
-                  ]
-
-                  PanelActionButton {
-                    required property var modelData
-                    iconText: modelData.icon
-                    tooltipText: modelData.tip + "\nPress again to slide along the edge"
+                  Button {
+                    width: (parent.width - parent.spacing) / 2
+                    text: "Extend"
+                    iconText: "󰕰"
+                    selected: root.current && !root.current.disabled && root.current.mirrorOf === ""
+                    enabled: root.current && !root.current.disabled
                     foreground: root.foreground
                     fontFamily: root.fontFamily
+                    fontSize: Style.font.bodySmall
                     bordered: true
-                    onClicked: root.moveTo(modelData.side)
+                    tooltipText: "Use this display as its own extended desktop"
+                    onClicked: root.extendCurrent()
+                  }
+
+                  Button {
+                    width: (parent.width - parent.spacing) / 2
+                    text: "Mirror"
+                    iconText: "󰍺"
+                    selected: root.current && root.current.mirrorOf !== ""
+                    enabled: root.current && root.mainMonitor() !== null && root.mainMonitor().name !== root.current.name
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.bodySmall
+                    bordered: true
+                    tooltipText: "Mirror the main display on this display"
+                    onClicked: root.mirrorCurrent()
+                  }
+                }
+
+                Button {
+                  width: parent.width
+                  text: selected ? "Main display" : "Make main display"
+                  iconText: "󰘔"
+                  selected: root.current && !root.current.disabled && !root.current.mirrorOf
+                    && root.current.x === 0 && root.current.y === 0
+                  enabled: root.current && !root.current.disabled
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.bodySmall
+                  bordered: true
+                  tooltipText: "Make this the main display and place the other displays beside it"
+                  onClicked: root.makeMain()
+                }
+              }
+
+              Column {
+                width: parent.width
+                spacing: Style.space(8)
+
+                PanelSectionHeader {
+                  text: "POSITION & ROTATION"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Item {
+                  width: parent.width
+                  implicitHeight: Math.max(sideButtons.implicitHeight, rotateButton.implicitHeight)
+
+                  Row {
+                    id: sideButtons
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(5)
+                    visible: root.arrangement.length > 1
+
+                    Repeater {
+                      model: [
+                        { side: "left", icon: "󰁍", tip: "Move to the left of the others" },
+                        { side: "top", icon: "󰁝", tip: "Move above the others" },
+                        { side: "bottom", icon: "󰁅", tip: "Move below the others" },
+                        { side: "right", icon: "󰁔", tip: "Move to the right of the others" }
+                      ]
+
+                      PanelActionButton {
+                        required property var modelData
+                        iconText: modelData.icon
+                        tooltipText: modelData.tip + "\nPress again to slide along the edge"
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        bordered: true
+                        onClicked: root.moveTo(modelData.side)
+                      }
+                    }
+                  }
+
+                  Button {
+                    id: rotateButton
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconText: "󰑧"
+                    text: "Rotate"
+                    tooltipText: "Turn this display by 90° (t)"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.bodySmall
+                    verticalPadding: Style.space(5)
+                    bordered: true
+                    onClicked: root.rotate()
                   }
                 }
               }
 
-              Button {
-                id: rotateButton
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                iconText: "󰑧"
-                text: "Rotate"
-                tooltipText: "Turn this display by 90° (t)"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                verticalPadding: Style.space(5)
-                bordered: true
-                onClicked: root.rotate()
+              Column {
+                width: parent.width
+                spacing: Style.space(8)
+
+                PanelSectionHeader {
+                  text: "RESOLUTION"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Dropdown {
+                  id: resolutionPicker
+                  objectName: "displayResolutionPicker"
+                  width: parent.width
+                  showLabel: false
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  updateValueOnSelection: false
+                  value: root.current ? root.current.width + "x" + root.current.height : ""
+                  options: Logic.resolutions(root.current).map(function(mode) {
+                    return { value: mode.width + "x" + mode.height,
+                      label: mode.width + " × " + mode.height }
+                  })
+                  onChanged: function(value) {
+                    var dimensions = value.split("x")
+                    root.setCurrentResolution(Number(dimensions[0]), Number(dimensions[1]))
+                  }
+                }
+              }
+            }
+            Column {
+              width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns
+              spacing: Style.space(18)
+              Column {
+                width: parent.width
+                spacing: Style.space(10)
+
+                PanelSectionHeader {
+                  text: "APPEARANCE"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Column {
+                  width: parent.width
+                  visible: root.current !== null
+                  spacing: Style.space(2)
+
+                  Item {
+                    width: parent.width
+                    height: Style.space(18)
+
+                    Text {
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: "Brightness"
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+
+                    Text {
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: root.brightnessPending ? "Loading…"
+                        : root.brightnessAvailable
+                          ? Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightness) + "%"
+                          : "Unavailable"
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                    }
+                  }
+
+                  PanelSlider {
+                    id: brightnessSlider
+                    width: parent.width
+                    visible: root.brightnessAvailable && !root.brightnessPending
+                    bar: root.bar
+                    minimum: 1
+                    maximum: 100
+                    step: 1
+                    integer: true
+                    value: root.brightness
+                    tickCount: 0
+                    onReleased: function(value) { root.setBrightness(value) }
+                  }
+                }
+
+                Column {
+                  width: parent.width
+                  spacing: Style.space(2)
+
+                  Item {
+                    width: parent.width
+                    height: Style.space(18)
+
+                    Text {
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: "Text size"
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+
+                    Text {
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: Math.round(textSizeSlider.dragging ? textSizeSlider.liveValue : root.textSize) + "px"
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                    }
+                  }
+
+                  PanelSlider {
+                    id: textSizeSlider
+                    width: parent.width
+                    bar: root.bar
+                    minimum: 9
+                    maximum: 20
+                    step: 1
+                    integer: true
+                    value: root.textSize
+                    tickCount: 12
+                    onReleased: function(value) { root.setTextSize(value) }
+                  }
+                }
+
+              }
+
+              Column {
+                width: parent.width
+                spacing: Style.space(8)
+
+                PanelSectionHeader {
+                  text: "DISPLAY SCALE"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Row {
+                  width: parent.width
+                  spacing: Style.space(4)
+
+                  Repeater {
+                    model: root.scaleValues
+
+                    Button {
+                      required property real modelData
+                      width: (parent.width - parent.spacing * (root.scaleValues.length - 1)) / root.scaleValues.length
+                      text: modelData + "×"
+                      selected: root.current !== null && Math.abs(root.current.scale - modelData) < 0.01
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      fontSize: Style.font.caption
+                      horizontalPadding: Style.space(3)
+                      verticalPadding: Style.space(5)
+                      bordered: true
+                      onClicked: root.setCurrentScale(modelData)
+                    }
+                  }
+                }
+              }
+
+              Column {
+                width: parent.width
+                spacing: Style.space(8)
+
+                PanelSectionHeader {
+                  text: "REFRESH RATE"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Flow {
+                  width: parent.width
+                  spacing: Style.space(5)
+
+                  Repeater {
+                    model: root.refreshRatesForCurrent()
+
+                    Button {
+                      required property real modelData
+                      text: root.refreshLabel(modelData)
+                      selected: root.current !== null && Math.abs(root.current.refreshRate - modelData) < 0.05
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      fontSize: Style.font.caption
+                      horizontalPadding: Style.space(10)
+                      verticalPadding: Style.space(5)
+                      bordered: true
+                      onClicked: root.setCurrentRefreshRate(modelData)
+                    }
+                  }
+                }
               }
             }
           }
@@ -1147,49 +1208,6 @@ Panel {
           elide: Text.ElideRight
         }
 
-        PanelSeparator { foreground: root.foreground }
-
-        // ---------- Apply / Save ----------
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-
-          Button {
-            width: (parent.width - parent.spacing) / 2
-            enabled: root.changed && !root.busy
-            opacity: enabled ? 1 : 0.4
-            iconText: "󰄬"
-            text: "Apply"
-            tooltipText: "Try the layout now. It lasts until Hyprland reloads."
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            bordered: true
-            onClicked: root.apply()
-          }
-
-          Button {
-            width: (parent.width - parent.spacing) / 2
-            enabled: (root.changed || !root.saved) && !root.busy && root.arrangement.length > 0
-            opacity: enabled ? 1 : 0.4
-            iconText: "󰆓"
-            text: "Save"
-            tooltipText: "Write the layout to ~/.config/hypr/monitors.lua.\nThe previous file is kept as a backup."
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            bordered: true
-            onClicked: root.save()
-          }
-        }
-
-        Text {
-          width: parent.width
-          text: "Drag the preview to arrange · Enter to apply"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          horizontalAlignment: Text.AlignHCenter
-          elide: Text.ElideRight
-        }
       }
     }
   }

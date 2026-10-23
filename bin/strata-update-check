@@ -22,7 +22,8 @@ fi
 cache=$cache_dir/update-status.json
 error_file=$(mktemp "$cache_dir/.update-error.XXXXXX")
 temporary=""
-trap 'rm -f -- "$error_file" ${temporary:+"$temporary"}' EXIT
+installed_file=""
+trap 'rm -f -- "$error_file" ${temporary:+"$temporary"} ${installed_file:+"$installed_file"}' EXIT
 save_state() {
   temporary=$(mktemp "$cache_dir/.update-status.XXXXXX")
   printf '%s\n' "$state" > "$temporary"
@@ -74,6 +75,22 @@ if $refresh || [[ -n $previous_error || $previous_version != "$installed" ]] || 
   state=$(jq -nc --argjson updates "$updates" --arg installed "$installed" \
     --argjson checked "$now" --arg notified "$(jq -r '.notified // ""' <<<"$state")" \
     '{available:($updates|length>0),updates:$updates,installedVersion:$installed,checkedAt:$checked,error:"",notified:$notified}')
+fi
+# Resolve installed versions even for cached candidates: another package can
+# have been updated independently since the last repository query. Match arch
+# as well as name so multilib installations show the correct starting version.
+if [[ $(jq '.updates | length' <<<"$state") -gt 0 ]]; then
+  installed_file=$(mktemp "$cache_dir/.installed-packages.XXXXXX")
+  if ! timeout --kill-after=1s 5s rpm -qa \
+      --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\n' >"$installed_file" 2>"$error_file"; then
+    fail_check 'Could not read installed package versions'
+  fi
+  state=$(jq -c --rawfile packages "$installed_file" '
+    ($packages | split("\n") | map(split("\t") | select(length == 3)
+      | {key: (.[0] + ":" + .[2]), value: (.[1] | sub("^0:"; ""))})
+      | from_entries) as $installed
+    | .updates |= map(. + {installedVersion: ($installed[.name + ":" + .arch] // null)})
+  ' <<<"$state")
 fi
 fingerprint=$(jq -cS '.updates' <<<"$state")
 if $notify && [[ $(jq -r '.available' <<<"$state") == true && $(jq -r '.notified' <<<"$state") != "$fingerprint" ]]; then

@@ -13,7 +13,12 @@ Item {
   readonly property string summary: {
     var updates = statusData.updates || []
     var lines = ["Strata updates available"]
-    for (var i=0; i<updates.length; ++i) lines.push(updates[i].name + " · " + updates[i].version)
+    for (var i=0; i<updates.length; ++i) {
+      var update = updates[i]
+      var installed = update.installedVersion || "Unknown"
+      var available = String(update.version).replace(/^0:/, "")
+      lines.push(update.name + " · " + installed + " → " + available)
+    }
     if (statusData.error) lines.push("Last check failed; showing the previous result")
     return lines.join("\n")
   }

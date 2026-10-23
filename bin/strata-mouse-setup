@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# strata:summary=Enable per-device browser configuration access for a USB mouse
+# strata:args=[list|enable VENDOR:PRODUCT|remove VENDOR:PRODUCT]
+set -euo pipefail
+if (( EUID == 0 )); then export PATH=/usr/sbin:/usr/bin:/sbin:/bin; fi
+export LC_ALL=C
+
+usage() { echo 'Usage: strata-mouse-setup list | enable VENDOR:PRODUCT | remove VENDOR:PRODUCT' >&2; }
+action=${1:-list}
+case "$action" in
+  list) (( $# <= 1 )) || { usage; exit 64; } ;;
+  enable|remove)
+    [[ $# == 2 && $2 =~ ^[[:xdigit:]]{4}:[[:xdigit:]]{4}$ ]] || { usage; exit 64; }
+    device_id=${2,,}
+    ;;
+  *) usage; exit 64 ;;
+esac
+
+# USB keyboards can expose mouse interfaces too. Never grant access merely
+# because a mouse interface was detected: the user chooses a device to enable.
+devices=$(
+  for event in /sys/class/input/event*; do
+    [[ -e $event ]] || continue
+    properties=$(udevadm info --query=property --path="$event" 2>/dev/null) || continue
+    grep -qx 'ID_INPUT_MOUSE=1' <<<"$properties" || continue
+    grep -qx 'ID_BUS=usb' <<<"$properties" || continue
+    vendor=$(sed -n 's/^ID_VENDOR_ID=//p' <<<"$properties")
+    product=$(sed -n 's/^ID_MODEL_ID=//p' <<<"$properties")
+    [[ $vendor:$product =~ ^[[:xdigit:]]{4}:[[:xdigit:]]{4}$ ]] || continue
+    id=${vendor,,}:${product,,}
+    name=$(cat "$event/device/name" 2>/dev/null) || continue
+    jq -cn --arg id "$id" --arg name "$name" '{id:$id,name:$name,connected:true}'
+  done | jq -s 'unique_by(.id)'
+)
+
+if [[ $action == list ]]; then
+  saved=$(
+    for rule in /etc/udev/rules.d/70-strata-mouse-*.rules; do
+      [[ -f $rule ]] || continue
+      filename=${rule##*/70-strata-mouse-}
+      id=${filename%.rules}
+      id=${id/-/:}
+      [[ $id =~ ^[[:xdigit:]]{4}:[[:xdigit:]]{4}$ ]] || continue
+      row=$(sed -n 's/^# Device: //p' "$rule" | jq -c --arg id "$id" 'select(.id == $id and (.name|type) == "string")' 2>/dev/null) || row=""
+      [[ -n $row ]] || row=$(jq -cn --arg id "$id" '{id:$id,name:("Saved USB mouse " + $id)}')
+      jq -c '. + {connected:false,configured:true}' <<<"$row"
+    done | jq -s .
+  )
+  devices=$(jq -cn --argjson connected "$devices" --argjson saved "$saved" '
+    $connected + [$saved[] | . as $item | select(any($connected[]; .id == $item.id) | not)]')
+  while IFS= read -r row; do
+    id=$(jq -r .id <<<"$row")
+    configured=false
+    [[ ! -f /etc/udev/rules.d/70-strata-mouse-${id/:/-}.rules ]] || configured=true
+    jq -c --argjson configured "$configured" '. + {configured:$configured}' <<<"$row"
+  done < <(jq -c '.[]' <<<"$devices") | jq -s .
+  exit 0
+fi
+
+vendor=${device_id%:*}
+product=${device_id#*:}
+rule=/etc/udev/rules.d/70-strata-mouse-$vendor-$product.rules
+if [[ $action == enable ]]; then
+  jq -e --arg id "$device_id" 'any(.[]; .id == $id)' >/dev/null <<<"$devices" || {
+    echo 'Connect the selected USB mouse before enabling configuration access.' >&2
+    exit 1
+  }
+else
+  [[ -f $rule ]] || { echo 'No saved configuration access exists for this device.' >&2; exit 1; }
+fi
+if (( EUID != 0 )); then
+  exec pkexec /usr/share/strata/bin/strata-mouse-setup "$action" "$device_id"
+fi
+
+if [[ $action == remove ]]; then
+  rm -- "$rule"
+  udevadm control --reload-rules
+  echo 'Saved access removed. Unplug/reconnect this device to revoke any access already granted for the current connection.'
+  exit 0
+fi
+install -d -m0755 /etc/udev/rules.d
+temporary=$(mktemp /etc/udev/rules.d/.strata-mouse.XXXXXX)
+trap 'rm -f -- "$temporary"' EXIT
+printf '# Strata: configuration access for the explicitly approved USB device %s.\n' "$device_id" > "$temporary"
+printf '# Device: %s\n' "$(jq -c --arg id "$device_id" '.[] | select(.id == $id) | {id,name}' <<<"$devices")" >> "$temporary"
+printf 'ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="%s", ATTRS{idProduct}=="%s", TAG+="uaccess"\n' "$vendor" "$product" >> "$temporary"
+chmod 0644 "$temporary"
+mv -f -- "$temporary" "$rule"
+if command -v restorecon >/dev/null; then restorecon "$rule"; fi
+udevadm control --reload-rules
+# Refresh every configuration interface belonging to this approved product.
+# Chromium may open several hidraw nodes before selecting its vendor interface.
+for node in /sys/class/hidraw/hidraw*; do
+  [[ -e $node ]] || continue
+  properties=$(udevadm info --query=property --path="$node" 2>/dev/null) || continue
+  grep -qx "ID_VENDOR_ID=$vendor" <<<"$properties" || continue
+  grep -qx "ID_MODEL_ID=$product" <<<"$properties" || continue
+  udevadm trigger --action=change "$node"
+done
+udevadm settle --timeout=5
+printf 'Configuration access enabled for %s. Reconnect it in your browser; future USB reconnects are automatic.\n' "$device_id"

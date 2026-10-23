@@ -1,5 +1,6 @@
-# Strata 1.1.10
+# Strata 1.1.11
 
-- Keep the enlarged mouse cursor visible above notification and settings panels.
-- Remove spacing overrides and keep automatic spacing tied to text size.
-- Install FUSE 2 compatibility and FUSE 3 support by default.
+- Add one-time USB mouse configuration approvals, automatic reconnect access, and removal for unplugged devices.
+- Redesign Mouse and Display Layout with responsive columns, aligned device cards, and fixed header Save controls.
+- Fit settings panels to their contents and scroll only when screen space is limited.
+- Show installed-to-available package versions in update tooltips and terminal review.

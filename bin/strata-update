@@ -12,7 +12,7 @@ if [[ $(jq -r '.available' <<<"$status") != true ]]; then
   echo 'Strata is up to date.'
   exit 0
 fi
-jq -r '.updates[] | "\(.name): \(.version)"' <<<"$status"
+jq -r '.updates[] | "\(.name): \(.installedVersion // "Unknown") → \(.version | sub("^0:"; ""))"' <<<"$status"
 [[ ${1:-} == --check ]] && exit 0
 mapfile -t packages < <(jq -r '.updates[].name' <<<"$status" | sort -u)
 # DNF displays the transaction and asks for confirmation in the user's terminal.
