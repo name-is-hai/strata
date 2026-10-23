@@ -1,6 +1,4 @@
-# Strata 1.1.11
+# Strata 1.1.12
 
-- Add one-time USB mouse configuration approvals, automatic reconnect access, and removal for unplugged devices.
-- Redesign Mouse and Display Layout with responsive columns, aligned device cards, and fixed header Save controls.
-- Fit settings panels to their contents and scroll only when screen space is limited.
-- Show installed-to-available package versions in update tooltips and terminal review.
+- Prepare Fedora loading screens for Intel, AMD, NVIDIA hybrid and virtual graphics
+- Include graphical Plymouth theme and renderer on fresh installations and validate boot images before replacement

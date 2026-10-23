@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# strata:summary=Prepare hardware-aware graphics for the Fedora loading screen
+# strata:args=[--drivers KERNEL|--apply|--sync KERNEL]
+set -euo pipefail
+export LC_ALL=C
+if (( EUID == 0 )); then export PATH=/usr/sbin:/usr/bin:/sbin:/bin; fi
+
+usage() { echo 'Usage: strata-boot-displays --drivers KERNEL | --apply | --sync KERNEL' >&2; }
+action=${1:---apply}
+case "$action" in
+  --drivers|--sync)
+    [[ $# == 2 && $2 =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || { usage; exit 64; }
+    kernel=$2 ;;
+  --apply)
+    (( $# <= 1 )) || { usage; exit 64; }
+    kernel=$(uname -r)
+    # A fresh install may have just selected a newer kernel for its first boot.
+    if command -v grubby >/dev/null; then
+      default_kernel=$(grubby --default-kernel 2>/dev/null) || default_kernel=""
+      if [[ $default_kernel == /boot/vmlinuz-* ]]; then
+        candidate=${default_kernel#/boot/vmlinuz-}
+        if [[ $candidate =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then kernel=$candidate; fi
+      fi
+    fi
+    ;;
+  *) usage; exit 64 ;;
+esac
+
+# Use the actual DRM/PCI driver, not connector names or an assumption that a
+# second GPU is NVIDIA. Alias resolution covers a fresh install before KMS maps
+# a DRM card. Missing target-kernel modules are left for normal driver setup.
+detect_drivers() {
+  local device module alias vendor candidate
+  {
+    for device in /sys/class/drm/card[0-9]*; do
+      [[ ${device##*/} =~ ^card[0-9]+$ ]] || continue
+      module=$(readlink -f "$device/device/driver/module" 2>/dev/null) || continue
+      printf '%s\n' "${module##*/}"
+    done
+    for device in /sys/bus/pci/devices/*; do
+      [[ -r $device/class && $(<"$device/class") == 0x03* ]] || continue
+      vendor=$(cat "$device/vendor" 2>/dev/null) || continue
+      module=$(readlink -f "$device/driver/module" 2>/dev/null) || module=""
+      module=${module##*/}
+      # The bootstrap may just have replaced Nouveau with RPM Fusion's driver.
+      if [[ $vendor == 0x10de && -f /etc/modprobe.d/strata-nvidia.conf ]] && modinfo -k "$kernel" nvidia_drm >/dev/null 2>&1; then
+        printf '%s\n' nvidia
+      elif [[ -n $module ]]; then
+        printf '%s\n' "$module"
+      elif [[ -r $device/modalias ]]; then
+        alias=$(cat "$device/modalias")
+        modprobe --set-version "$kernel" --resolve-alias "$alias" 2>/dev/null || true
+      fi
+    done
+  } | sort -u | while IFS= read -r candidate; do
+    case "$candidate" in
+      nvidia)
+        for module in nvidia nvidia_modeset nvidia_drm; do
+          if modinfo -k "$kernel" "$module" >/dev/null 2>&1; then printf '%s\n' "$module"; fi
+        done ;;
+      nouveau)
+        # Do not reintroduce Nouveau after the installer deliberately disabled it.
+        if [[ ! -f /etc/modprobe.d/strata-nvidia.conf ]] && modinfo -k "$kernel" nouveau >/dev/null 2>&1; then printf '%s\n' nouveau; fi ;;
+      amdgpu|radeon|i915|xe|virtio_gpu|vmwgfx|qxl|bochs|ast|mgag200)
+        if modinfo -k "$kernel" "$candidate" >/dev/null 2>&1; then printf '%s\n' "$candidate"; fi ;;
+    esac
+  done | sort -u
+}
+drivers=$(detect_drivers)
+if [[ $action == --drivers ]]; then printf '%s\n' "$drivers"; exit 0; fi
+(( EUID == 0 )) || { echo 'Run this operation as administrator.' >&2; exit 77; }
+[[ ! -e /run/ostree-booted ]] || { echo 'Boot-display setup requires a traditional Fedora installation.' >&2; exit 1; }
+if [[ $action == --sync && ! -f /etc/strata/early-graphics ]]; then exit 0; fi
+if [[ -z $drivers ]]; then echo 'No supported graphics module is available; leaving the boot image unchanged.'; exit 0; fi
+image=/boot/initramfs-$kernel.img
+[[ -f $image && ! -L $image ]] || { echo "No regular Fedora boot image for $kernel; skipping."; exit 0; }
+# A minimal Fedora installation can have Plymouth with only text plugins.
+# Loading GPU modules alone cannot give that installation a graphical splash.
+theme=$(plymouth-set-default-theme)
+[[ $theme =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'Invalid Plymouth theme name.' >&2; exit 1; }
+theme_file=/usr/share/plymouth/themes/$theme/$theme.plymouth
+plugin_path=$(plymouth --get-splash-plugin-path)
+module=$(sed -nE 's/^[[:space:]]*ModuleName[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$/\1/p' "$theme_file")
+[[ $module =~ ^[A-Za-z0-9_-]+$ && -f $plugin_path/$module.so && -f $plugin_path/renderers/drm.so ]] || {
+  echo 'Plymouth graphical support is missing. Install plymouth-system-theme and plymouth-plugin-two-step before setup.' >&2
+  exit 1
+}
+install -d -m0755 /var/lib/strata/boot-displays
+exec 9>/run/lock/strata-boot-displays.lock
+flock -w 300 9 || { echo 'Another boot-display rebuild is still running.' >&2; exit 1; }
+install -d -m0700 /var/lib/strata/backups
+backup=$(mktemp -d "/var/lib/strata/backups/boot-displays-$(date +%Y%m%d-%H%M%S)-$kernel.XXXXXX")
+temporary=""
+published=false
+restore_settings() {
+  if [[ $action == --apply ]]; then
+    if [[ -f $backup/plymouthd.conf ]]; then cp -a "$backup/plymouthd.conf" /etc/plymouth/plymouthd.conf; else rm -f /etc/plymouth/plymouthd.conf; fi
+    if [[ -f $backup/early-graphics ]]; then cp -a "$backup/early-graphics" /etc/strata/early-graphics; else rm -f /etc/strata/early-graphics; fi
+  fi
+}
+if [[ $action == --apply ]]; then
+  install -d -m0755 /etc/strata /etc/plymouth
+  if [[ -f /etc/plymouth/plymouthd.conf ]]; then cp -a /etc/plymouth/plymouthd.conf "$backup/plymouthd.conf"; fi
+  if [[ -f /etc/strata/early-graphics ]]; then cp -a /etc/strata/early-graphics "$backup/early-graphics"; fi
+  trap 'code=$?; rm -f -- ${temporary:+"$temporary"}; if (( code != 0 )) && ! $published; then restore_settings; fi' EXIT
+  # Keep the selected theme and all unrelated administrator settings.
+  awk '
+    /^[[:space:]]*\[/ { daemon=($0 ~ /^[[:space:]]*\[Daemon\]/) }
+    daemon && /^[[:space:]]*(UseSimpledrm|UseSimpledrmNoLuks|DeviceTimeout)[[:space:]]*=/ {next}
+    {print}
+    /^[[:space:]]*\[Daemon\]/ {found=1; print "UseSimpledrm=0\nUseSimpledrmNoLuks=0\nDeviceTimeout=12"}
+    END {if(!found) print "\n[Daemon]\nUseSimpledrm=0\nUseSimpledrmNoLuks=0\nDeviceTimeout=12"}
+  ' /etc/plymouth/plymouthd.conf 2>/dev/null > "$backup/new-plymouthd.conf" || {
+    printf '[Daemon]\nUseSimpledrm=0\nUseSimpledrmNoLuks=0\nDeviceTimeout=12\n' > "$backup/new-plymouthd.conf"
+  }
+  install -m0644 "$backup/new-plymouthd.conf" /etc/plymouth/plymouthd.conf
+  install -m0644 /dev/null /etc/strata/early-graphics
+fi
+# Track the exact graphics modules, not just their version strings. This also
+# refreshes an image after a module build completed later than kernel-install.
+fingerprint=$({
+  printf '%s\n' "$drivers"
+  while IFS= read -r driver; do
+    module_file=$(modinfo -k "$kernel" -F filename "$driver")
+    [[ $module_file == '(builtin)' ]] || sha256sum "$module_file"
+  done <<<"$drivers"
+  sha256sum /etc/plymouth/plymouthd.conf /usr/lib/dracut/dracut.conf.d/60-strata-early-graphics.conf
+  sha256sum "$theme_file" "$plugin_path/$module.so" "$plugin_path/renderers/drm.so"
+} | sha256sum | cut -d' ' -f1)
+marker=/var/lib/strata/boot-displays/$kernel
+if [[ $action == --sync && -f $marker ]]; then
+  read -r previous_fingerprint previous_image < "$marker"
+  if [[ $previous_fingerprint == "$fingerprint" && $previous_image == "$(sha256sum "$image" | cut -d' ' -f1)" ]]; then
+    rmdir "$backup"
+    exit 0
+  fi
+fi
+cp -a --reflink=auto "$image" "$backup/original.img"
+printf 'Preparing early graphics for %s: %s\n' "$kernel" "${drivers//$'\n'/ }"
+if ! dracut --force --kver "$kernel" "$backup/new.img" > "$backup/dracut.log" 2>&1; then
+  tail -n 35 "$backup/dracut.log" >&2
+  echo 'Build failed; the original boot image remains unchanged.' >&2
+  exit 1
+fi
+lsinitrd "$backup/new.img" > "$backup/contents.txt"
+for artifact in "plymouth/themes/$theme/$theme.plymouth" "plymouth/$module.so" 'plymouth/renderers/drm.so'; do
+  grep -Fq "/$artifact" "$backup/contents.txt" || { echo "Missing $artifact in candidate image; original image unchanged." >&2; exit 1; }
+done
+while IFS= read -r driver; do
+  if [[ $(modinfo -k "$kernel" -F filename "$driver") == '(builtin)' ]]; then continue; fi
+  pattern=${driver//_/'[-_]'}
+  grep -Eq "/$pattern[.]ko([.](xz|zst|gz))?([[:space:]]|$)" "$backup/contents.txt" || { echo "Missing $driver in candidate image; original image unchanged." >&2; exit 1; }
+done <<<"$drivers"
+temporary=$(mktemp /boot/.strata-early-graphics.XXXXXX)
+if [[ $action != --apply ]]; then trap 'rm -f -- ${temporary:+"$temporary"}' EXIT; fi
+install -m0600 "$backup/new.img" "$temporary"
+chown root:root "$temporary"
+mv -f -- "$temporary" "$image"
+published=true
+if command -v restorecon >/dev/null; then restorecon "$image"; fi
+printf '%s %s\n' "$fingerprint" "$(sha256sum "$image" | cut -d' ' -f1)" > "$marker"
+sha256sum "$image" > "$backup/published.sha256"
+printf '%s\n' "$image" > "$backup/image-path"
+printf '%s\n' "$action" > "$backup/operation"
+cat > "$backup/rollback.sh" <<'ROLLBACK'
+#!/usr/bin/env bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+[[ $EUID == 0 ]] || { echo 'Run this rollback with pkexec.' >&2; exit 77; }
+backup=$(cd -- "$(dirname -- "$0")" && pwd)
+image=$(cat "$backup/image-path")
+sha256sum --check --status "$backup/published.sha256" || { echo 'Boot image changed since setup; rollback stopped to preserve newer changes.' >&2; exit 1; }
+temporary=$(mktemp /boot/.strata-graphics-restore.XXXXXX)
+trap 'rm -f -- "$temporary"' EXIT
+install -m0600 "$backup/original.img" "$temporary"
+mv -f -- "$temporary" "$image"
+if [[ $(cat "$backup/operation") == --apply ]]; then
+  if [[ -f $backup/plymouthd.conf ]]; then cp -a "$backup/plymouthd.conf" /etc/plymouth/plymouthd.conf; else rm -f /etc/plymouth/plymouthd.conf; fi
+  if [[ -f $backup/early-graphics ]]; then cp -a "$backup/early-graphics" /etc/strata/early-graphics; else rm -f /etc/strata/early-graphics; fi
+fi
+if command -v restorecon >/dev/null; then restorecon "$image"; fi
+echo 'Previous boot image and setup policy restored. Reboot when ready.'
+ROLLBACK
+chmod 0700 "$backup/rollback.sh"
+rm -f "$backup/new.img"
+printf 'Boot display image ready. Backup: %s. Reboot to verify physical displays.\n' "$backup"

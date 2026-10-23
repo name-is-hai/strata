@@ -20,6 +20,37 @@ files; backups are saved with a timestamp.
 
 ## Display fallback and login displays
 
+The desktop installer also runs `strata-boot-displays --apply` to prepare
+Plymouth's Fedora loading screen. It requires Fedora's graphical Plymouth
+theme and DRM renderer packages
+(`plymouth-system-theme` and `plymouth-plugin-two-step`), including on minimal
+installations. It verifies that the selected theme, plugin, and renderer are
+present in the rebuilt image. It detects drivers instead of assuming NVIDIA
+or an external monitor. Intel, AMD, Nouveau,
+installed NVIDIA drivers, and supported virtual graphics are included early
+when available for the target kernel. A machine without a supported module
+keeps its existing boot image.
+
+Both graphics devices are retained on hybrid laptops. No connector is forced
+on or off; Plymouth can use the connected displays, and the laptop display
+remains available when an external monitor is unplugged. Hardware and firmware
+still determine when each display becomes available. This does not change GRUB
+or the firmware boot menu.
+
+Setup preserves the chosen Plymouth theme, backs up the previous image and
+configuration under `/var/lib/strata/backups/boot-displays-*`, and verifies the
+new image before replacing it. A `rollback.sh` in that backup restores the
+previous image and setup policy. Each boot image refresh checks the installed
+graphics-module contents; the RPM's module-file trigger handles optional driver
+builds that complete after kernel installation. The policy is active only when
+`/etc/strata/early-graphics` exists.
+
+Existing installations can opt in with:
+
+```console
+sudo /usr/share/strata/bin/strata-boot-displays --apply
+```
+
 Disabled outputs are synchronized to the separate greeter after a valid config
 reload or Display Layout save. Only validated connector states are published;
 the greeter does not execute personal Lua configuration.

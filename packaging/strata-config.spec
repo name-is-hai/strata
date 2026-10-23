@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.7
+Version:        1.1.8
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -75,6 +75,11 @@ Requires:       iw
 Requires:       NetworkManager-wifi
 Requires:       nftables
 Requires:       curl
+Requires:       dracut
+Requires:       plymouth
+Requires:       plymouth-system-theme
+Requires:       plymouth-plugin-two-step
+Requires:       kmod
 Requires:       file
 Requires:       desktop-file-utils
 Requires:       git-core
@@ -215,6 +220,7 @@ install -Dpm 0755 third_party/wiggle/scripts/wiggle-discover-cursor %{buildroot}
 # Keep the upstream entrypoint while giving the Strata dispatcher its metadata.
 sed -i '2i# strata:summary=Inspect cursor theme capabilities\n# strata:hidden=true' %{buildroot}%{_datadir}/strata/bin/strata-wiggle-discover-cursor
 install -Dpm 0644 defaults/udev/70-strata-wiggle.rules %{buildroot}%{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
+install -Dpm 0644 defaults/dracut/60-strata-early-graphics.conf %{buildroot}%{_prefix}/lib/dracut/dracut.conf.d/60-strata-early-graphics.conf
 
 install -d %{buildroot}%{_datadir}/strata/user-config
 cp -a config/hypr config/uwsm config/xdg-desktop-portal config/gtk-3.0 config/gtk-4.0 config/imv \
@@ -295,6 +301,15 @@ if [ -f /etc/greetd/config.toml ]; then
     sed -i 's|^command = "/usr/bin/strata-greeter-session"$|command = "/usr/share/strata/bin/strata-greeter-session"|' /etc/greetd/config.toml
 fi
 
+# Kernel installation can finish before an optional akmod has been built.
+# Refresh opted-in boot images after the actual module RPM is installed too.
+%transfiletriggerin -- /lib/modules /usr/lib/modules
+if [ -x /usr/share/strata/bin/strata-boot-displays ] && [ -f /etc/strata/early-graphics ]; then
+    sed -nE 's@^/(usr/)?lib/modules/([^/]+)/.*@\2@p' | sort -u | while IFS= read -r kernel; do
+        /usr/share/strata/bin/strata-boot-displays --sync "$kernel" || echo "Strata: boot display refresh failed for $kernel; previous image retained." >&2
+    done
+fi
+
 %post -n strata-waycast
 %systemd_post strata-waycast-networkd.service
 %firewalld_reload
@@ -316,6 +331,7 @@ fi
 %systemd_user_postun strata-castd.service
 
 %files
+%{_prefix}/lib/dracut/dracut.conf.d/60-strata-early-graphics.conf
 %license defaults/icons/Win11OSX/LICENSE.txt
 %license LICENSE third_party/wiggle/LICENSE shell/plugins/services/media/MEDIA-CONTROL-LICENSE shell/plugins/panels/wireless-display/LICENSE shell/plugins/panels/cast/LICENSE
 %license shell/plugins/services/keyboard-osd/KEYGLOW-LICENSE shell/plugins/services/keyboard-osd/LOCK-KEYS-LICENSE
@@ -383,6 +399,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.8-1
+- Prepare hardware-aware early graphics and graphical Plymouth support for Fedora boot displays
+
 * Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.7-1
 - Add per-device USB mouse configuration access with removable udev approvals
 - Redesign Mouse and Display Layout with responsive columns and fixed header actions

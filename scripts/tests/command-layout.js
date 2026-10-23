@@ -57,7 +57,7 @@ try {
     assert.doesNotMatch(fs.readFileSync(path.join(buildroot,'usr/share/strata',file),'utf8'),/\/usr\/(?:bin|libexec)\/strata-/);
   for(const name of ['strata-castd','strata-waycast-networkd'])
     assert.match(spec,new RegExp('/usr/share/strata/bin/'+name));
-  const post=spec.match(/\n%post\n([\s\S]*?)\n%post -n/)[1];
+  const post=spec.match(/\n%post\n([\s\S]*?)(?=\n%[a-z])/)[1];
   const greetd=path.join(work,'greetd.toml');
   put(greetd,'[default_session]\ncommand = "/usr/bin/strata-greeter-session"\nuser = "greetd"\n');
   run('bash',['-eu','-c',post.replaceAll('/etc/greetd/config.toml',greetd)]);

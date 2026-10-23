@@ -215,6 +215,10 @@ else
     hyprland-desktop strata-config
 fi
 
+# Prepare Plymouth only after the Fedora graphics stack and Strata's
+# hardware-aware dracut policy are installed. No connector is forced on/off.
+strata-boot-displays --apply
+
 if [[ -n $install_user ]]; then
   if ! id "$install_user" >/dev/null 2>&1; then
     echo "Requested desktop user does not exist: $install_user" >&2
