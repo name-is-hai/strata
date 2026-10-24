@@ -1,11 +1,11 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.8
+Version:        1.1.9
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
-License:        MIT AND LicenseRef-Win11OSX
+License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
 URL:            https://github.com/name-is-hai/strata
 Source0:        %{name}-%{version}.tar.gz
 Source1:        https://github.com/alchemy/waycast/releases/download/v0.6.1/waycast-v0.6.1-linux-amd64.tar.gz
@@ -339,6 +339,7 @@ fi
 %license shell/plugins/services/shortcut-guide/KEY-PROMOTER-LICENSE
 %license shell/plugins/notifications/center/LICENSE shell/plugins/notifications/center/LICENSE-LUCIDE shell/plugins/notifications/center/LICENSE-OMARCHY
 %license shell/plugins/theme-picker/LICENSE
+%license shell/plugins/services/system-sounds/sounds/strata/LICENSES/
 %doc docs/strata-config.md
 %{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
 %{_datadir}/applications/strata-snip.desktop
@@ -399,6 +400,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Oct 24 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.9-1
+- Add the Strata default sound theme with all 19 event cues, balanced imported sounds, attribution and licenses
+
 * Fri Oct 23 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.8-1
 - Prepare hardware-aware early graphics and graphical Plymouth support for Fedora boot displays
 

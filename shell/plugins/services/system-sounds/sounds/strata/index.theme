@@ -1,0 +1,7 @@
+[Sound Theme]
+Name=Strata
+Comment=Strata default event sounds
+Directories=.
+
+[.]
+OutputProfile=stereo

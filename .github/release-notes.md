@@ -1,4 +1,4 @@
-# Strata 1.1.12
+# Strata 1.1.13
 
-- Prepare Fedora loading screens for Intel, AMD, NVIDIA hybrid and virtual graphics
-- Include graphical Plymouth theme and renderer on fresh installations and validate boot images before replacement
+- Make the combined Strata sound theme the default for new configurations and missing event cues
+- Include all 19 event sounds with balanced levels, original audio, source mappings and upstream licenses

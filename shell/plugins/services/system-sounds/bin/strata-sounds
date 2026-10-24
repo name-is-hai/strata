@@ -11,11 +11,11 @@
 #   2. ~/.config/strata/sounds/<theme>/            your own files for <theme>
 #   3. <plugin>/sounds/<theme>/                     the bundled theme
 #   4. ~/.local/share/sounds/<theme>/, /usr/share/sounds/<theme>/   XDG sound themes
-#   5. the same again for any Inherits= theme, then for the Glass base theme
+#   5. the same again for any Inherits= theme, then for the Strata base theme
 #
 # So a file you drop into ~/.config/strata/sounds/glass/ replaces that one
 # sound in Glass, and a new folder there is a new theme. The desktop theme's
-# sounds, the chosen theme (with its overlay and parents) and Glass are three
+# sounds, the chosen theme (with its overlay and parents) and Strata are three
 # tiers, tried in that order. Within a tier, a file named exactly after the
 # event beats one of its fallback names from events.json, which is how
 # freedesktop themes (service-login.oga for startup) fill in.
@@ -33,7 +33,7 @@ DESKTOP_THEME_DIR=$HOME/.local/state/strata/current/theme
 DESKTOP_THEME_NAME_FILE=$HOME/.local/state/strata/current/theme.name
 EVENTS_FILE=$PLUGIN_DIR/events.json
 RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp}/strata-sounds
-BASE_THEME=glass
+BASE_THEME=strata
 DEFAULT_VOLUME=80
 EXTENSIONS=(ogg oga opus flac wav mp3)
 ASSUME_YES=false
