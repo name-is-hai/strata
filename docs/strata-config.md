@@ -593,7 +593,9 @@ borders use the first color stop, matching Strata's flat color consumers.
 
 ### Independent monitor workspaces
 
-Each output has its own desktop numbers. `Super+1` through `Super+0` select
+Each output has its own desktop numbers and starts on local desktop 1 in a
+fresh session. Reconnecting an output restores its remembered desktop instead.
+`Super+1` through `Super+0` select
 local desktops 1–10 on the focused output; adding Shift moves the focused
 window there, and Shift+Alt moves it without following. `Super+Tab` cycles
 that output's desktops, and `Super+Ctrl+Tab` returns to its previous desktop.

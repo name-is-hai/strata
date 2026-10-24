@@ -1,4 +1,4 @@
-# Strata 1.1.13
+# Strata 1.1.14
 
-- Make the combined Strata sound theme the default for new configurations and missing event cues
-- Include all 19 event sounds with balanced levels, original audio, source mappings and upstream licenses
+- Fix external monitors starting on local desktop 2 in fresh sessions
+- Default each monitor to desktop 1 while preserving occupied desktops and remembered reconnect selections

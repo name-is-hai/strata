@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.9
+Version:        1.1.10
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -400,6 +400,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Oct 24 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.10-1
+- Start empty bootstrap workspaces at local desktop 1 on every monitor while preserving occupied and restored desktops
+
 * Sat Oct 24 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.9-1
 - Add the Strata default sound theme with all 19 event cues, balanced imported sounds, attribution and licenses
 

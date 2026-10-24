@@ -146,7 +146,9 @@ function M.reconcile()
             rules = {}
             for _, m in ipairs(monitors) do
                 for slot = 1, 99 do
-                    rules[#rules + 1] = hl.workspace_rule({ workspace = tostring(M.base(m) + slot), monitor = m.name })
+                    rules[#rules + 1] = hl.workspace_rule({
+                        workspace = tostring(M.base(m) + slot), monitor = m.name, default = slot == 1,
+                    })
                 end
             end
             rule_signature = signature
@@ -216,6 +218,13 @@ function M.reconcile()
         for _, g in ipairs(pending) do
             local base = M.base(g.monitor)
             local slot = M.number(g.id)
+            -- Hyprland initially gives outputs global desktops 1, 2, ... . An
+            -- empty bootstrap desktop is local desktop 1 on every output, not
+            -- the output's position in that global allocation. Keep occupied
+            -- legacy desktops and remembered reconnect selections intact.
+            if g.id > 0 and g.id < 100 and not connected[g.monitor.name]
+                and not saved_active[g.monitor.name] and active[g.monitor.name] == g.id
+                and #g.visible == 0 and #g.hidden == 0 then slot = 1 end
             if slot < 1 or (used[base + slot] and (#g.visible > 0 or #g.hidden > 0)) then
                 slot = 1
                 while slot < 100 and used[base + slot] do slot = slot + 1 end
