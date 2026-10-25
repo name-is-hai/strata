@@ -23,6 +23,7 @@ OverlayWindow 1.0 OverlayWindow.qml
 Panel 1.0 Panel.qml
 PanelActionButton 1.0 PanelActionButton.qml
 PanelController 1.0 PanelController.qml
+PanelContent 1.0 PanelContent.qml
 PanelKeyCatcher 1.0 PanelKeyCatcher.qml
 PanelHero 1.0 PanelHero.qml
 PanelHeaderSurface 1.0 PanelHeaderSurface.qml

@@ -174,13 +174,10 @@ PopupWindow {
       height: root.headerHeight
     }
 
-    Item {
+    PanelContent {
       id: contentHolder
-      anchors.fill: parent
-      anchors.topMargin: card.contentTopInset + root.headerHeight
-      anchors.rightMargin: card.contentRightInset
-      anchors.bottomMargin: card.contentBottomInset
-      anchors.leftMargin: card.contentLeftInset
+      surface: card
+      headerHeight: root.headerHeight
     }
 
     HoverHandler {

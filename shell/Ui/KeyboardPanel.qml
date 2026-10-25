@@ -505,13 +505,10 @@ PanelWindow {
       }
     }
 
-    Item {
+    PanelContent {
       id: contentHolder
-      anchors.fill: parent
-      anchors.topMargin: card.contentTopInset + root.headerHeight
-      anchors.rightMargin: card.contentRightInset
-      anchors.bottomMargin: card.contentBottomInset
-      anchors.leftMargin: card.contentLeftInset
+      surface: card
+      headerHeight: root.headerHeight
       opacity: root.popoutSwitching ? (root.open ? 1.0 : 0) : 1.0
 
       Behavior on opacity {

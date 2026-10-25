@@ -35,6 +35,11 @@ their visual tree order selects the first one. An explicit `panelHeader` always 
 `PanelHero.autoDock: false` or `KeyboardPanel.autoDockHeaders: false` to keep
 an inline header. Custom headers and other window types require explicit
 integration; they are not detected by their text or appearance.
+
+`KeyboardPanel` and `PopupCard` align their content's horizontal edges to the
+output's physical pixel grid. Clipped plugin lists can use normal Rectangle
+borders at fractional display scales without needing plugin-specific patches.
+
 `qs.Ui.BarIconButton` measures standard and custom font glyphs against the
 shared `Style.bar.iconSize` square using visible outline bounds, preserving
 their proportions and drawing at an integer font size that fits the square.

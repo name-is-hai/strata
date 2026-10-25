@@ -341,7 +341,6 @@ fi
 %license shell/plugins/theme-picker/LICENSE
 %license shell/plugins/services/system-sounds/sounds/strata/LICENSES/
 %doc docs/strata-config.md
-%doc docs/plugin-patches/
 %{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
 %{_datadir}/applications/strata-snip.desktop
 %{_datadir}/applications/strata-editor.desktop
