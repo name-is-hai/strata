@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.12
+Version:        1.1.13
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -400,6 +400,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.13-1
+- Refresh cached lock state after Quickshell unlock notifications so the shortcut guide resumes after unlocking
+
 * Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.12-1
 - Fix shared panel clipping using the actual window rendering scale and remove the obsolete plugin patch
 

@@ -55,7 +55,16 @@ Item {
   property bool strandedLock: false
   property bool strandedLockResolved: false
 
-  readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+  // Quickshell can notify during unlock before its secure getter resets.
+  // Re-read after the transition returns so bindings do not cache "locked"
+  // indefinitely after all three underlying states have become false.
+  property int sessionLockRevision: 0
+  readonly property bool locked: {
+    sessionLockRevision
+    return lockRequested || sessionLock.locked || sessionLock.secure
+  }
+
+  function refreshSessionLockState() { sessionLockRevision += 1 }
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
   readonly property string formScreenName: ScreenSelection.formScreenName(Quickshell.screens || [])
   readonly property var batteryService: shell && shell.services ? shell.firstPartyServiceFor("strata.power") : null
@@ -435,6 +444,7 @@ Item {
     locked: false
 
     onSecureStateChanged: {
+      Qt.callLater(root.refreshSessionLockState)
       root.logEvent("secure=" + secure)
       if (secure) {
         root.pendingSessionLock = false
@@ -445,6 +455,7 @@ Item {
     }
 
     onLockStateChanged: {
+      Qt.callLater(root.refreshSessionLockState)
       root.logEvent("session-locked=" + locked)
 
       if (locked) {

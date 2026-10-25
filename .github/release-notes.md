@@ -1,4 +1,4 @@
-# Strata 1.1.16
+# Strata 1.1.17
 
-- Fix clipped panel borders at fractional display scales in the shared Strata UI
-- Keep third-party plugins optional and unmodified; remove the old Isobar patch
+- Fix the shortcut guide remaining suppressed after unlocking the desktop
+- Add an isolated Qt regression check for unlock notification timing and secure-lock suppression
