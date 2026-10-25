@@ -22,21 +22,36 @@ PanelHeaderSurface {
   property bool autoDock: true
   property var _headerHost: null
   readonly property var _headerWindow: root.QsWindow.window
+  // The hero itself is hidden while docked. Its page's visibility decides
+  // whether it may supply the fixed header, so hidden plugin pages cannot
+  // reserve header space or leak their controls onto another page.
+  readonly property bool _headerPageVisible: parent ? parent.visible : false
   readonly property bool headerDocked: _headerHost !== null
     && _headerHost.autoDockHeaders && !_headerHost.panelHeader
     && _headerHost.automaticHeaderSource === root
   readonly property real naturalHeight: Math.max(Style.space(58), heroLabels.implicitHeight + Style.space(20), trailingLoader.implicitHeight + Style.space(20))
 
   function syncHeaderHost() {
+    var window = root._headerWindow
+    var eligible = autoDock && root._headerPageVisible && window
+      && window.autoDockHeaders && !window.panelHeader
+      && typeof window.registerAutomaticHeader === "function"
+    if (eligible && _headerHost === window && window.automaticHeaderSource === root) return
     if (_headerHost && typeof _headerHost.releaseAutomaticHeader === "function")
       _headerHost.releaseAutomaticHeader(root)
     _headerHost = null
-    var window = root._headerWindow
-    if (autoDock && window && typeof window.registerAutomaticHeader === "function"
-        && window.registerAutomaticHeader(root)) _headerHost = window
+    if (eligible && window.registerAutomaticHeader(root)) _headerHost = window
   }
   on_HeaderWindowChanged: Qt.callLater(syncHeaderHost)
+  on_HeaderPageVisibleChanged: Qt.callLater(syncHeaderHost)
   onAutoDockChanged: Qt.callLater(syncHeaderHost)
+  Connections {
+    target: root._headerWindow
+    ignoreUnknownSignals: true
+    function onAutomaticHeaderSourceChanged() { Qt.callLater(root.syncHeaderHost) }
+    function onAutoDockHeadersChanged() { Qt.callLater(root.syncHeaderHost) }
+    function onPanelHeaderChanged() { Qt.callLater(root.syncHeaderHost) }
+  }
   Component.onCompleted: Qt.callLater(syncHeaderHost)
   Component.onDestruction: {
     if (_headerHost && typeof _headerHost.releaseAutomaticHeader === "function")

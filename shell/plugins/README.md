@@ -29,7 +29,9 @@ Panels using `qs.Ui.KeyboardPanel` automatically dock their first inline
 `PanelHero` into the fixed, full-width header area when no `panelHeader` is
 assigned. This also handles a hero inside a height-following wrapper: the
 original collapses, while status bindings and trailing controls stay live in
-the fixed header. An explicit `panelHeader` always takes precedence. Set
+the fixed header. Only heroes on the visible page participate; changing pages
+releases the old header and its reserved space. If multiple heroes are visible,
+their visual tree order selects the first one. An explicit `panelHeader` always takes precedence. Set
 `PanelHero.autoDock: false` or `KeyboardPanel.autoDockHeaders: false` to keep
 an inline header. Custom headers and other window types require explicit
 integration; they are not detected by their text or appearance.

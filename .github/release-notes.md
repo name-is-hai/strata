@@ -1,4 +1,4 @@
-# Strata 1.1.14
+# Strata 1.1.15
 
-- Fix external monitors starting on local desktop 2 in fresh sessions
-- Default each monitor to desktop 1 while preserving occupied desktops and remembered reconnect selections
+- Fix hidden plugin pages leaking headers and consuming space on other pages
+- Keep automatic header selection stable across page changes and include an optional Isobar card-border patch

@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.10
+Version:        1.1.11
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -341,6 +341,7 @@ fi
 %license shell/plugins/theme-picker/LICENSE
 %license shell/plugins/services/system-sounds/sounds/strata/LICENSES/
 %doc docs/strata-config.md
+%doc docs/plugin-patches/
 %{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
 %{_datadir}/applications/strata-snip.desktop
 %{_datadir}/applications/strata-editor.desktop
@@ -400,6 +401,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.11-1
+- Dock headers only from visible plugin pages, select the first hero consistently, and include the optional Isobar card-border patch
+
 * Sat Oct 24 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.10-1
 - Start empty bootstrap workspaces at local desktop 1 on every monitor while preserving occupied and restored desktops
 

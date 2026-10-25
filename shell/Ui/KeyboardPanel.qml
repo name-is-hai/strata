@@ -67,9 +67,30 @@ PanelWindow {
   readonly property real headerHeight: effectivePanelHeader && effectivePanelHeader.visible ? effectivePanelHeader.implicitHeight : 0
 
   function registerAutomaticHeader(hero) {
-    if (!autoDockHeaders || panelHeader || (automaticHeaderSource && automaticHeaderSource !== hero)) return false
+    if (!autoDockHeaders || panelHeader) return false
+    if (automaticHeaderSource && automaticHeaderSource !== hero
+        && automaticHeaderSource.parent && automaticHeaderSource.parent.visible
+        && !automaticHeaderPrecedes(hero, automaticHeaderSource)) return false
     automaticHeaderSource = hero
     return true
+  }
+
+  // Visibility notifications can arrive in reverse child order. Select the
+  // first hero in the page's visual tree, rather than whichever callback ran
+  // first (e.g. Units must not replace Location at the top of Settings).
+  function automaticHeaderPrecedes(hero, current) {
+    var a = [], b = [], item
+    for (item = hero; item; item = item.parent) a.unshift(item)
+    for (item = current; item; item = item.parent) b.unshift(item)
+    var i = 0
+    while (i < a.length && i < b.length && a[i] === b[i]) i++
+    if (i === 0 || i === a.length || i === b.length) return false
+    var siblings = a[i - 1].children
+    for (var n = 0; n < siblings.length; n++) {
+      if (siblings[n] === a[i]) return true
+      if (siblings[n] === b[i]) return false
+    }
+    return false
   }
 
   function releaseAutomaticHeader(hero) {
