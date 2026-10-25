@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.11
+Version:        1.1.12
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -400,6 +400,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.12-1
+- Fix shared panel clipping using the actual window rendering scale and remove the obsolete plugin patch
+
 * Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.11-1
 - Dock headers only from visible plugin pages, select the first hero consistently, and include the optional Isobar card-border patch
 

@@ -1,4 +1,4 @@
-# Strata 1.1.15
+# Strata 1.1.16
 
-- Fix hidden plugin pages leaking headers and consuming space on other pages
-- Keep automatic header selection stable across page changes and include an optional Isobar card-border patch
+- Fix clipped panel borders at fractional display scales in the shared Strata UI
+- Keep third-party plugins optional and unmodified; remove the old Isobar patch
