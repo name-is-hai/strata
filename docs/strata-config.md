@@ -467,6 +467,46 @@ investigation; an automatic output-removal workaround is not enabled.
 
 ## Lock-screen and login power controls
 
+The `strata-lock-auth` package supplies separate password and fingerprint PAM
+policies and depends on `fprintd` and `fprintd-pam`. On a machine with a supported
+fingerprint reader, enroll and verify as the desktop user, without `sudo`:
+
+```bash
+fprintd-enroll
+fprintd-verify
+```
+
+Enrollment must finish with `enroll-completed` and verification with
+`verify-match`. The next lock detects enrollment automatically and offers
+fingerprint unlock alongside the existing password flow. No authselect change
+is required, and sudo authentication is unchanged.
+The fingerprint PAM policy is a `%config(noreplace)` file, preserving local
+administrator edits during upgrades. Machines without enrolled fingerprints
+continue using password unlock.
+
+The Strata login greeter also offers **Use fingerprint** when a reader is
+available. Select your account, click the button and scan your enrolled finger.
+The greeter sends the authentication request to greetd; it never treats a
+local reader check or UI event as permission to start a session.
+
+greetd uses one PAM conversation. The `strata-greetd` policy therefore gives
+fingerprint authentication one attempt with a five-second timeout, then falls
+back to Fedora's `greetd` password policy. Passwords typed before authentication
+starts are held for the password prompt; typing a password can therefore wait
+for that short fingerprint window. A fingerprint attempt without a password
+shows an editable password prompt if the scan fails or times out. The greeter
+process itself uses `greetd-greeter`, keeping fingerprint authentication out of
+the process-startup credential setup.
+
+Fresh setups select these policies through `strata-setup-greeter`. Config RPM
+upgrades migrate existing Strata greeter configurations using
+`strata-greeter-auth-configure`, with a
+`/etc/greetd/config.toml.before-strata-fingerprint` backup. Explicit custom PAM
+services and other greeters are preserved. The migration never restarts greetd
+or logs out the running desktop; the new policy applies when greetd next starts.
+Fingerprint login does not supply your account password to the login keyring,
+so applications using stored secrets may still ask to unlock that keyring.
+
 The greeter and session lock share `shell/Ui/LockScreenView.qml`: wallpaper,
 clock, password field, account label, feedback, and power buttons. The greeter
 enables account switching and additional authentication prompts; the session

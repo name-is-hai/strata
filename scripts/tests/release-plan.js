@@ -39,7 +39,7 @@ try {
     'packaging/strata-config.spec', 'packaging/strata-lock-auth.spec',
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
-    'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password',
+    'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password', 'packaging/strata-lock-fingerprint', 'packaging/strata-greetd',
     'packaging/ghostty.spec', 'packaging/uwsm.spec',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
   put('packaging/build/targets.json', buildDefinitions);
@@ -95,6 +95,12 @@ try {
   put('packaging/strata-lock-password', 'new PAM policy'); commit();
   assert.deepEqual(choices(), {...all(true), 'lock-auth': false}, 'PAM policy has its own target');
   put('packaging/strata-lock-password', 'original\n'); commit();
+  put('packaging/strata-lock-fingerprint', 'new fingerprint PAM policy'); commit();
+  assert.deepEqual(choices(), {...all(true), 'lock-auth': false}, 'fingerprint policy rebuilds lock-auth only');
+  put('packaging/strata-lock-fingerprint', 'original\n'); commit();
+  put('packaging/strata-greetd', 'new greeter PAM policy'); commit();
+  assert.deepEqual(choices(), {...all(true), 'lock-auth': false}, 'greeter PAM policy rebuilds lock-auth only');
+  put('packaging/strata-greetd', 'original\n'); commit();
   put('packaging/casting/strata-castd.service', 'new service'); commit();
   assert.deepEqual(choices(), {...all(true), config: false}, 'casting assets affect only config');
   put('packaging/casting/strata-castd.service', 'original\n'); commit();

@@ -36,6 +36,8 @@
     "spec": "strata-lock-auth.spec",
     "inputs": [
       "packaging/strata-lock-password",
+      "packaging/strata-lock-fingerprint",
+      "packaging/strata-greetd",
       "packaging/hyprland-desktop-LICENSE"
     ]
   },

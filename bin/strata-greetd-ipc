@@ -50,7 +50,10 @@ while IFS= read -r line; do
       if [[ $active == true ]]; then
         exchange '{"type":"cancel_session"}' || true
       fi
-      pending_password_request=$(jq -c '{type:"post_auth_message_response",response:(.password // "")}' <<<"$line") || continue
+      # A fingerprint attempt supplies no password. Leave the first secret
+      # prompt unanswered so the greeter can offer password fallback instead
+      # of sending an empty password and consuming an authentication attempt.
+      pending_password_request=$(jq -r 'if (.password | type) == "string" then {type:"post_auth_message_response",response:.password} | tojson else empty end' <<<"$line") || continue
       request=$(jq -c '{type:"create_session",username:(.username | gsub("^\\s+|\\s+$"; ""))}' <<<"$line") || continue
       if ! exchange "$request"; then
         emit_error 'greetd disconnected'

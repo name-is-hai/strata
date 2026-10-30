@@ -1,0 +1,8 @@
+#%PAM-1.0
+# greetd authenticates one factor at a time. A missing reader, no enrollment,
+# failed scan or five-second timeout falls through to Fedora's password stack.
+auth        sufficient  pam_fprintd.so max-tries=1 timeout=5
+auth        include     greetd
+account     include     greetd
+password    include     greetd
+session     include     greetd

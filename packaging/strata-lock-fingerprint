@@ -1,0 +1,4 @@
+#%PAM-1.0
+# Fingerprint unlock runs independently of the password authentication flow.
+auth        required    pam_fprintd.so
+account     include     login

@@ -1,6 +1,11 @@
 [terminal]
 vt = 1
 
+[general]
+service = "strata-greetd"
+
 [default_session]
 command = "/usr/share/strata/bin/strata-greeter-session"
 user = "greetd"
+# Starting the greeter itself must not run fingerprint authentication.
+service = "greetd-greeter"

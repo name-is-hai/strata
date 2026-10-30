@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# strata:summary=Select the packaged login authentication policy for Strata's greeter
+# strata:hidden=true
+set -euo pipefail
+
+configure_greeter_auth() {
+  local file=${1:-/etc/greetd/config.toml} command service greeter_service general temporary
+  [[ -f $file && ! -L $file ]] || return 0
+  # Handle the simple config form emitted by Strata and greetd. Leave quoted
+  # or dotted keys/tables to their administrator rather than risk duplicates.
+  if awk '
+    { line=$0; sub(/[[:space:]]*#.*/, "", line) }
+    line ~ /^[[:space:]]*\[/ && line !~ /^[[:space:]]*\[[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\][[:space:]]*$/ { bad=1 }
+    line !~ /^[[:space:]]*\[/ && line ~ /=/ && line !~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ { bad=1 }
+    END { exit !bad }
+  ' "$file"; then return 0; fi
+  # An administrator's auto-login configuration has its own PAM lifecycle.
+  if awk '/^[[:space:]]*\[[[:space:]]*initial_session[[:space:]]*\][[:space:]]*(#.*)?$/ { found=1 } END { exit !found }' "$file"; then return 0; fi
+  command=$(greeter_config_value "$file" default_session command)
+  [[ $command == /usr/share/strata/bin/strata-greeter-session ]] || return 0
+  service=$(greeter_config_value "$file" general service)
+  greeter_service=$(greeter_config_value "$file" default_session service)
+  # An explicit administrator policy remains authoritative.
+  case $service in ''|greetd|strata-greetd) ;; *) return 0 ;; esac
+  case $greeter_service in ''|greetd-greeter) ;; *) return 0 ;; esac
+  general=$(awk '/^[[:space:]]*\[[[:space:]]*general[[:space:]]*\][[:space:]]*(#.*)?$/ { found=1 } END { print found+0 }' "$file")
+  temporary=$(mktemp "$file.XXXXXX")
+  if ! awk -v general="$general" '
+    BEGIN { if (!general) print "[general]\nservice = \"strata-greetd\"\n" }
+    /^[[:space:]]*\[/ {
+      section=$0; sub(/[[:space:]]*#.*/, "", section); gsub(/[[:space:]]/, "", section)
+      print
+      if (section == "[general]") print "service = \"strata-greetd\""
+      if (section == "[default_session]") print "service = \"greetd-greeter\""
+      next
+    }
+    (section == "[general]" || section == "[default_session]") && /^[[:space:]]*service[[:space:]]*=/ { next }
+    { print }
+  ' "$file" >"$temporary"; then rm -f "$temporary"; return 1; fi
+  if cmp -s "$file" "$temporary"; then rm -f "$temporary"; return 0; fi
+  if [[ ! -e $file.before-strata-fingerprint ]]; then
+    cp -a -- "$file" "$file.before-strata-fingerprint" || { rm -f "$temporary"; return 1; }
+  fi
+  chmod --reference="$file" "$temporary" || { rm -f "$temporary"; return 1; }
+  chown --reference="$file" "$temporary" || { rm -f "$temporary"; return 1; }
+  mv -f -- "$temporary" "$file" || return 1
+  restorecon "$file" || true
+}
+
+greeter_config_value() {
+  awk -v wanted_section="[$2]" -v wanted_key="$3" '
+    /^[[:space:]]*\[/ {
+      section=$0; sub(/[[:space:]]*#.*/, "", section); gsub(/[[:space:]]/, "", section); next
+    }
+    section == wanted_section {
+      line=$0; sub(/[[:space:]]*#.*/, "", line)
+      key=line; sub(/=.*/, "", key); gsub(/[[:space:]]/, "", key)
+      if (key != wanted_key || line !~ /=/) next
+      sub(/^[^=]*=[[:space:]]*/, "", line); sub(/[[:space:]]*$/, "", line)
+      gsub(/^["\047]|["\047]$/, "", line)
+      print line
+    }
+  ' "$1"
+}
+
+if [[ ${1:-} == --help ]]; then echo 'Usage: sudo strata-greeter-auth-configure'; exit 0; fi
+(( $# == 0 )) || { echo 'Unexpected arguments.' >&2; exit 64; }
+(( EUID == 0 )) || { echo 'Run with sudo or pkexec.' >&2; exit 77; }
+[[ -r /etc/pam.d/strata-greetd && -r /etc/pam.d/greetd-greeter ]] || {
+  echo 'Install the current strata-lock-auth and greetd packages first.' >&2; exit 66;
+}
+configure_greeter_auth

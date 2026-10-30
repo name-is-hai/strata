@@ -10,6 +10,7 @@ ShellRoot {
   property string user: "liam"
   property var submissions: []
   property var actions: []
+  property int fingerprintRequests: 0
   property var lockView: null
   property bool failed: false
   property int captures: 0
@@ -43,6 +44,7 @@ ShellRoot {
       onPasswordTextEdited: function(value) { harness.password = value }
       onUsernameEdited: function(value) { harness.user = value }
       onSubmitPassword: function(value) { harness.submissions.push(value) }
+      onFingerprintLoginRequested: harness.fingerprintRequests += 1
       onClearFailureRequested: failureMessage = ""
       onSuspendRequested: harness.actions.push("suspend")
       onShutdownRequested: harness.actions.push("poweroff")
@@ -103,6 +105,19 @@ ShellRoot {
         harness.check(harness.find(loginView,"fingerprintUnavailableNotice").visible, "Fingerprint failure notice disappeared")
         loginView.fingerprintConfigured = false
         loginView.fingerprintUnavailable = false
+        var fingerprintButton = harness.find(loginView,"fingerprintLoginButton")
+        harness.check(!fingerprintButton.visible,"Fingerprint login leaked into default lock UI")
+        loginView.allowFingerprintLogin = true
+        loginView.authenticationNotice = "Touch the reader"
+        harness.check(fingerprintButton.visible && fingerprintButton.enabled,"Greeter fingerprint action missing")
+        harness.check(harness.find(loginView,"authenticationNotice").visible,"Scan instructions missing")
+        harness.check(events.mouseClick(fingerprintButton,fingerprintButton.width/2,fingerprintButton.height/2,Qt.LeftButton,Qt.NoModifier,0),"Fingerprint action click failed")
+        harness.check(harness.fingerprintRequests === 1,"Fingerprint action did not reach controller")
+        loginView.authenticatingPassword = true
+        harness.check(!fingerprintButton.enabled,"Fingerprint action remains enabled during authentication")
+        loginView.authenticatingPassword = false
+        loginView.allowFingerprintLogin = false
+        loginView.authenticationNotice = ""
         var names = ["lock-suspend","lock-poweroff","lock-reboot"]
         for (var i=0; i<names.length; ++i) {
           var button = harness.find(loginView,names[i])

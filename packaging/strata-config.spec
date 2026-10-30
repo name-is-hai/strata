@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.14
+Version:        1.1.15
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -57,7 +57,7 @@ Requires:       pulseaudio-utils
 Requires:       pam
 Requires:       gnome-keyring
 Requires:       gnome-keyring-pam
-Requires:       strata-lock-auth
+Requires:       strata-lock-auth >= 0.1-3
 Requires:       fcitx5
 Requires:       fcitx5-gtk
 Requires:       fcitx5-qt
@@ -301,6 +301,12 @@ if [ -f /etc/greetd/config.toml ]; then
     sed -i 's|^command = "/usr/bin/strata-greeter-session"$|command = "/usr/share/strata/bin/strata-greeter-session"|' /etc/greetd/config.toml
 fi
 
+# Select Strata's login-only PAM service for existing managed greeter configs.
+# The helper preserves explicit custom policies and never restarts greetd.
+if [ -x /usr/share/strata/bin/strata-greeter-auth-configure ]; then
+    /usr/share/strata/bin/strata-greeter-auth-configure || echo "Strata: greeter authentication setup needs review." >&2
+fi
+
 # Kernel installation can finish before an optional akmod has been built.
 # Refresh opted-in boot images after the actual module RPM is installed too.
 %transfiletriggerin -- /lib/modules /usr/lib/modules
@@ -400,6 +406,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.15-1
+- Add fingerprint login to the greeter with a bounded scan window and password fallback
+- Migrate managed greeter PAM settings while preserving custom policies and auto-login configurations
+
 * Fri Oct 30 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.14-1
 - Install Intel Arrow Lake audio and Wi-Fi firmware conditionally during desktop setup
 - Fix full-width dropdown hover highlights and pointer selection

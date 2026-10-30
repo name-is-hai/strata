@@ -58,13 +58,19 @@ try {
   for(const name of ['strata-castd','strata-waycast-networkd'])
     assert.match(spec,new RegExp('/usr/share/strata/bin/'+name));
   const post=spec.match(/\n%post\n([\s\S]*?)(?=\n%[a-z])/)[1];
+  // Never invoke a host-installed privileged migration helper from a test.
+  put(path.join(work,'tools/auth-configure'),'#!/bin/bash\ntouch "$STRATA_GREETER_AUTH_TEST_MARKER"\n');
+  fs.chmodSync(path.join(work,'tools/auth-configure'),0o755);
+  const isolatedPost=post.replaceAll('/usr/share/strata/bin/strata-greeter-auth-configure',path.join(work,'tools/auth-configure'));
+  const postEnv={...process.env,STRATA_GREETER_AUTH_TEST_MARKER:path.join(work,'greeter-auth-called')};
   const greetd=path.join(work,'greetd.toml');
   put(greetd,'[default_session]\ncommand = "/usr/bin/strata-greeter-session"\nuser = "greetd"\n');
-  run('bash',['-eu','-c',post.replaceAll('/etc/greetd/config.toml',greetd)]);
+  run('bash',['-eu','-c',isolatedPost.replaceAll('/etc/greetd/config.toml',greetd)],{env:postEnv});
   assert.match(fs.readFileSync(greetd,'utf8'),/command = "\/usr\/share\/strata\/bin\/strata-greeter-session"/);
   put(greetd,'command = "/custom/login"\n');
-  run('bash',['-eu','-c',post.replaceAll('/etc/greetd/config.toml',greetd)]);
+  run('bash',['-eu','-c',isolatedPost.replaceAll('/etc/greetd/config.toml',greetd)],{env:postEnv});
   assert.equal(fs.readFileSync(greetd,'utf8'),'command = "/custom/login"\n');
+  assert.ok(fs.existsSync(path.join(work,'greeter-auth-called')),'upgrade invokes the managed greeter authentication migration');
   let rule;
   vm.runInNewContext(fs.readFileSync(path.join(repo,'defaults/polkit-1/rules.d/49-strata-greeter.rules'),'utf8'),
     {polkit:{addRule:fn=>rule=fn,Result:{YES:'yes'}}});

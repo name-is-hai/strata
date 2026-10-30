@@ -16,6 +16,8 @@ Item {
   property bool fingerprintConfigured: false
   property bool fingerprintUnavailable: false
   property bool authenticatingPassword: false
+  property bool allowFingerprintLogin: false
+  property string authenticationNotice: ""
   property string failureMessage: ""
   property int failedAttempts: 0
   property bool inputEnabled: true
@@ -58,6 +60,7 @@ Item {
 
   signal usernameEdited(string username)
   signal submitPassword(string password)
+  signal fingerprintLoginRequested()
   signal passwordTextEdited(string password)
   signal clearFailureRequested()
   signal wakeRequested()
@@ -347,6 +350,37 @@ Item {
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
+    }
+
+    Text {
+      id: authenticationStatus
+      objectName: "authenticationNotice"
+      anchors.top: inputField.bottom
+      anchors.topMargin: 14
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: Math.min(root.fieldWidth, parent.width - 32)
+      visible: root.showForm && !root.editingUser && root.authenticationNotice !== ""
+      textFormat: Text.PlainText
+      text: root.authenticationNotice
+      color: Color.lock.placeholder
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+    }
+
+    Button {
+      objectName: "fingerprintLoginButton"
+      anchors.top: authenticationStatus.visible ? authenticationStatus.bottom : inputField.bottom
+      anchors.topMargin: 14
+      anchors.horizontalCenter: parent.horizontalCenter
+      visible: root.showForm && root.allowFingerprintLogin && !root.editingUser
+      enabled: root.inputEnabled && !root.authenticatingPassword && root.username.trim() !== ""
+      text: "Use fingerprint"
+      foreground: Color.lock.text
+      focusable: true
+      bordered: true
+      onClicked: root.fingerprintLoginRequested()
     }
 
     Text {

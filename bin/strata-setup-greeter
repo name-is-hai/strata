@@ -36,6 +36,10 @@ for file in greeter/shell.qml greeter/hyprland.lua greeter/config.toml \
     exit 66
   }
 done
+[[ -r /etc/pam.d/strata-greetd && -r /etc/pam.d/greetd-greeter ]] || {
+  echo 'Install the current strata-lock-auth and greetd packages before configuring the greeter.' >&2
+  exit 66
+}
 install -d -o root -g root -m 0755 /etc/strata /etc/greetd
 
 if [[ ! -f /usr/share/strata/greeter/background.jpg || ! -f /usr/share/strata/greeter/background.sha256 ]]; then
