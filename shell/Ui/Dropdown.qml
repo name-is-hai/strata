@@ -175,7 +175,7 @@ Item {
 
         contentItem: ListView {
           id: optionList
-          ScrollBar.vertical: PanelScrollBar {}
+          ScrollBar.vertical: PanelScrollBar { id: optionScrollBar }
           spacing: Style.spacing.labelGap
 
           Keys.priority: Keys.BeforeItem
@@ -214,7 +214,7 @@ Item {
           delegate: Rectangle {
             required property var modelData
             required property int index
-            width: Math.max(0, optionList.width - Style.space(16))
+            width: optionList.width
             height: root.popupRowHeight
             color: index === optionList.currentIndex
               ? Style.hoverFillFor(root.foreground, root.accent)
@@ -226,7 +226,7 @@ Item {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               anchors.leftMargin: Style.spacing.controlPaddingX
-              anchors.rightMargin: Style.spacing.controlPaddingX
+              anchors.rightMargin: Style.spacing.controlPaddingX + (optionScrollBar.size < 1 ? optionScrollBar.gutter : 0)
               text: root.optionLabel(modelData)
               color: index === optionList.currentIndex ? Style.hoverStateColor(root.foreground, root.accent) : root.foreground
               font.family: root.fontFamily
@@ -238,8 +238,12 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
+              onEntered: optionList.currentIndex = parent.index
               onPositionChanged: optionList.currentIndex = parent.index
-              onClicked: optionList.selectCurrent()
+              onClicked: {
+                optionList.currentIndex = parent.index
+                optionList.selectCurrent()
+              }
             }
           }
         }

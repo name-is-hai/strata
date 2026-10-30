@@ -35,6 +35,7 @@ local function scenario(ids, occupied, saved)
             return {set_enabled=function() end}
         end,
         dsp={
+            event=function(message) return {kind="event", message=message} end,
             focus=function(args) return {kind="focus", args=args} end,
             window={move=function(args) return {kind="move-window", args=args} end},
             workspace={move=function(args) return {kind="move-workspace", args=args} end},
@@ -83,6 +84,12 @@ local function run()
     _, monitors=scenario({105,202})
     assert(monitors[1].active_workspace.id==105 and monitors[2].active_workspace.id==202,
         "existing local desktops must not be reset on config reload")
+    module=scenario({101,201})
+    assert(module.transfer(101,"display-2",1)==201,
+        "remote restoration reuses an empty original workspace")
+    module=scenario({101,201},true)
+    assert(module.transfer(101,"display-2",1)==202,
+        "remote restoration must not overwrite an occupied destination")
 end
 local ok, err=pcall(run)
 os.remove(state)

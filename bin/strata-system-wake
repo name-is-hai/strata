@@ -5,6 +5,9 @@
 # strata:name=wake
 # strata:examples=strata system wake
 
+# Unlocking over RDP must leave the physical screens dark.
+strata-remote-desktop active && exit 0
+
 strata-brightness-display on
 strata-brightness-keyboard restore
 strata-hyprland-monitor-clamshell >/dev/null 2>&1 || true

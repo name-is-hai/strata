@@ -1,4 +1,5 @@
-# Strata 1.1.17
+# Strata 1.1.18
 
-- Fix the shortcut guide remaining suppressed after unlocking the desktop
-- Add an isolated Qt regression check for unlock notification timing and secure-lock suppression
+- Install alsa-sof-firmware, alsa-ucm and iwlwifi-mld-firmware on Intel Arrow Lake machines during desktop setup
+- Fix full-width option highlights and pointer selection in regular and searchable dropdowns
+- Add optional experimental same-session RDP integration with lock-before-restore recovery; physical-screen blanking does not securely lock local input

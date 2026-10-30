@@ -60,9 +60,11 @@ fi
 step="$1"
 
 if [[ $step == "off" ]]; then
+  strata-remote-desktop active && exit 0
   hyprctl dispatch 'hl.dsp.dpms({ action = "disable" })' >/dev/null 2>&1
   exit 0
 elif [[ $step == "on" ]]; then
+  strata-remote-desktop active && exit 0
   # Skip the dispatch when every active display is already lit: a redundant
   # DPMS enable right after system resume forces another modeset, which blanks
   # the panel for a beat (visible flash at the unlock screen).

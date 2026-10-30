@@ -283,13 +283,19 @@ function M.destination(id, name)
     return slot < 100 and (M.base(monitor) + slot) or nil
 end
 
-function M.transfer(id, name)
+function M.transfer(id, name, preferred_slot)
     if type(id) ~= "number" or id < 1 or id % 1 ~= 0 then return nil end
     local target = M.monitor(name)
     local source
     for _, monitor in ipairs(hl.get_monitors() or {}) do if M.owns(monitor, id) then source = monitor end end
     if busy or not source or not target or source.name == target.name then return nil end
     local destination = M.destination(id, name)
+    -- An RDP handoff remembers each workspace's original local number. Its
+    -- empty replacement desktop can be reused when that workspace returns.
+    if type(preferred_slot) == "number" and preferred_slot >= 1 and preferred_slot <= 99
+        and preferred_slot % 1 == 0 and not M.occupied(M.base(target) + preferred_slot) then
+        destination = M.base(target) + preferred_slot
+    end
     if not destination then return nil end
     local visible, hidden = windows(id), windows(hidden_prefix .. id)
     local follow = source.active_workspace and source.active_workspace.id == id

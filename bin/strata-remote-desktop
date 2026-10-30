@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# strata:summary=Manage an optional RDP connection to the existing desktop
+# strata:args=<setup|start|stop|status|credentials|recover>
+# strata:examples=strata remote desktop setup | strata remote desktop start
+set -euo pipefail
+umask 077
+export PATH="$(dirname "$(readlink -f "$0")"):/usr/share/strata/bin:/usr/bin:/bin:$PATH"
+export STRATA_PATH=${STRATA_PATH:-/usr/share/strata}
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+state_dir=$runtime/strata-remote-desktop
+state=$state_dir/state.json
+active=$state_dir/active
+data=${XDG_DATA_HOME:-$HOME/.local/share}/strata/remote-desktop
+config=${XDG_CONFIG_HOME:-$HOME/.config}/strata/remote-desktop
+unit=strata-remote-desktop.service
+self=$(readlink -f "$0")
+output_file=$state_dir/output
+
+fail() { echo "$*" >&2; exit 1; }
+save() { jq "$@" "$state" >"$state.new" && mv "$state.new" "$state"; }
+physical() { jq '[.[] | select(.name != "FALLBACK" and (.name | test("^(hypr-rdp-|HEADLESS-)" ) | not) and .disabled != true)]'; }
+safe_name() { [[ $1 =~ ^[A-Za-z0-9._:-]+$ ]]; }
+action() {
+  local response
+  response=$(hyprctl "$@") || return 1
+  [[ $response == ok* ]] || { echo "Hyprland rejected action: $response" >&2; return 1; }
+}
+dpms() {
+  safe_name "$2" || return 1
+  action dispatch "hl.dsp.dpms({ action = \"$1\", monitor = \"$2\" })" >/dev/null
+}
+secure_lock() {
+  local count
+  strata-shell lock lock >/dev/null || return 1
+  for count in {1..40}; do
+    if strata-shell lock status | jq -e '.secure == true' >/dev/null; then return 0; fi
+    sleep 0.1
+  done
+  echo 'The lock screen did not become secure; leaving physical displays dark.' >&2
+  return 1
+}
+transfer() {
+  local id=$1 name=$2 slot=${3:-nil}
+  [[ $id =~ ^[1-9][0-9]*$ ]] && safe_name "$name" || return 1
+  [[ $slot == nil || $slot =~ ^[1-9][0-9]?$ ]] || return 1
+  action eval "local w = rawget(_G, '__strata_workspaces'); assert(w, 'Strata workspaces unavailable'); assert(w.transfer($id, \"$name\", $slot), 'Workspace transfer failed')" >/dev/null
+}
+blank() {
+  # Remote input must not wake the local screens. Never blank the capture output.
+  action eval 'hl.config({ misc = { key_press_enables_dpms = false, mouse_move_enables_dpms = false } })' >/dev/null
+  local name
+  while IFS= read -r name; do dpms off "$name"; done < <(hyprctl monitors -j | physical | jq -r '.[] | select(.dpmsStatus != false) | .name')
+}
+create_output() {
+  local output
+  if [[ -f $output_file ]]; then
+    output=$(<"$output_file")
+    [[ $output == hypr-rdp-strata-* ]] && safe_name "$output" || fail 'Invalid saved remote output.'
+    if hyprctl monitors -j | jq -e --arg name "$output" 'any(.[]; .name == $name)' >/dev/null; then
+      printf '%s\n' "$output"; return
+    fi
+  fi
+  hyprctl output create headless hypr-rdp-strata >/dev/null
+  output=$(hyprctl monitors -j | jq -er '[.[] | select(.name | startswith("hypr-rdp-strata-"))] | if length == 1 then .[0].name else error("Expected one Strata RDP output") end')
+  safe_name "$output" || return 1
+  printf '%s\n' "$output" >"$output_file"
+  action eval "hl.monitor({ output = \"$output\", mode = \"1920x1080@60\", position = \"-9999x0\", scale = 1 })" >/dev/null
+  printf '%s\n' "$output"
+}
+remove_output() {
+  [[ -f $output_file ]] || return 0
+  local output
+  output=$(<"$output_file")
+  [[ $output == hypr-rdp-strata-* ]] && safe_name "$output" || return 1
+  # Keep this output if recovery is pending, avoiding an all-outputs-lost
+  # transition while locked. Upstream captures it but does not own its lifetime.
+  [[ ! -f $state ]] || return 1
+  hyprctl output remove "$output" >/dev/null
+  rm -f "$output_file"
+}
+begin() {
+  [[ ! -f $state ]] || fail 'An earlier remote handoff needs recovery. Run strata-remote-desktop recover.'
+  local monitors remote source_id name destination base used count ready=0
+  monitors=$(hyprctl monitors -j)
+  remote=$(jq -er '[.[] | select(.name | startswith("hypr-rdp-strata-"))] | if length == 1 then .[0].name else error("Expected exactly one Strata RDP output") end' <<<"$monitors")
+  safe_name "$remote" || fail 'Invalid remote output name.'
+  mkdir -p "$state_dir"
+  jq -n --arg instance "$HYPRLAND_INSTANCE_SIGNATURE" --arg remote "$remote" \
+    --argjson monitors "$(physical <<<"$monitors")" \
+    --argjson key "$(hyprctl getoption misc:key_press_enables_dpms -j | jq '.int')" \
+    --argjson mouse "$(hyprctl getoption misc:mouse_move_enables_dpms -j | jq '.int')" \
+    '{instance:$instance,remote:$remote,monitors:$monitors,key:$key,mouse:$mouse,moves:[]}' >"$state"
+  printf '%s\n' "$HYPRLAND_INSTANCE_SIGNATURE" >"$active"
+  # Wait for Strata to stop its idle lock/display timers before blanking.
+  for count in {1..40}; do
+    if strata-shell idle status | jq -e '.remoteDesktopActive == true' >/dev/null; then ready=1; break; fi
+    sleep 0.1
+  done
+  (( ready )) || fail 'Strata idle service lacks remote desktop support; update it first.'
+  blank
+  base=$(jq --arg remote "$remote" '.[] | select(.name == $remote) | (.id + 1) * 100' <<<"$monitors")
+  # Strata's transfer helper preserves parked windows and local numbering.
+  # Record each destination before moving anything, for interruption recovery.
+  while IFS=$'\t' read -r source_id name; do
+    [[ $source_id =~ ^[1-9][0-9]*$ ]] && safe_name "$name" || continue
+    used=$(hyprctl workspaces -j | jq '[.[] | if .id > 0 then .id else ((.name | capture("^special:strata-desktop-(?<id>[0-9]+)$")? | .id | tonumber) // 0) end]')
+    destination=$((base + source_id % 100))
+    if (( source_id % 100 == 0 )) || jq -e --argjson id "$destination" 'index($id) != null' <<<"$used" >/dev/null; then
+      destination=$((base + 1))
+      while jq -e --argjson id "$destination" 'index($id) != null' <<<"$used" >/dev/null; do destination=$((destination+1)); done
+    fi
+    (( destination < base + 100 )) || fail 'No free remote workspace.'
+    save --argjson id "$destination" --arg home "$name" --argjson homeId "$source_id" '.moves += [{id:$id,home:$home,homeId:$homeId}]'
+    transfer "$source_id" "$remote"
+  done < <(hyprctl workspaces -j | jq -r --arg remote "$remote" '.[] | select(.id > 0 and .monitor != $remote and .windows > 0) | [.id,.monitor] | @tsv')
+  action dispatch "hl.dsp.focus({ monitor = \"$remote\" })" >/dev/null
+}
+restore() {
+  [[ -f $state ]] || return 0
+  [[ $(jq -r .instance "$state") == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || fail 'Recovery belongs to a different Hyprland session.'
+  # Do not expose the desktop while restoring physical output or wake settings.
+  secure_lock || return 1
+  local fallback remote id home home_id key mouse name enabled slot focused
+  fallback=$(hyprctl monitors -j | physical | jq -r '.[0].name // empty') || return 1
+  [[ -n $fallback ]] || fail 'No physical display is available; reconnect one, then run recover.'
+  remote=$(jq -r .remote "$state")
+  while IFS=$'\t' read -r id home home_id; do
+    if ! hyprctl monitors -j | jq -e --arg name "$home" 'any(.[]; .name == $name)' >/dev/null; then home=$fallback; fi
+    if hyprctl workspaces -j | jq -e --argjson id "$id" --arg remote "$remote" 'any(.[]; .id == $id and .monitor == $remote)' >/dev/null; then transfer "$id" "$home" "$((home_id % 100))" || return 1; fi
+  done < <(jq -r '.moves[] | [.id,.home,.homeId] | @tsv' "$state")
+  # Workspaces created remotely also return, using the first physical display.
+  while IFS= read -r id; do transfer "$id" "$fallback" || return 1; done < <(hyprctl workspaces -j | jq -r --arg remote "$remote" '.[] | select(.id > 0 and .monitor == $remote and .windows > 0) | .id')
+  while IFS=$'\t' read -r name slot; do
+    safe_name "$name" && [[ $slot =~ ^[1-9][0-9]?$ ]] || continue
+    if hyprctl monitors -j | jq -e --arg name "$name" 'any(.[]; .name == $name)' >/dev/null; then
+      action eval "local w = rawget(_G, '__strata_workspaces'); assert(w); w.select($slot, \"$name\")" >/dev/null || return 1
+    fi
+  done < <(jq -r '.monitors[] | select(.activeWorkspace.id > 0) | [.name, (.activeWorkspace.id % 100)] | @tsv' "$state")
+  focused=$(jq -r '[.monitors[] | select(.focused == true)][0].name // empty' "$state")
+  if safe_name "$focused" && hyprctl monitors -j | jq -e --arg name "$focused" 'any(.[]; .name == $name)' >/dev/null; then
+    action dispatch "hl.dsp.focus({ monitor = \"$focused\" })" >/dev/null || return 1
+  fi
+  key=$(jq -r 'if .key == 0 then "false" else "true" end' "$state")
+  mouse=$(jq -r 'if .mouse == 0 then "false" else "true" end' "$state")
+  action eval "hl.config({ misc = { key_press_enables_dpms = $key, mouse_move_enables_dpms = $mouse } })" >/dev/null || return 1
+  rm -f "$active"
+  while IFS=$'\t' read -r name enabled; do
+    if hyprctl monitors -j | jq -e --arg name "$name" 'any(.[]; .name == $name)' >/dev/null; then dpms "$enabled" "$name" || return 1; fi
+  done < <(jq -r '.monitors[] | [.name, (if .dpmsStatus == false then "off" else "enable" end)] | @tsv' "$state")
+  rm -f "$state"
+}
+setup() {
+  [[ $(uname -m) == x86_64 ]] || fail 'The pinned upstream binary supports x86_64 only.'
+  [[ ! -e $config/config.toml ]] || fail "Already configured: $config/config.toml"
+  local dependency
+  for dependency in curl openssl sha256sum tar jq; do command -v "$dependency" >/dev/null || fail "Install the optional dependency first: $dependency"; done
+  mkdir -p "$config" "$data"
+  local archive
+  archive=$(mktemp "$data/download.XXXXXX")
+  if ! curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+    https://github.com/MuNeNiCK/hypr-rdp/releases/download/v0.1.7/hypr-rdp-v0.1.7-x86_64-linux.tar.gz -o "$archive"; then rm -f "$archive"; fail 'Download failed.'; fi
+  if ! printf '%s  %s\n' bf8b42a1764e420001cd4b3f672d94165e4203f21ff38de269ec67aa75eeba58 "$archive" | sha256sum --check --status; then rm -f "$archive"; fail 'Upstream binary checksum mismatch.'; fi
+  tar -xzf "$archive" -C "$data" --no-same-owner -- hypr-rdp LICENSE
+  rm -f "$archive"
+  "$data/hypr-rdp" --version
+  openssl rand -hex 24 >"$config/password"
+  openssl req -x509 -newkey rsa:3072 -nodes -days 365 \
+    -subj /CN=Strata-RDP -keyout "$config/key.pem" -out "$config/cert.pem" 2>/dev/null
+  # Keep the managed settings here rather than reading upstream's user config.
+  printf 'bind = "127.0.0.1:3389"\nusername = "%s"\npassword_file = "%s/password"\nkeyboard_layout_policy = "compositor"\naudio_mode = "redirect"\n' "$(id -un)" "$config" >"$config/config.toml"
+  chmod 600 "$config/password" "$config/config.toml"
+  echo 'Configured localhost RDP. Run strata-remote-desktop start when ready to lock this computer.'
+}
+serve() {
+  [[ -x $data/hypr-rdp && -f $config/config.toml ]] || fail 'Run strata-remote-desktop setup first.'
+  [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || fail 'Start from the current Strata session.'
+  mkdir -p "$state_dir"
+  exec 8>"$state_dir/server.lock"
+  flock -n 8 || fail 'The remote desktop server is already running.'
+  restore
+  rm -f "$state_dir/hook-failed"
+  secure_lock || fail 'Refusing to listen without a working lock screen.'
+  local status=0 output
+  server_pid=0
+  cleanup() {
+    trap - EXIT INT TERM HUP
+    if (( server_pid > 0 )); then kill -TERM "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
+    restore || { echo 'Recovery pending: run strata-remote-desktop recover.' >&2; return 1; }
+    remove_output
+  }
+  trap cleanup EXIT
+  trap 'exit 0' INT TERM HUP
+  output=$(create_output)
+  # Logind prevents automatic sleep; Strata's idle timers pause only while the
+  # authenticated connection's marker exists. A disconnect locks normally.
+  systemd-inhibit --what=idle:sleep --mode=block --who=Strata --why='RDP server reachable' \
+    "$data/hypr-rdp" --config "$config/config.toml" \
+    --auth-mode configured --username "$(id -un)" --password-file "$config/password" \
+    --cert "$config/cert.pem" --key "$config/key.pem" \
+    --output "$output" \
+    --on-session-start "'$self' hook-start" --on-session-end "'$self' hook-end" &
+  server_pid=$!
+  while kill -0 "$server_pid" 2>/dev/null; do
+    if [[ -f $active ]]; then blank; fi
+    if [[ -f $state_dir/hook-failed ]]; then rm -f "$state_dir/hook-failed"; return 1; fi
+    sleep 1
+  done
+  wait "$server_pid" || status=$?
+  return "$status"
+}
+
+case ${1:---help} in
+  setup) setup ;;
+  serve) serve ;;
+  start)
+    [[ -f $config/config.toml ]] || fail 'Run strata-remote-desktop setup first.'
+    systemd-run --user --unit="$unit" --collect --property=KillMode=mixed \
+      --property=TimeoutStopSec=20 --setenv="PATH=$PATH" --setenv="STRATA_PATH=$STRATA_PATH" \
+      --setenv="WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" --setenv="HYPRLAND_INSTANCE_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-}" \
+      --setenv="XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}" --setenv="XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}" "$self" serve
+    ;;
+  stop) systemctl --user stop "$unit"; "$self" recover ;;
+  status) systemctl --user status "$unit" --no-pager; ;;
+  credentials)
+    [[ -f $config/password ]] || fail 'Not configured.'
+    printf 'Username: %s\nPassword: ' "$(id -un)"; cat "$config/password"
+    ;;
+  active) [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -f $active && $(<"$active") == "$HYPRLAND_INSTANCE_SIGNATURE" ]] ;;
+  recover|hook-start|hook-end)
+    if [[ $1 == recover ]] && systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+      fail 'Stop the RDP service before manual recovery.'
+    fi
+    mkdir -p "$state_dir"
+    exec 9>"$state_dir/handoff.lock"
+    flock -w 8 9 || fail 'Another handoff is still running.'
+    if [[ $1 != recover ]]; then
+      # Hooks run asynchronously upstream. Tell the supervisor to stop on error.
+      trap 'status=$?; if (( status != 0 )); then touch "$state_dir/hook-failed"; fi' EXIT
+    fi
+    if [[ $1 == hook-start ]]; then
+      begin
+    else restore; fi
+    ;;
+  *)
+    echo 'Usage: strata-remote-desktop {setup|start|stop|status|credentials|recover}'
+    echo 'Experimental: reuses existing windows and blanks physical displays; local input is not securely locked.'
+    ;;
+esac

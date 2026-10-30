@@ -85,6 +85,36 @@ has_nvidia_hardware() {
   return 1
 }
 
+has_intel_arrow_lake_hardware() {
+  # Linux intel-family.h: Arrow Lake U=0xB5, H=0xC5, desktop=0xC6.
+  # Match a complete CPU record, not the marketing name or pci.ids database.
+  awk '
+    BEGIN { RS = ""; FS = "\n" }
+    {
+      vendor = family = model = ""
+      for (i = 1; i <= NF; i++) {
+        split($i, field, /[[:space:]]*:[[:space:]]*/)
+        if (field[1] == "vendor_id") vendor = field[2]
+        if (field[1] == "cpu family") family = field[2]
+        if (field[1] == "model") model = field[2]
+      }
+      if (vendor == "GenuineIntel" && family == 6 && (model == 181 || model == 197 || model == 198)) {
+        found = 1
+        exit
+      }
+    }
+    END { exit !found }
+  ' "${1:-/proc/cpuinfo}"
+}
+
+install_intel_arrow_lake_firmware() {
+  if has_intel_arrow_lake_hardware "${1:-/proc/cpuinfo}"; then
+    echo "Intel Arrow Lake detected; installing audio configuration and audio/Wi-Fi firmware."
+    dnf install -y --setopt=install_weak_deps=False \
+      alsa-sof-firmware alsa-ucm iwlwifi-mld-firmware
+  fi
+}
+
 install_rpmfusion_release() {
   local edition=$1 fedora_release base
   if rpm -q "rpmfusion-$edition-release" >/dev/null 2>&1; then return 0; fi
@@ -214,6 +244,8 @@ else
   dnf upgrade -y --refresh --setopt=install_weak_deps=False \
     hyprland-desktop strata-config
 fi
+
+install_intel_arrow_lake_firmware
 
 # Prepare Plymouth only after the Fedora graphics stack and Strata's
 # hardware-aware dracut policy are installed. No connector is forced on/off.

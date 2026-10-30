@@ -66,7 +66,8 @@ Item {
 
   function refreshSessionLockState() { sessionLockRevision += 1 }
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
-  readonly property string formScreenName: ScreenSelection.formScreenName(Quickshell.screens || [])
+  readonly property var idleService: shell && shell.services ? shell.firstPartyServiceFor("strata.idle") : null
+  readonly property string formScreenName: ScreenSelection.formScreenName(Quickshell.screens || [], !!idleService && idleService.remoteDesktopActive)
   readonly property var batteryService: shell && shell.services ? shell.firstPartyServiceFor("strata.power") : null
   readonly property bool powerSaverActive: batteryService ? batteryService.powerSaverOnBattery : false
   // A prompt clears the unavailable notice before the attempt finishes.

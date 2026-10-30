@@ -15,6 +15,8 @@ Item {
   readonly property string stayAwakeStateDir: home + "/.local/state/strata/indicators"
   readonly property string stayAwakeStatePath: stayAwakeStateDir + "/stay-awake"
   readonly property string settingsPath: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/strata/idle-settings.json"
+  property bool remoteDesktopActive: false
+  onRemoteDesktopActiveChanged: if (remoteDesktopActive) root.displaysOff = false
   readonly property int defaultLockSeconds: 300
   readonly property var batteryService: shell && shell.services
     ? shell.firstPartyServiceFor("strata.power") : null
@@ -44,7 +46,7 @@ Item {
   property string lastTimerIdleAt: ""
   property bool displaysOff: false
   property bool timerRearming: false
-  readonly property bool timerCycleEnabled: stayAwakeStateLoaded && !stayAwake
+  readonly property bool timerCycleEnabled: stayAwakeStateLoaded && !stayAwake && !remoteDesktopActive
     && (settingsState.display > 0 || settingsState.sleep > 0)
   readonly property int firstTimerSeconds: Math.max(1, Math.min(
     settingsState.display > 0 ? settingsState.display : 604800,
@@ -98,7 +100,7 @@ Item {
 
   function handleIdleChanged() {
     logEvent("idle-monitor", idleMonitor.isIdle ? "idle" : "active")
-    if (!root.lockEnabled) return
+    if (!root.lockEnabled || root.remoteDesktopActive) return
     if (idleMonitor.isIdle) lockSystem("lock-timeout")
     else endIdleCycle("activity")
   }
@@ -107,6 +109,7 @@ Item {
     return JSON.stringify({
       enabled: root.idleEnabled,
       stayAwake: root.stayAwake,
+      remoteDesktopActive: root.remoteDesktopActive,
       stayAwakeRequested: root.stayAwakeRequested,
       stayAwakeFailed: root.stayAwakeFailed,
       settings: root.settingsState,
@@ -219,7 +222,7 @@ Item {
     displayTimer.stop()
     sleepTimer.stop()
     root.idleCycleRunning = false
-    if (root.displaysOff) {
+    if (root.displaysOff && !root.remoteDesktopActive) {
       root.displaysOff = false
       if (!displayOnProcess.running) displayOnProcess.running = true
     }
@@ -250,7 +253,7 @@ Item {
 
   IdleMonitor {
     id: idleMonitor
-    enabled: root.lockEnabled && !root.lockMonitorRearming
+    enabled: root.lockEnabled && !root.lockMonitorRearming && !root.remoteDesktopActive
     timeout: Math.max(1, root.lockTimeoutSeconds)
     respectInhibitors: true
     onIsIdleChanged: root.handleIdleChanged()
@@ -323,6 +326,26 @@ Item {
       if (exitCode !== 0) root.settingsError = "Could not load idle settings"
       if (root.settingsRefreshPending) root.refreshSettings()
     }
+  }
+
+  FileView {
+    id: remoteDesktopState
+    path: (Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + Quickshell.env("UID"))) + "/strata-remote-desktop/active"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.remoteDesktopActive = !!Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")
+      && String(text()).trim() === Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")
+    onLoadFailed: root.remoteDesktopActive = false
+  }
+
+  // The optional helper's directory may not exist when this service starts.
+  // Reload also covers creation after a failed initial file watch.
+  Timer {
+    interval: 1000
+    repeat: true
+    running: true
+    onTriggered: remoteDesktopState.reload()
   }
 
   FileView {

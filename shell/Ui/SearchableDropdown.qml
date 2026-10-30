@@ -259,7 +259,7 @@ Item {
 
             ListView {
               id: resultList
-              QQC.ScrollBar.vertical: PanelScrollBar {}
+              QQC.ScrollBar.vertical: PanelScrollBar { id: resultScrollBar }
               anchors.fill: parent
               spacing: Style.spacing.labelGap
               clip: true
@@ -301,7 +301,7 @@ Item {
               delegate: Rectangle {
                 required property var modelData
                 required property int index
-                width: Math.max(0, resultList.width - Style.space(16))
+                width: resultList.width
                 height: Math.max(root.popupRowHeight, rowContent.implicitHeight + Style.spacing.rowPaddingX)
                 color: index === resultList.currentIndex
                   ? Style.hoverFillFor(root.foreground, root.accent)
@@ -313,7 +313,7 @@ Item {
                   anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.leftMargin: Style.spacing.controlPaddingX
-                  anchors.rightMargin: Style.spacing.controlPaddingX
+                  anchors.rightMargin: Style.spacing.controlPaddingX + (resultScrollBar.size < 1 ? resultScrollBar.gutter : 0)
                   spacing: Style.spacing.xxs
 
                   Text {
@@ -341,8 +341,12 @@ Item {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
+                  onEntered: resultList.currentIndex = parent.index
                   onPositionChanged: resultList.currentIndex = parent.index
-                  onClicked: resultList.selectCurrent()
+                  onClicked: {
+                    resultList.currentIndex = parent.index
+                    resultList.selectCurrent()
+                  }
                 }
               }
             }

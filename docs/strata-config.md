@@ -18,6 +18,16 @@ Quickshell configuration. Existing user files are left unchanged. Use
 `strata-apply-config --force` when you deliberately want to replace managed
 files; backups are saved with a timestamp.
 
+## Intel Arrow Lake firmware
+
+`strata-install-desktop` detects Intel Arrow Lake U, H and desktop CPUs and
+installs `alsa-sof-firmware`, `alsa-ucm` and `iwlwifi-mld-firmware` for them.
+Detection uses the CPU vendor, family and model rather than device-name text.
+The packages are installed before the installer's boot-image preparation and
+are not unconditional desktop dependencies. Rerunning the desktop installer
+also applies this check to an existing installation; a config RPM upgrade
+alone does not run the hardware installer.
+
 ## Display fallback and login displays
 
 The desktop installer also runs `strata-boot-displays --apply` to prepare

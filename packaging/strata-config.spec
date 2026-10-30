@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.13
+Version:        1.1.14
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -400,6 +400,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Oct 30 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.14-1
+- Install Intel Arrow Lake audio and Wi-Fi firmware conditionally during desktop setup
+- Fix full-width dropdown hover highlights and pointer selection
+- Add optional experimental same-session RDP setup with workspace recovery and physical-screen blanking
+
 * Sun Oct 25 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.13-1
 - Refresh cached lock state after Quickshell unlock notifications so the shortcut guide resumes after unlocking
 
