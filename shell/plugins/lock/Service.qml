@@ -36,6 +36,7 @@ Item {
   property string enteredPassword: ""
   property string pendingPassword: ""
   property string failureMessage: ""
+  property string fingerprintNotice: ""
   property string powerActionError: ""
   property string pendingPowerAction: ""
   property int failedAttempts: 0
@@ -190,6 +191,7 @@ Item {
     enteredPassword = ""
     pendingPassword = ""
     failureMessage = ""
+    fingerprintNotice = ""
     failedAttempts = 0
     authenticatingPassword = false
     fingerprintAuthenticating = false
@@ -366,6 +368,7 @@ Item {
     if (!lockRequested || !sessionLock.secure || !fingerprintConfigured) return
     if (fingerprintPam.active || fingerprintAuthenticating) return
 
+    if (!fingerprintNotice) fingerprintNotice = "Touch the fingerprint reader or enter your password."
     fingerprintAuthenticating = true
     fingerprintAttemptReachedDevice = false
     fingerprintAttemptFastError = false
@@ -380,6 +383,13 @@ Item {
     // Bound claims that never prompt; a normal verify waits for a finger
     // under pam_fprintd's own timeout after reaching the reader.
     fingerprintReachTimer.restart()
+  }
+
+  // Show PAM's scan instructions and retry feedback separately from password errors.
+  function handleFingerprintMessage(message, isError) {
+    if (!lockRequested) return
+    fingerprintNotice = String(message || "").trim()
+    if (!isError) noteFingerprintReachedDevice()
   }
 
   // A prompt proves the claim landed, so stop waiting for reachability.
@@ -488,6 +498,8 @@ Item {
         fingerprintConfigured: root.fingerprintConfigured || root.fingerprintUnavailable
         fingerprintUnavailable: root.fingerprintUnavailable
         authenticatingPassword: root.authenticatingPassword
+        authenticationNotice: root.lockRequested && root.fingerprintConfigured
+          && !root.fingerprintUnavailable && !root.authenticatingPassword ? root.fingerprintNotice : ""
         failureMessage: root.failureMessage
         powerActionPending: powerActionProcess.running
         powerActionError: root.powerActionError
@@ -528,6 +540,8 @@ Item {
       fingerprintConfigured: root.fingerprintConfigured || root.fingerprintUnavailable
       fingerprintUnavailable: root.fingerprintUnavailable
       authenticatingPassword: false
+      authenticationNotice: root.fingerprintConfigured && !root.fingerprintUnavailable
+        ? "Touch the fingerprint reader or enter your password." : ""
       failureMessage: ""
       failedAttempts: 0
       inputEnabled: false
@@ -571,7 +585,7 @@ Item {
     user: root.userName
 
     onPamMessage: {
-      if (!messageIsError) root.noteFingerprintReachedDevice()
+      root.handleFingerprintMessage(message, messageIsError)
     }
 
     onCompleted: function(result) {

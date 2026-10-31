@@ -1,4 +1,4 @@
-# Strata 1.1.21
+# Strata 1.1.22
 
-- Remember disabled displays' saved layout and scale when enabling them after reboot
-- Keep newly started browsers on the workspace where Super+B was pressed
+- Show fingerprint scan instructions and retry feedback on the lock screen, matching the greeter
+- Keep password entry available while fingerprint messages are displayed

@@ -107,6 +107,10 @@ ShellRoot {
         loginView.fingerprintUnavailable = false
         var fingerprintButton = harness.find(loginView,"fingerprintLoginButton")
         harness.check(!fingerprintButton.visible,"Fingerprint login leaked into default lock UI")
+        loginView.authenticationNotice = "Fingerprint not recognized. Try again."
+        harness.check(harness.find(loginView,"authenticationNotice").visible,"Lock fingerprint feedback missing")
+        harness.check(input.enabled && !input.readOnly,"Fingerprint feedback blocked password entry")
+        harness.check(!fingerprintButton.visible,"Lock feedback exposed a manual fingerprint button")
         loginView.allowFingerprintLogin = true
         loginView.authenticationNotice = "Touch the reader"
         harness.check(fingerprintButton.visible && fingerprintButton.enabled,"Greeter fingerprint action missing")
