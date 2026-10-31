@@ -65,6 +65,12 @@ Disabled outputs are synchronized to the separate greeter after a valid config
 reload or Display Layout save. Only validated connector states are published;
 the greeter does not execute personal Lua configuration.
 
+Display Layout keeps the saved resolution, scale, position and rotation in a
+disabled monitor's rule. Enabling it after a reboot restores those settings
+instead of the compositor's disabled-output defaults. Previously saved rules
+containing only `disabled = true` have no geometry to recover; set the desired
+layout once and save it again after updating.
+
 When no usable display remains, Strata temporarily enables an available laptop
 panel in both the desktop and greeter. Reconnecting an enabled external display
 restores the saved layout. The desktop recovery does not rewrite monitor config

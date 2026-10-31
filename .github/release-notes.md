@@ -1,4 +1,4 @@
-# Strata 1.1.20
+# Strata 1.1.21
 
-- Start fingerprint login automatically and retry failed matches without a button
-- Keep password entry available while scanning; pause new scans while typing or changing accounts
+- Remember disabled displays' saved layout and scale when enabling them after reboot
+- Keep newly started browsers on the workspace where Super+B was pressed

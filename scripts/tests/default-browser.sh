@@ -7,7 +7,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin" "$work/home/.config" "$work/data/applications"
 export HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_CONFIG_DIRS="$work/empty"
 export XDG_DATA_HOME="$work/data" XDG_DATA_DIRS="$work/empty" FIXTURE="$work"
-unset HYPRLAND_INSTANCE_SIGNATURE
+unset HYPRLAND_INSTANCE_SIGNATURE HL_INITIAL_WORKSPACE_TOKEN
 cat > "$work/bin/xdg-settings" <<'MOCK'
 #!/usr/bin/env bash
 if [[ $1 == get ]]; then cat "$FIXTURE/default"; else printf '%s\n' "$3" > "$FIXTURE/default"; fi
@@ -15,7 +15,14 @@ MOCK
 cat > "$work/bin/systemd-run" <<'MOCK'
 #!/usr/bin/env bash
 while (( $# )); do
-  if [[ $1 == uwsm-app ]]; then shift 2; printf '%s\n' "$@" > "$FIXTURE/launched"; exit 0; fi
+  if [[ $1 == uwsm-app ]]; then
+    shift 2
+    if [[ ${TEST_CONTEXT_EXEC:-} == 1 ]]; then
+      exec env -u HL_INITIAL_WORKSPACE_TOKEN uwsm-app -- "$@"
+    fi
+    printf '%s\n' "$@" > "$FIXTURE/launched"
+    exit 0
+  fi
   shift
 done
 exit 1
@@ -55,6 +62,33 @@ cmp "$work/expected" "$work/launched"
 strata-launch-browser
 printf 'gio\nlaunch\n%s\n' "$XDG_DATA_HOME/applications/org.example.Browser.desktop" > "$work/expected"
 cmp "$work/expected" "$work/launched"
+# Per-launch tokens must travel as arguments across both service boundaries;
+# setting the environment on the first systemd-run alone is insufficient.
+export HL_INITIAL_WORKSPACE_TOKEN=workspace-at-shortcut
+strata-launch-browser 'https://example.invalid/path with spaces'
+printf 'env\nHL_INITIAL_WORKSPACE_TOKEN=workspace-at-shortcut\ngio\nlaunch\n%s\nhttps://example.invalid/path with spaces\n' "$XDG_DATA_HOME/applications/org.example.Browser.desktop" > "$work/expected"
+cmp "$work/expected" "$work/launched"
+printf 'firefox.desktop\n' > "$work/default"
+strata-launch-browser --private 'https://example.invalid/'
+printf 'env\nHL_INITIAL_WORKSPACE_TOKEN=workspace-at-shortcut\nfirefox\n--private-window\nhttps://example.invalid/\n' > "$work/expected"
+cmp "$work/expected" "$work/launched"
+printf 'org.example.Browser.desktop\n' > "$work/default"
+# Simulate both launchers discarding the caller's environment, as the real
+# service manager and UWSM daemon do. The final command still gets this token.
+cat > "$work/bin/uwsm-app" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec env -u HL_INITIAL_WORKSPACE_TOKEN "$@"
+MOCK
+cat > "$work/bin/gio" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "${HL_INITIAL_WORKSPACE_TOKEN:-missing}" "$@" > "$FIXTURE/context"
+MOCK
+chmod +x "$work/bin/uwsm-app" "$work/bin/gio"
+TEST_CONTEXT_EXEC=1 strata-launch-browser 'https://example.invalid/path with spaces'
+printf 'workspace-at-shortcut\nlaunch\n%s\nhttps://example.invalid/path with spaces\n' "$XDG_DATA_HOME/applications/org.example.Browser.desktop" > "$work/expected"
+cmp "$work/expected" "$work/context"
+unset HL_INITIAL_WORKSPACE_TOKEN
 if strata-default-browser missing.desktop > "$work/missing.log" 2>&1; then
   echo 'Accepted missing desktop entry' >&2; exit 1
 fi

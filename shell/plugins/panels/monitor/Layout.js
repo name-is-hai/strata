@@ -13,7 +13,7 @@ function logicalSize(width, height, scale, transform) {
   return Number(transform) % 2 === 1 ? { w: h, h: w } : { w: w, h: h }
 }
 
-function parseMonitors(raw) {
+function parseMonitors(raw, configText) {
   var list = []
   try {
     list = raw ? JSON.parse(String(raw)) : []
@@ -53,7 +53,42 @@ function parseMonitors(raw) {
       h: size.h
     })
   }
-  return monitors
+  return withDisabledSettings(monitors, configText)
+}
+
+// Disabled outputs lose their usable geometry in the compositor after login.
+// Restore only those outputs from literal saved settings; active outputs must
+// always reflect what the compositor actually accepted.
+function withDisabledSettings(monitors, text) {
+  var out = copy(monitors)
+  var blocks = monitorBlocks(String(text || ""))
+  for (var i = 0; i < out.length; i++) {
+    var m = out[i]
+    if (!m.disabled) continue
+    var block = blockFor(blocks, m)
+    if (!block) continue
+    var mode = MODE_FIELD.exec(block.text)
+    var dimensions = mode && /^(\d+)x(\d+)(?:@([\d.]+))?$/.exec(mode[2])
+    if (dimensions && Number(dimensions[1]) > 0 && Number(dimensions[2]) > 0) {
+      m.width = Number(dimensions[1])
+      m.height = Number(dimensions[2])
+      if (Number(dimensions[3]) > 0) m.refreshRate = Number(dimensions[3])
+    }
+    var scale = SAVED_SCALE_FIELD.exec(block.text)
+    if (scale && Number(scale[1]) > 0) m.scale = Number(scale[1])
+    var position = POSITION_FIELD.exec(block.text)
+    var coordinates = position && /^(-?\d+)x(-?\d+)$/.exec(position[2])
+    if (coordinates) {
+      m.x = Number(coordinates[1])
+      m.y = Number(coordinates[2])
+    }
+    var transform = TRANSFORM_FIELD.exec(block.text)
+    if (transform && Number(transform[1]) <= 7) m.transform = Number(transform[1])
+    var size = logicalSize(m.width, m.height, m.scale, m.transform)
+    m.w = size.w
+    m.h = size.h
+  }
+  return out
 }
 
 function copy(monitors) {
@@ -533,6 +568,7 @@ function blockFor(blocks, monitor) {
 var POSITION_FIELD = /position\s*=\s*(["'])([^"']*)\1/
 var TRANSFORM_FIELD = /transform\s*=\s*(\d+)/
 var SCALE_FIELD = /,?\s*scale\s*=\s*(?:(['"]).*?\1|[\d.]+)/g
+var SAVED_SCALE_FIELD = /\bscale\s*=\s*(\d+(?:\.\d*)?|\.\d+)(?=\s*[,}])/
 var MODE_FIELD = /mode\s*=\s*(["'])(.*?)\1/
 
 // The workspace number monitors.lua pins to a display as its default, or 0.
@@ -584,10 +620,7 @@ function isSaved(text, monitors, workspaces) {
   for (var i = 0; i < monitors.length; i++) {
     var block = blockFor(blocks, monitors[i])
     if (!block) return false
-    if (monitors[i].disabled) {
-      if (!/disabled\s*=\s*true/.test(block.text)) return false
-      continue
-    }
+    if (/disabled\s*=\s*true/.test(block.text) !== monitors[i].disabled) return false
     var mirror = /mirror\s*=\s*(["'])(.*?)\1/.exec(block.text)
     if ((mirror ? mirror[2] : "") !== String(monitors[i].mirrorOf || "")) return false
     var mode = MODE_FIELD.exec(block.text)
@@ -595,10 +628,13 @@ function isSaved(text, monitors, workspaces) {
     var position = block ? POSITION_FIELD.exec(block.text) : null
     if (!position || position[2] !== positionString(monitors[i])) return false
 
+    var scale = SAVED_SCALE_FIELD.exec(block.text)
+    if (!scale || !isFinite(Number(scale[1])) || Math.abs(Number(scale[1]) - monitors[i].scale) > 0.000001) return false
+
     var transform = TRANSFORM_FIELD.exec(block.text)
     if ((transform ? Number(transform[1]) : 0) !== monitors[i].transform) return false
 
-    if (workspaces && monitors[i].workspace > 0
+    if (workspaces && !monitors[i].disabled && monitors[i].workspace > 0
         && pinnedWorkspace(source, monitors[i]) !== monitors[i].workspace) return false
   }
   return monitors.length > 0
@@ -618,9 +654,6 @@ function outputKey(monitor, monitors) {
 }
 
 function newBlock(monitor, output) {
-  if (monitor.disabled) {
-    return "hl.monitor({ output = " + luaString(output) + ", disabled = true })"
-  }
   var fields = [
     "output = " + luaString(output),
     "mode = " + luaString(modeString(monitor)),
@@ -628,13 +661,13 @@ function newBlock(monitor, output) {
     "scale = " + trimNumber(monitor.scale, 6)
   ]
   if (monitor.transform) fields.push("transform = " + monitor.transform)
+  if (monitor.disabled) fields.push("disabled = true")
   if (monitor.mirrorOf) fields.push("mirror = " + luaString(monitor.mirrorOf))
   return "hl.monitor({ " + fields.join(", ") + " })"
 }
 
 // Put the display's position and rotation into an existing rule.
 function withPlacement(blockText, monitor) {
-  if (monitor.disabled) return "hl.monitor({ output = " + luaString(monitor.name) + ", disabled = true })"
   var position = "position = " + luaString(positionString(monitor))
   var updated = POSITION_FIELD.test(blockText)
     ? blockText.replace(POSITION_FIELD, position)
@@ -656,6 +689,7 @@ function withPlacement(blockText, monitor) {
   else updated = updated.replace(/(output\s*=\s*(["']).*?\2)/, "$1, " + mode)
 
   updated = updated.replace(/,?\s*disabled\s*=\s*(?:true|false)/g, "")
+  if (monitor.disabled) updated = updated.replace(/(output\s*=\s*(["']).*?\2)/, "$1, disabled = true")
   updated = updated.replace(/,?\s*mirror\s*=\s*(["']).*?\1/g, "")
   if (monitor.mirrorOf) updated = updated.replace(/(output\s*=\s*(["']).*?\2)/, "$1, mirror = " + luaString(monitor.mirrorOf))
   return updated
@@ -759,9 +793,9 @@ function withoutWorkspaceBlock(source) {
   return before + (after !== "" && before !== "" ? "\n" : "") + after
 }
 
-// Return monitors.lua with the new layout. Existing rules only get their
-// `position` and `transform` replaced, so modes, scales and everything else
-// in the file stay as the user wrote them. Displays without a rule get one
+// Return monitors.lua with the new layout. Update the panel's display fields
+// while preserving extra settings such as vrr and bitdepth. Disabled rules
+// retain their geometry for the next enable. Displays without a rule get one
 // appended. With `workspaces`, the pinned workspace numbers are kept in a
 // marked block at the end that is rewritten on every save.
 function updateConfig(text, monitors, workspaces) {
@@ -815,6 +849,7 @@ if (typeof module !== "undefined") {
     MIN_SHARED: MIN_SHARED,
     logicalSize: logicalSize,
     parseMonitors: parseMonitors,
+    copy: copy,
     bounds: bounds,
     overlaps: overlaps,
     touches: touches,

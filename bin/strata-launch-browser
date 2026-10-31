@@ -3,6 +3,14 @@
 # strata:args=[url]
 set -euo pipefail
 
+# Hyprland's exec dispatcher supplies the originating workspace token. Both
+# systemd and the uwsm-app daemon launch from their own environment, so carry
+# this per-launch value in argv until the final application process.
+launch_context=()
+if [[ -n ${HL_INITIAL_WORKSPACE_TOKEN:-} ]]; then
+  launch_context=(env "HL_INITIAL_WORKSPACE_TOKEN=$HL_INITIAL_WORKSPACE_TOKEN")
+fi
+
 default_browser=$(strata-cmd-default-browser) || {
   echo 'Choose a default browser in your browser or Strata settings first.' >&2
   exit 1
@@ -25,7 +33,7 @@ for argument in "$@"; do [[ $argument != --private ]] || private=true; done
 if ! $private; then
   exec systemd-run --user --quiet --collect --unit="strata-browser-$(date +%s%N)" \
     --property=StandardOutput=null --property=StandardError=null \
-    uwsm-app -- gio launch "$desktop_entry" "$@"
+    uwsm-app -- "${launch_context[@]}" gio launch "$desktop_entry" "$@"
 fi
 [[ -n $browser_exec ]] && command -v -- "$browser_exec" >/dev/null || {
   echo "The default browser entry is unavailable: $default_browser" >&2
@@ -51,7 +59,7 @@ done
 if ! strata-cmd-browser-handoff "$browser_exec" "${arguments[@]}"; then
   systemd-run --user --quiet --collect --unit="strata-browser-$(date +%s%N)" \
     --property=StandardOutput=null --property=StandardError=null \
-    uwsm-app -- "$browser_exec" "${arguments[@]}"
+    uwsm-app -- "${launch_context[@]}" "$browser_exec" "${arguments[@]}"
 fi
 if [[ -n $url && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
   focus_class=$(basename "$browser_exec" -stable)

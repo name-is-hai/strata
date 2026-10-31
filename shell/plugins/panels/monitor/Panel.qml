@@ -21,6 +21,7 @@ Panel {
   property var live: []
   property var arrangement: []
   property string monitorsJson: ""
+  property string workspaceRulesJson: ""
   property string configText: ""
   property int selected: 0
   property string lastSide: ""
@@ -93,8 +94,9 @@ Panel {
   // Edits that are not applied yet survive a refresh, anything else follows
   // what Hyprland reports.
   function rebuild(rulesJson) {
+    workspaceRulesJson = rulesJson
     var hadEdits = changed
-    var parsed = Logic.parseMonitors(monitorsJson)
+    var parsed = Logic.parseMonitors(monitorsJson, configText)
     live = pinWorkspaces ? Logic.withPinned(parsed, rulesJson) : parsed
     if (!hadEdits || arrangement.length !== live.length) arrangement = Logic.copy(live)
     selected = Math.max(0, Math.min(selected, arrangement.length - 1))
@@ -393,7 +395,10 @@ Panel {
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.configText = text()
+    onLoaded: {
+      root.configText = text()
+      if (root.monitorsJson !== "") root.rebuild(root.workspaceRulesJson)
+    }
     onLoadFailed: root.configText = ""
   }
 

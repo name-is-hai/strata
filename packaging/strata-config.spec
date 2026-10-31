@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.16
+Version:        1.1.17
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -406,6 +406,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.17-1
+- Preserve disabled display position, scale, mode and rotation across reboot
+- Keep browser launches on the workspace where the shortcut was pressed
+
 * Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.16-1
 - Start greeter fingerprint scanning automatically and retry failed scans
 - Keep password entry available during fingerprint scans and preserve queued submissions
