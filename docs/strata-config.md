@@ -484,18 +484,20 @@ The fingerprint PAM policy is a `%config(noreplace)` file, preserving local
 administrator edits during upgrades. Machines without enrolled fingerprints
 continue using password unlock.
 
-The Strata login greeter also offers **Use fingerprint** when a reader is
-available. Select your account, click the button and scan your enrolled finger.
+The Strata login greeter starts fingerprint scanning automatically for the
+selected account when a reader is available. Failed matches and timeouts retry
+while the form is idle; there is no fingerprint button to press again.
 The greeter sends the authentication request to greetd; it never treats a
 local reader check or UI event as permission to start a session.
 
 greetd uses one PAM conversation. The `strata-greetd` policy therefore gives
 fingerprint authentication one attempt with a five-second timeout, then falls
 back to Fedora's `greetd` password policy. Passwords typed before authentication
-starts are held for the password prompt; typing a password can therefore wait
-for that short fingerprint window. A fingerprint attempt without a password
-shows an editable password prompt if the scan fails or times out. The greeter
-process itself uses `greetd-greeter`, keeping fingerprint authentication out of
+starts are held for the password prompt. Password entry stays editable during
+scanning, and typing pauses new scans. A password submitted during a scan waits
+for that short fingerprint window, then answers its password prompt. Account
+editing also pauses new scans. The greeter process itself uses `greetd-greeter`,
+keeping fingerprint authentication out of
 the process-startup credential setup.
 
 Fresh setups select these policies through `strata-setup-greeter`. Config RPM
@@ -504,6 +506,11 @@ upgrades migrate existing Strata greeter configurations using
 `/etc/greetd/config.toml.before-strata-fingerprint` backup. Explicit custom PAM
 services and other greeters are preserved. The migration never restarts greetd
 or logs out the running desktop; the new policy applies when greetd next starts.
+
+`node scripts/tests/greeter-auto-fingerprint.js` checks automatic retries and
+password handling; `node scripts/tests/greeter-auth.js` also exercises the real
+bridge against a fake greetd socket without PAM or starting a desktop session.
+
 Fingerprint login does not supply your account password to the login keyring,
 so applications using stored secrets may still ask to unlock that keyring.
 

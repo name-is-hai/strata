@@ -16,6 +16,10 @@ ShellRoot {
   property bool fingerprintAvailable: false
   property bool fingerprintPolicyPresent: false
   property bool fingerprintPolicySelected: false
+  property bool editingUsername: false
+  property bool fingerprintAttempt: false
+  property bool passwordSubmitted: false
+  property string queuedPassword: ""
   property bool busy: false
   property bool started: false
   property bool extraPrompt: false
@@ -66,23 +70,59 @@ ShellRoot {
     bridge.write(JSON.stringify(event) + "\n")
   }
 
+  // greetd has one PAM conversation. Keep typing available during a scan,
+  // queue submissions until its password prompt, and never send an empty password.
   function submit(password) {
-    if (busy || password.length === 0) return
+    if (password.length === 0 || passwordSubmitted || (busy && !fingerprintAttempt)) return
+    fingerprintRetry.stop()
     message = ""
+    passwordSubmitted = true
+    if (busy && fingerprintAttempt) {
+      queuedPassword = password
+      notice = "Finishing fingerprint check…"
+      return
+    }
     notice = ""
+    fingerprintAttempt = false
     busy = true
     if (extraPrompt) send({type: "respond", response: password})
     else send({type: "login", username: username.trim(), password: password})
   }
 
+  function armFingerprint() {
+    if (fingerprintAvailable && bridge.running && !busy && !started
+        && !editingUsername && !pendingPassword.length && !queuedPassword.length && username.trim()) {
+      fingerprintRetry.restart()
+    }
+  }
+
   function startFingerprint() {
-    if (busy || !fingerprintAvailable || !username.trim()) return
+    if (busy || started || !bridge.running || !fingerprintAvailable
+        || editingUsername || pendingPassword.length || !username.trim()) return
+    fingerprintRetry.stop()
     message = ""
-    notice = "Touch the fingerprint reader; password is offered if the scan times out."
-    pendingPassword = ""
+    notice = "Touch the fingerprint reader or enter your password."
     extraPrompt = false
+    fingerprintAttempt = true
+    passwordSubmitted = false
     busy = true
     send({type: "login", username: username.trim()})
+  }
+
+  onFingerprintAvailableChanged: {
+    if (fingerprintAvailable) armFingerprint()
+    else fingerprintRetry.stop()
+  }
+  onUsernameChanged: armFingerprint()
+  onPendingPasswordChanged: {
+    if (pendingPassword.length) fingerprintRetry.stop()
+    else armFingerprint()
+  }
+
+  Timer {
+    id: fingerprintRetry
+    interval: 1500
+    onTriggered: root.startFingerprint()
   }
 
   function changeUser(name) {
@@ -101,25 +141,44 @@ ShellRoot {
   function handleAuthEvent(event) {
     if (event.type === "started") {
       started = true
+      fingerprintRetry.stop()
+      queuedPassword = ""
       Qt.quit()
     } else if (event.type === "prompt") {
+      const wasFingerprint = fingerprintAttempt
+      fingerprintAttempt = false
+      passwordSubmitted = false
       extraPrompt = true
       prompt = event.message || "Authentication response"
       secretPrompt = event.secret !== false
       busy = false
       notice = ""
       message = ""
+      if (wasFingerprint && queuedPassword.length && secretPrompt) {
+        const password = queuedPassword
+        queuedPassword = ""
+        submit(password)
+      } else if (wasFingerprint && secretPrompt) {
+        // A mismatch/timeout falls through to password PAM. Retry only when
+        // idle; preserve text already entered and leave its prompt usable.
+        armFingerprint()
+      }
     } else if (event.type === "notice") {
       // PAM's scan instructions are status, not a rejected password.
       notice = event.message || ""
     } else if (event.type === "error" || event.type === "ready") {
+      const retryScan = fingerprintAttempt && !passwordSubmitted
+      fingerprintAttempt = false
+      passwordSubmitted = false
+      queuedPassword = ""
       message = event.type === "error" ? (event.message || "Login failed") : ""
       extraPrompt = false
       prompt = "Password"
       secretPrompt = true
       busy = false
       notice = ""
-      pendingPassword = ""
+      if (!retryScan) pendingPassword = ""
+      if (retryScan) armFingerprint()
     }
   }
 
@@ -146,20 +205,18 @@ ShellRoot {
   FileView {
     id: fingerprintPolicy
     path: "/etc/pam.d/strata-greetd"
-    watchChanges: true
+    watchChanges: false
     printErrors: false
     onLoaded: root.fingerprintPolicyPresent = true
     onLoadFailed: root.fingerprintPolicyPresent = false
-    onFileChanged: reload()
   }
 
   FileView {
     path: "/etc/greetd/config.toml"
-    watchChanges: true
+    watchChanges: false
     printErrors: false
     onLoaded: root.fingerprintPolicySelected = root.usesFingerprintPolicy(String(text()))
     onLoadFailed: root.fingerprintPolicySelected = false
-    onFileChanged: reload()
   }
 
   Process {
@@ -184,6 +241,10 @@ ShellRoot {
     command: ["/usr/share/strata/bin/strata-greetd-ipc"]
     running: true
     stdinEnabled: true
+    onRunningChanged: {
+      if (running) root.armFingerprint()
+      else fingerprintRetry.stop()
+    }
     stdout: SplitParser {
       onRead: function(line) {
         let event
@@ -196,6 +257,9 @@ ShellRoot {
       if (!root.started) {
         root.message = "Login service exited (" + code + ")"
         root.busy = false
+        root.fingerprintAttempt = false
+        root.passwordSubmitted = false
+        root.queuedPassword = ""
         root.notice = ""
       }
     }
@@ -227,11 +291,10 @@ ShellRoot {
         anchors.fill: parent
         backgroundPath: root.greeterRoot + "/background.jpg"
         username: root.username
-        allowUserSwitch: true
+        allowUserSwitch: !root.busy
         showForm: window.isMain
         inputEnabled: window.isMain
-        authenticatingPassword: root.busy
-        allowFingerprintLogin: root.fingerprintAvailable
+        authenticatingPassword: root.busy && (!root.fingerprintAttempt || root.passwordSubmitted)
         fingerprintConfigured: root.fingerprintAvailable
         authenticationNotice: root.notice
         failureMessage: root.message
@@ -240,13 +303,18 @@ ShellRoot {
         passwordText: root.pendingPassword
         powerActionPending: power.running
         powerActionError: root.powerError
+        onEditingUserChanged: {
+          if (!window.isMain) return
+          root.editingUsername = editingUser
+          if (editingUser) fingerprintRetry.stop()
+          else root.armFingerprint()
+        }
         onUsernameEdited: function(username) { root.changeUser(username) }
         onPasswordTextEdited: function(password) {
           root.pendingPassword = password
           if (password.length > 0) root.message = ""
         }
         onSubmitPassword: function(password) { root.submit(password) }
-        onFingerprintLoginRequested: root.startFingerprint()
         onClearFailureRequested: root.message = ""
         onSuspendRequested: power.activate("Sleep", "suspend")
         onShutdownRequested: power.activate("Shutdown", "poweroff")

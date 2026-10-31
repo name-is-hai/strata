@@ -6,8 +6,10 @@ const {once}=require('node:events');
 const repo=path.resolve(__dirname,'../..');
 const work=fs.mkdtempSync(path.join(os.tmpdir(),'strata-greeter-ipc-'));
 const source=fs.readFileSync(path.join(repo,'defaults/greeter/shell.qml'),'utf8');
-const state={username:'sotatek',busy:false,extraPrompt:false,secretPrompt:true,message:'',notice:'',prompt:'Password',pendingPassword:'',fingerprintAvailable:true,sent:[],Qt:{quit(){}},send(event){state.sent.push(event)}};
-for(const name of ['submit','startFingerprint','changeUser','handleAuthEvent','usesFingerprintPolicy']) {
+const state={username:'sotatek',busy:false,extraPrompt:false,secretPrompt:true,message:'',notice:'',prompt:'Password',pendingPassword:'',fingerprintAvailable:true,
+  editingUsername:false,fingerprintAttempt:false,passwordSubmitted:false,queuedPassword:'',started:false,
+  bridge:{running:true},fingerprintRetry:{restart(){},stop(){}},sent:[],Qt:{quit(){}},send(event){state.sent.push(event)}};
+for(const name of ['submit','armFingerprint','startFingerprint','changeUser','handleAuthEvent','usesFingerprintPolicy']) {
   const fn=source.match(new RegExp('  function '+name+'\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}'));
   assert.ok(fn,'production controller '+name);
   vm.runInNewContext(fn[0],state);
