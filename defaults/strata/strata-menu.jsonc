@@ -53,6 +53,8 @@
   "setup.plugin.add": {"icon":"󰐕","label":"Install plugin","action":"strata-menu-plugin install"},
   "setup.tray": {"plugin":"strata.tray","icon":"󰐊","label":"Tray icons","aliases":["tray","system tray","show icons","hide icons"],"provider":"tray-icons"},
   "install.webapp": {"icon":"󰐕","label":"Install web app","action":"strata-launch-floating-terminal-with-presentation strata-webapp install"},
+  "install.appimage": {"icon":"󰏗","label":"Install AppImage","action":"strata-launch-floating-terminal-with-presentation strata-appimage install"},
+  "remove.appimage": {"icon":"󰏗","label":"Remove AppImage","action":"strata-launch-floating-terminal-with-presentation strata-appimage remove"},
   "remove.webapp": {"icon":"󰆴","label":"Remove web app","action":"strata-launch-floating-terminal-with-presentation strata-webapp remove"},
   "setup.network": {"icon":"󰛳","label":"Network","action":"strata-shell shell summon strata.network '{}'"},
   "setup.bluetooth": {"icon":"󰂱","label":"Bluetooth","action":"strata-shell shell summon strata.bluetooth '{}'"},

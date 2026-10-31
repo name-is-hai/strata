@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# strata:summary=Apply a supported AppImage adapter using the desktop UI font
+# strata:args=<AppDir>
+# strata:hidden=true
+set -euo pipefail
+[[ $# == 1 ]] || { echo 'Usage: strata-appimage-font AppDir' >&2; exit 2; }
+appdir=$1
+script=$appdir/app/pc-dist/zadark/js/zadark.min.js
+style=$appdir/app/pc-dist/zadark/css/zadark.min.css
+[[ -f $script && -f $style ]] || { echo 'Unsupported AppImage font adapter.' >&2; exit 1; }
+
+# Prefer explicit GTK settings, then the desktop setting, then fontconfig's
+# distro default. Resolve at each launch; never pin the user's current family.
+requested=
+for settings in "${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini" "${XDG_CONFIG_HOME:-$HOME/.config}/gtk-4.0/settings.ini"; do
+  if [[ -f $settings ]]; then
+    requested=$(sed -nE 's/^[[:space:]]*gtk-font-name[[:space:]]*=[[:space:]]*(.*)/\1/p' "$settings" | head -n1)
+    [[ -z $requested ]] || break
+  fi
+done
+if [[ -z $requested ]] && command -v gsettings >/dev/null; then
+  requested=$(gsettings get org.gnome.desktop.interface font-name 2>/dev/null) || requested=
+fi
+requested=${requested#\'}; requested=${requested%\'}
+requested=${requested#\"}; requested=${requested%\"}
+requested=$(printf '%s' "$requested" | sed -E 's/[[:space:]]+[0-9]+(\.[0-9]+)?[[:space:]]*$//')
+[[ -n $requested && ! $requested =~ [[:cntrl:]] ]] || requested=sans-serif
+family=$(fc-match -f '%{family}\n' -- "$requested" | head -n1 | cut -d, -f1)
+[[ -n $family && ! $family =~ [[:cntrl:]] ]] || family=sans-serif
+font_literal=$(jq -rn --arg family "$family" '$family | tojson')
+
+# Keep ZaDark's initialization local: no attempt to download a generic font
+# family from Google Fonts. Accept the original or already-prepared adapter.
+perl -0777 -i -pe '
+  s/getFontFamily:\(\)=>\{const t=localStorage\.getItem\("\@ZaDark:FONT_FAMILY"\);return null===t\?"Open Sans":t\}/getFontFamily:()=>"system-ui"/
+    or /getFontFamily:\(\)=>"system-ui"/ or die "Unsupported ZaDark font settings\n";
+  s/initFontFamily:async function\(\)\{.*?\},initPageSettings:/initFontFamily:function(){this.setFontFamilyAttr("system-ui")},initPageSettings:/s
+    or /initFontFamily:function\(\)\{this\.setFontFamilyAttr\("system-ui"\)\}/ or die "Unsupported ZaDark initializer\n";
+' "$script"
+# ztext-font declares its own bundled font and does not inherit from body.
+# Restrict overrides to ordinary UI/message text, preserving icon/code fonts.
+STRATA_APPIMAGE_FONT_LITERAL="$font_literal" perl -0777 -i -pe '
+  s{\n?/\* strata-system-font:start \*/.*?/\* strata-system-font:end \*/\n?}{}sg;
+  $_ .= "\n/* strata-system-font:start */\n" .
+    ":root{--strata-system-font:" . $ENV{STRATA_APPIMAGE_FONT_LITERAL} . ";--zadark-font-family:" . $ENV{STRATA_APPIMAGE_FONT_LITERAL} . "!important}\n" .
+    "body,body.zadark,.ztext-font,.message-view{font-family:var(--strata-system-font),sans-serif!important}\n" .
+    "/* strata-system-font:end */\n";
+' "$style"
+printf 'System UI font: %s\n' "$family"

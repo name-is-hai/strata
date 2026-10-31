@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.18
+Version:        1.1.19
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -32,10 +32,13 @@ BuildRequires:    firewalld-filesystem
 BuildRequires:    dbus-daemon
 
 Requires(post): sed
+Requires:       authselect
 Requires:       hyprland-desktop-core
 Requires:       hyprland-desktop-services
 Requires:       ghostty
 Requires:       nautilus
+# Image thumbnail generation for Nautilus on Fedora.
+Requires:       glycin-thumbnailer
 Requires:       neovim
 Requires:       quickshell >= 0.3.1
 Requires:       layer-shell-qt
@@ -307,6 +310,12 @@ if [ -x /usr/share/strata/bin/strata-greeter-auth-configure ]; then
     /usr/share/strata/bin/strata-greeter-auth-configure || echo "Strata: greeter authentication setup needs review." >&2
 fi
 
+%posttrans
+# Run after fprintd/PAM dependencies have been installed, including fresh installs.
+if [ -x /usr/share/strata/bin/strata-fingerprint-configure ]; then
+    /usr/share/strata/bin/strata-fingerprint-configure || echo "Strata: fingerprint authentication setup needs review." >&2
+fi
+
 # Kernel installation can finish before an optional akmod has been built.
 # Refresh opted-in boot images after the actual module RPM is installed too.
 %transfiletriggerin -- /lib/modules /usr/lib/modules
@@ -406,6 +415,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.19-1
+- Enable Fedora fingerprint authentication for supported readers with password fallback
+- Add managed AppImage launchers, icons and dynamic desktop font integration for ZaDark
+- Install the image thumbnailer required by Nautilus
+
 * Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.18-1
 - Show fingerprint placement, mismatch and retry messages on the session lock screen
 - Keep fingerprint status separate from password failures and suppress stale feedback after unlock

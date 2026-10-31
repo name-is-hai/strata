@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# strata:summary=Enable Fedora fingerprint authentication when a supported reader is present
+# strata:hidden=true
+set -euo pipefail
+
+if [[ ${1:-} == --help ]]; then
+  echo 'Usage: sudo strata-fingerprint-configure'
+  exit 0
+fi
+(( $# == 0 )) || { echo 'Unexpected arguments.' >&2; exit 64; }
+(( EUID == 0 )) || { echo 'Run with sudo or pkexec.' >&2; exit 77; }
+
+# Preserve the selected profile, its other features and administrator edits.
+# Never force regeneration of a PAM stack that authselect does not recognize.
+authselect check >/dev/null
+selection=$(authselect current --raw)
+read -r -a profile <<< "$selection"
+[[ -n ${profile[0]:-} ]] || { echo 'No authselect profile selected.' >&2; exit 1; }
+for feature in "${profile[@]:1}"; do
+  [[ $feature != with-fingerprint ]] || exit 0
+done
+features=$(authselect list-features "${profile[0]}")
+if ! grep -qx 'with-fingerprint' <<< "$features"; then
+  echo 'Strata: selected authentication profile does not support fingerprints.'
+  exit 0
+fi
+
+# Ask fprintd rather than guessing USB IDs: supported USB and integrated readers
+# are both covered. Activation is bounded and does not enroll or scan a finger.
+if ! devices=$(busctl --system --timeout=10s call net.reactivated.Fprint \
+    /net/reactivated/Fprint/Manager net.reactivated.Fprint.Manager GetDevices); then
+  echo 'Strata: fingerprint reader detection unavailable; authentication unchanged.' >&2
+  exit 0
+fi
+if [[ ! $devices =~ ^ao[[:space:]]+[1-9][0-9]*[[:space:]] ]]; then
+  echo 'Strata: no supported fingerprint reader; keeping password authentication.'
+  exit 0
+fi
+
+authselect enable-feature with-fingerprint -b
+echo 'Strata: fingerprint authentication enabled; enroll with fprintd-enroll if needed.'

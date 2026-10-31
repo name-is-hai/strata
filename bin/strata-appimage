@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# strata:summary=Install AppImages with launchers, icons and system font integration
+# strata:args=install [file] [--id id] [--name name] [--font system|app] | launch id [args...] | list | remove [id]
+set -euo pipefail
+
+data=${XDG_DATA_HOME:-$HOME/.local/share}
+registry=$data/strata/appimages
+applications=$data/applications
+icons=$data/icons/hicolor/512x512/apps
+bindir=$HOME/.local/bin
+self=$(realpath -- "${BASH_SOURCE[0]}")
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+valid_id() { [[ $1 =~ ^[a-z][a-z0-9-]{0,63}$ ]]; }
+refresh() {
+  update-desktop-database "$applications" >/dev/null 2>&1 || true
+  if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -f -t "$data/icons/hicolor" >/dev/null 2>&1 || true
+  fi
+}
+usage() {
+  echo 'Usage: strata-appimage install [file] [--id id] [--name name] [--font system|app]'
+  echo '       strata-appimage launch id [args...] | list | remove id'
+}
+# Read display metadata, never execute or reuse a vendor desktop Exec command.
+desktop_field() {
+  awk -v key="$2" '
+    { sub(/\r$/, "") }
+    /^\[/ { section=($0 == "[Desktop Entry]") }
+    section && index($0,key "=") == 1 { print substr($0,length(key)+2); exit }
+  ' "$1"
+}
+case ${1:---help} in
+  --help|-h) usage; exit 0 ;;
+  install)
+    shift
+    source_image= app_id= name= font=system
+    while (( $# )); do
+      case $1 in
+        --id|--name|--font)
+          (( $# >= 2 )) || fail "Missing value for $1"
+          case $1 in --id) app_id=$2;; --name) name=$2;; --font) font=$2;; esac
+          shift 2 ;;
+        --*) fail "Unknown option: $1" ;;
+        *) [[ -z $source_image ]] || fail 'Choose one AppImage at a time.'; source_image=$1; shift ;;
+      esac
+    done
+    [[ $font == system || $font == app ]] || fail 'Use --font system or --font app.'
+    if [[ -z $source_image ]]; then
+      source_image=$(zenity --file-selection --title='Install AppImage' --file-filter='AppImages | *.AppImage *.appimage') || exit 0
+    fi
+    source_image=$(realpath -e -- "$source_image") || fail 'AppImage file not found.'
+    [[ -f $source_image ]] || fail 'Choose an AppImage file.'
+    # Require the AppImage marker before invoking its extraction runtime.
+    marker=$(od -An -tx1 -j8 -N3 -- "$source_image" | tr -d ' \n')
+    [[ $marker == 414901 || $marker == 414902 ]] || fail 'The selected file is not an AppImage.'
+    mkdir -p "$registry" "$applications" "$icons" "$bindir"
+    staging=$(mktemp -d "$registry/.install.XXXXXX")
+    published=()
+    target_created=false
+    committed=false
+    cleanup_install() {
+      if ! $committed; then
+        for published_file in "${published[@]}"; do rm -f -- "$published_file"; done
+        if $target_created; then rm -rf -- "$target"; fi
+      fi
+      rm -rf -- "$staging"
+    }
+    trap cleanup_install EXIT
+    cp -- "$source_image" "$staging/application.AppImage"
+    chmod 755 "$staging/application.AppImage"
+    mkdir "$staging/extracted"
+    if ! (cd "$staging/extracted"; ../application.AppImage --appimage-extract > ../extract.log 2>&1); then
+      cat "$staging/extract.log" >&2
+      fail 'This AppImage could not be extracted; no launcher was installed.'
+    fi
+    appdir=
+    for candidate in "$staging/extracted/AppDir" "$staging/extracted/squashfs-root"; do
+      if [[ -f $candidate/AppRun ]]; then appdir=$(realpath -- "$candidate"); break; fi
+    done
+    [[ -n $appdir && $appdir == "$staging/extracted/"* ]] || fail 'No AppDir was found in this AppImage.'
+    desktop=
+    while IFS= read -r -d '' candidate; do desktop=$candidate; break; done < <(find "$appdir" -maxdepth 1 -type f -name '*.desktop' -print0)
+    if [[ -z $app_id ]]; then
+      if [[ -n $desktop ]]; then app_id=$(basename "$desktop" .desktop)
+      else app_id=$(basename "$source_image"); app_id=${app_id%.[Aa]pp[Ii]mage}; fi
+      app_id=$(printf '%s' "$app_id" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g;s/^-+//;s/-+$//')
+    fi
+    valid_id "$app_id" || fail 'Use --id with a lowercase name starting with a letter (letters, digits and hyphens only; max 64 characters).'
+    [[ -n $name || -z $desktop ]] || name=$(desktop_field "$desktop" Name)
+    [[ -n $name ]] || name=$app_id
+    [[ ! $name =~ [[:cntrl:]] ]] || fail 'Application names cannot contain control characters.'
+    wmclass=
+    if [[ -n $desktop ]]; then wmclass=$(desktop_field "$desktop" StartupWMClass); fi
+    target=$registry/$app_id
+    image=$bindir/$app_id.AppImage
+    launcher=$bindir/$app_id
+    entry=$applications/strata-appimage-$app_id.desktop
+    for candidate in "$target" "$image" "$launcher" "$entry"; do
+      [[ ! -e $candidate && ! -L $candidate ]] || fail "Already exists: $candidate. Existing files were left unchanged."
+    done
+    icon_name=application-x-executable
+    icon_candidate=$(realpath -e -- "$appdir/.DirIcon" 2>/dev/null) || icon_candidate=
+    if [[ -z $icon_candidate && -n $desktop ]]; then
+      icon_key=$(desktop_field "$desktop" Icon)
+      if [[ $icon_key =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        while IFS= read -r -d '' candidate; do
+          icon_candidate=$(realpath -e -- "$candidate") || continue
+          break
+        done < <(find "$appdir" -type f \( -name "$icon_key.png" -o -name "$icon_key.svg" \) -print0)
+      fi
+    fi
+    if [[ -f $icon_candidate && $icon_candidate == "$appdir/"* ]]; then
+      case $(file -b --mime-type -- "$icon_candidate") in
+        image/png) extension=png;; image/svg+xml) extension=svg;; image/jpeg) extension=jpg;; image/webp) extension=webp;; *) extension=;;
+      esac
+      if [[ -n $extension ]]; then
+        cp -- "$icon_candidate" "$staging/icon.$extension"
+        icon_name=strata-appimage-$app_id
+      fi
+    fi
+    adapter=native
+    zadark=$appdir/app/pc-dist/zadark/js/zadark.min.js
+    if [[ $font == system && -f $zadark ]]; then
+      "$(dirname "$self")/strata-appimage-font" "$appdir"
+      mv -- "$appdir" "$staging/AppDir"
+      adapter=zadark-system-ui
+    fi
+    jq -n --arg id "$app_id" --arg name "$name" --arg font "$font" --arg adapter "$adapter" \
+      '{id:$id,name:$name,font:$font,adapter:$adapter}' > "$staging/metadata.json"
+    {
+      printf '#!/usr/bin/env bash\nexec %q launch %q "$@"\n' "$self" "$app_id"
+    } > "$staging/launcher"
+    escaped_name=${name//\\/\\\\}
+    cat > "$staging/application.desktop" <<DESKTOP
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=$escaped_name
+Exec=strata-appimage launch $app_id %U
+TryExec=strata-appimage
+Icon=$icon_name
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+X-Strata-AppImage=true
+DESKTOP
+    if [[ -n $wmclass && ! $wmclass =~ [[:cntrl:]] ]]; then
+      wmclass=${wmclass//\\/\\\\}
+      printf 'StartupWMClass=%s\n' "$wmclass" >> "$staging/application.desktop"
+    fi
+    desktop-file-validate "$staging/application.desktop"
+    mkdir "$target"
+    target_created=true
+    install -m 0644 "$staging/metadata.json" "$target/metadata.json"
+    if [[ $adapter == zadark-system-ui ]]; then mv -- "$staging/AppDir" "$target/AppDir"; fi
+    if [[ $icon_name != application-x-executable ]]; then
+      published+=("$icons/$icon_name.$extension")
+      install -m 0644 "$staging/icon.$extension" "$icons/$icon_name.$extension"
+    fi
+    published+=("$image")
+    install -m 0755 "$staging/application.AppImage" "$image"
+    published+=("$launcher")
+    install -m 0755 "$staging/launcher" "$launcher"
+    published+=("$entry")
+    install -m 0644 "$staging/application.desktop" "$entry"
+    committed=true
+    refresh
+    printf 'Installed %s. Launch it from the app menu or run %s.\n' "$name" "$app_id"
+    if [[ $icon_name == application-x-executable ]]; then echo 'Icon: standard application icon; no supported bundled icon was found.'; fi
+    if [[ $font == app ]]; then echo 'Font: app defaults.'
+    elif [[ $adapter == zadark-system-ui ]]; then echo 'Font: system UI font (ZaDark override).'
+    else echo 'Font: system defaults inherited; apps with bundled fonts may still need their own font setting.'; fi
+    ;;
+  launch)
+    (( $# >= 2 )) || fail 'Choose an installed AppImage ID.'
+    app_id=$2; shift 2
+    valid_id "$app_id" || fail 'Invalid AppImage ID.'
+    metadata=$registry/$app_id/metadata.json
+    [[ -f $metadata ]] || fail 'This AppImage is not managed by Strata.'
+    if [[ $(jq -r '.adapter' "$metadata") == zadark-system-ui ]]; then
+      appdir=$registry/$app_id/AppDir
+      "$(dirname "$self")/strata-appimage-font" "$appdir"
+      exec env APPDIR="$appdir" APPIMAGE="$bindir/$app_id.AppImage" ARGV0="$bindir/$app_id.AppImage" OWD="$PWD" "$appdir/AppRun" "$@"
+    fi
+    exec "$bindir/$app_id.AppImage" "$@"
+    ;;
+  list)
+    shopt -s nullglob
+    for metadata in "$registry"/*/metadata.json; do jq -r '[.id,.name,.font,.adapter] | @tsv' "$metadata"; done
+    ;;
+  remove)
+    if [[ $# == 1 ]]; then
+      choice=$("$self" list | gum choose --header='Remove an AppImage') || exit 0
+      set -- remove "${choice%%$'\t'*}"
+    fi
+    [[ $# == 2 ]] && valid_id "$2" || fail 'Usage: strata-appimage remove id'
+    app_id=$2
+    [[ -f $registry/$app_id/metadata.json && -f $applications/strata-appimage-$app_id.desktop ]] || fail 'This AppImage is not managed by Strata.'
+    grep -qx 'X-Strata-AppImage=true' "$applications/strata-appimage-$app_id.desktop" || fail 'This launcher is not managed by Strata.'
+    rm -f -- "$applications/strata-appimage-$app_id.desktop" "$bindir/$app_id" "$bindir/$app_id.AppImage"
+    for extension in png svg jpg webp; do rm -f -- "$icons/strata-appimage-$app_id.$extension"; done
+    rm -rf -- "$registry/$app_id"
+    refresh
+    echo 'Removed the managed AppImage, launcher and icon. Application profiles were preserved.'
+    ;;
+  *) usage >&2; exit 2 ;;
+esac
