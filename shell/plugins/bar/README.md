@@ -71,7 +71,7 @@ Example `shell.json` (bar subtree only shown):
 
 | `strata.audio` | Volume icon + popup with master slider, output-device picker, per-app mixer | left = popup · right = mute · middle = popup · scroll = volume |
 | `strata.network` | Wi-Fi/Ethernet icon + popup with Wi-Fi scan, signal, connect, DNS provider selection | left = popup |
-| `strata.power` | Battery/AC icon + popup with battery stats, power profiles, and system info | left = popup · right = toggle percentage |
+| `strata.power` | Battery with percentage inside + popup with battery stats, power profiles, and system info | left = popup · right/middle = toggle percentage |
 | `strata.bluetooth` | Bluetooth icon + popup with device list, connect/disconnect, battery | left = popup · right = toggle radio |
 | `strata.monitor` | Brightness and laptop display controls | left = popup |
 

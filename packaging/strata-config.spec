@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.20
+Version:        1.1.21
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -354,6 +354,7 @@ fi
 %license shell/plugins/services/shortcut-guide/KEY-PROMOTER-LICENSE
 %license shell/plugins/notifications/center/LICENSE shell/plugins/notifications/center/LICENSE-LUCIDE shell/plugins/notifications/center/LICENSE-OMARCHY
 %license shell/plugins/theme-picker/LICENSE
+%license shell/plugins/panels/power/POWER-INSIDE-LICENSE
 %license shell/plugins/services/system-sounds/sounds/strata/LICENSES/
 %doc docs/strata-config.md
 %{_prefix}/lib/udev/rules.d/70-strata-wiggle.rules
@@ -415,6 +416,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.21-1
+- Draw the battery percentage inside a theme-aware capsule on horizontal bars
+- Show charging and low-battery states while preserving the compact glyph toggle
+
 * Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.20-1
 - Hide fingerprint errors on machines without a reader or enrolled prints
 - Show Polkit fingerprint scan instructions and mismatch errors with password fallback

@@ -25,10 +25,8 @@ Panel {
   property var chargeThresholdEnabled: null
   readonly property string effectiveThreshold: chargeThresholdEnabled === false
     ? "" : (batteryInfo.threshold || "")
-  readonly property bool showPercentage: setting("showPercentage", false) === true
-  // With the percentage shown the button paints a text block wider than an
-  // icon, so the open-panel mark takes the painted width instead of the
-  // icon-sized fraction of the slot the fallback assumes.
+  readonly property bool showPercentage: setting("showPercentage", true) === true
+  // Match the open-panel mark to the battery capsule's painted width.
   readonly property real openPanelIndicatorWidth: showPercentage && !button.vertical ? button.glyphPaintedWidth : 0
   readonly property bool batteryPresent: {
     var device = UPower.displayDevice
@@ -211,47 +209,40 @@ Panel {
     // Percentage mode should fit its content, not reserve two entire icon
     // slots. The old reservation left a conspicuous gap after the audio icon.
     fixedWidth: vertical ? -1 : (root.showPercentage
-      ? Math.ceil(button.contentWidth + Style.bar.contentPx(8))
+      ? Math.ceil(batteryIndicator.implicitWidth + Style.bar.contentPx(8))
       : Style.bar.iconSlot)
     fixedHeight: vertical ? Style.bar.iconSlot : -1
-    // Keep the panel underline centered under the actual percentage + glyph,
-    // instead of the larger fixed slot.
-    readonly property real glyphPaintedWidth: percentageText.visible
-      ? percentageText.implicitWidth + Style.bar.contentPx(4) + batteryGlyph.tightWidth
+    // Keep the panel underline centered under the actual battery capsule.
+    readonly property real glyphPaintedWidth: batteryIndicator.visible
+      ? batteryIndicator.width
       : batteryGlyph.tightWidth
-    readonly property real contentWidth: percentageText.visible
-      ? percentageText.implicitWidth + Style.bar.contentPx(4) + batteryGlyph.width
-      : batteryGlyph.width
     tooltipText: ""
     onPressed: function(b) {
       if (!root.batteryPresent) return
-      if (b === Qt.RightButton) root.togglePercentage()
+      if (b === Qt.RightButton || b === Qt.MiddleButton) root.togglePercentage()
       else root.toggle()
     }
 
-    Text {
-      id: percentageText
+    BatteryIcon {
+      id: batteryIndicator
       visible: root.showPercentage && !button.vertical
-      anchors.left: parent.left
-      anchors.leftMargin: Style.bar.contentPx(4)
-      anchors.right: batteryGlyph.left
-      anchors.rightMargin: Style.bar.contentPx(4)
-      anchors.verticalCenter: parent.verticalCenter
-      anchors.verticalCenterOffset: height / 2 - baselineOffset - button.figureInk.y - button.figureInk.height / 2
-      text: Math.round(root.batteryFraction * 100) + "%"
-      color: button.foreground
-      font.family: button.fontFamily
-      font.pixelSize: button.fontSize
-      horizontalAlignment: Text.AlignRight
-      verticalAlignment: Text.AlignVCenter
-      renderType: Text.NativeRendering
+      anchors.centerIn: parent
+      width: implicitWidth
+      height: Math.max(1, Math.min(button.height - Style.bar.contentPx(6), Math.max(Style.bar.iconSize, Style.bar.labelSize + Style.bar.contentPx(4))))
+      fraction: root.batteryFraction
+      charging: root.charging
+      discharging: root.discharging
+      foreground: button.foreground
+      urgent: root.bar ? root.bar.urgent : Color.urgent
+      fontFamily: button.fontFamily
     }
 
     OpticalGlyph {
       id: batteryGlyph
+      visible: !batteryIndicator.visible
       width: Style.bar.iconCanvas
       height: width
-      x: percentageText.visible ? parent.width - width - Style.bar.contentPx(4) : (parent.width - width) / 2
+      x: (parent.width - width) / 2
       y: (parent.height - height) / 2
       text: root.batteryIcon()
       fontFamily: button.fontFamily
