@@ -72,7 +72,7 @@ Item {
   readonly property var batteryService: shell && shell.services ? shell.firstPartyServiceFor("strata.power") : null
   readonly property bool powerSaverActive: batteryService ? batteryService.powerSaverOnBattery : false
   // A prompt clears the unavailable notice before the attempt finishes.
-  readonly property bool fingerprintUnavailable: FingerprintModel.isUnavailable(fingerprintProbeStreak) || (fingerprintConfigured && (!fingerprintAttemptReachedDevice || fingerprintAttemptFastError) && FingerprintModel.isUnavailable(fingerprintUnreachedStreak))
+  readonly property bool fingerprintUnavailable: fingerprintConfigured && (FingerprintModel.isUnavailable(fingerprintProbeStreak) || ((!fingerprintAttemptReachedDevice || fingerprintAttemptFastError) && FingerprintModel.isUnavailable(fingerprintUnreachedStreak)))
 
   function realScreenCount() {
     var screens = Quickshell.screens || []
@@ -173,6 +173,7 @@ Item {
       // A pending retry already owns the next attempt.
       if (!fingerprintRetryTimer.running) startFingerprint()
     } else if (!fingerprintConfigured) {
+      fingerprintNotice = ""
       // abort() delivers no completion signal, so close the attempt here
       // too; settle returns before arming a retry while unconfigured.
       if (fingerprintPam.active) fingerprintPam.abort()
@@ -693,7 +694,7 @@ Item {
   // Keep fprintd errors distinguishable from an explicit empty enrollment.
   Process {
     id: fingerprintCheckProc
-    command: ["bash", "-c", "if [[ -f /etc/pam.d/strata-lock-fingerprint ]] && command -v fprintd-list >/dev/null 2>&1; then LC_ALL=C fprintd-list \"$USER\" 2>&1; else echo no; fi"]
+    command: ["bash", "-c", "if [[ -f /etc/pam.d/strata-lock-fingerprint ]]; then strata-fingerprint-status \"$USER\"; else echo no; fi"]
     stdout: StdioCollector { id: fingerprintCheckStdout; waitForEnd: true }
     onExited: root.applyFingerprintProbe(fingerprintCheckStdout.text)
   }

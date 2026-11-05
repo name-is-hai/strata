@@ -6,6 +6,11 @@ authselect profile. This makes fingerprint authentication available to `sudo`
 and `pkexec`, with password fallback. Other services using `system-auth` also
 inherit the feature. No fingerprint is enrolled automatically.
 
+The greeter and lock screen only offer fingerprint login for users with enrolled
+prints. A missing reader or empty enrollment does not show a fingerprint error.
+The Polkit dialog displays scan instructions and failed-match messages from PAM,
+then switches to password entry when PAM requests a password.
+
 Enroll your own finger as your normal user:
 
 ```bash

@@ -113,7 +113,10 @@ ShellRoot {
     if (fingerprintAvailable) armFingerprint()
     else fingerprintRetry.stop()
   }
-  onUsernameChanged: armFingerprint()
+  onUsernameChanged: {
+    fingerprintAvailable = false
+    refreshFingerprintAvailability()
+  }
   onPendingPasswordChanged: {
     if (pendingPassword.length) fingerprintRetry.stop()
     else armFingerprint()
@@ -165,7 +168,11 @@ ShellRoot {
       }
     } else if (event.type === "notice") {
       // PAM's scan instructions are status, not a rejected password.
-      notice = event.message || ""
+      const text = String(event.message || "")
+      if (/no devices available|no fingerprints enrolled|has no fingers enrolled/i.test(text)) {
+        fingerprintAvailable = false
+        notice = ""
+      } else notice = text
     } else if (event.type === "error" || event.type === "ready") {
       const retryScan = fingerprintAttempt && !passwordSubmitted
       fingerprintAttempt = false
@@ -197,7 +204,11 @@ ShellRoot {
 
   function refreshFingerprintAvailability() {
     if (!fingerprintPolicyPresent || !fingerprintPolicySelected) fingerprintAvailable = false
-    else if (!fingerprintProbe.running) fingerprintProbe.running = true
+    else if (username.trim() && !fingerprintProbe.running) {
+      fingerprintProbe.username = username.trim()
+      fingerprintProbe.command = ["/usr/share/strata/bin/strata-fingerprint-status", fingerprintProbe.username]
+      fingerprintProbe.running = true
+    }
   }
   onFingerprintPolicyPresentChanged: refreshFingerprintAvailability()
   onFingerprintPolicySelectedChanged: refreshFingerprintAvailability()
@@ -221,19 +232,16 @@ ShellRoot {
 
   Process {
     id: fingerprintProbe
-    command: ["busctl", "--system", "--timeout=3s", "--json=short", "call",
-      "net.reactivated.Fprint", "/net/reactivated/Fprint/Manager",
-      "net.reactivated.Fprint.Manager", "GetDevices"]
-    stdout: StdioCollector {
-      onStreamFinished: {
-        try {
-          const reply = JSON.parse(String(text))
-          root.fingerprintAvailable = root.fingerprintPolicyPresent && root.fingerprintPolicySelected
-            && reply.type === "ao" && reply.data[0].length > 0
-        } catch (e) { root.fingerprintAvailable = false }
+    property string username: ""
+    stdout: StdioCollector { id: fingerprintStatus; waitForEnd: true }
+    onExited: function(code) {
+      if (username !== root.username.trim()) {
+        root.refreshFingerprintAvailability()
+        return
       }
+      root.fingerprintAvailable = code === 0 && String(fingerprintStatus.text).trim() === "yes"
+        && root.fingerprintPolicyPresent && root.fingerprintPolicySelected
     }
-    onExited: function(code) { if (code !== 0) root.fingerprintAvailable = false }
   }
 
   Process {

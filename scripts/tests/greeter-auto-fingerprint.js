@@ -14,6 +14,8 @@ c=setup(); c.startFingerprint(); c.pendingPassword='typed-password'; c.handleAut
 c=setup(); c.startFingerprint(); c.submit('queued-password'); assert(c.passwordSubmitted); assert.equal(c.sent.length,1); c.handleAuthEvent({type:'prompt',message:'Password:',secret:true}); assert.equal(c.sent[1].response,'queued-password'); assert.equal(c.queuedPassword,''); assert(c.busy && c.passwordSubmitted); c.handleAuthEvent({type:'error',message:'Wrong password'}); assert(!c.fingerprintRetry.running); assert.equal(c.message,'Wrong password');
 c=setup(); c.startFingerprint(); c.handleAuthEvent({type:'error',message:'Scan failed'}); assert(c.fingerprintRetry.running); c.startFingerprint(); c.handleAuthEvent({type:'started'}); assert(c.started); assert(!c.fingerprintRetry.running); c.armFingerprint(); assert(!c.fingerprintRetry.running);
 c=setup(); c.fingerprintAvailable=false; c.armFingerprint(); c.startFingerprint(); assert.equal(c.sent.length,0);
+c=setup(); c.handleAuthEvent({type:'notice',message:'No fingerprints enrolled',error:true}); assert.equal(c.notice,''); assert.equal(c.fingerprintAvailable,false);
+c=setup(); c.handleAuthEvent({type:'notice',message:'No devices available',error:true}); assert.equal(c.notice,''); assert.equal(c.fingerprintAvailable,false);
 c=setup(); c.pendingPassword='in progress'; c.startFingerprint(); assert.equal(c.sent.length,0);
 assert(source.includes('authenticatingPassword: root.busy && (!root.fingerprintAttempt || root.passwordSubmitted)'));
 assert(!source.includes('onFingerprintLoginRequested'));

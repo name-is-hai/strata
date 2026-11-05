@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.19
+Version:        1.1.20
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -415,6 +415,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.20-1
+- Hide fingerprint errors on machines without a reader or enrolled prints
+- Show Polkit fingerprint scan instructions and mismatch errors with password fallback
+
 * Sat Oct 31 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.19-1
 - Enable Fedora fingerprint authentication for supported readers with password fallback
 - Add managed AppImage launchers, icons and dynamic desktop font integration for ZaDark

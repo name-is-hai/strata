@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# strata:summary=Report whether a user has an enrolled fingerprint
+# strata:args=[user]
+# strata:hidden=true
+set -uo pipefail
+command -v fprintd-list >/dev/null || { echo no; exit 0; }
+output=$(LC_ALL=C timeout 10s fprintd-list "${1:-${USER:-}}" 2>&1)
+if grep -Eq '^[[:space:]]*-[[:space:]]*#[0-9]+:' <<< "$output"; then
+  echo yes
+elif grep -Eiq 'No devices available|has no fingers enrolled|No fingerprints enrolled' <<< "$output"; then
+  echo no
+else
+  # A daemon/permission/transport error does not prove enrollment is absent.
+  echo unknown
+fi

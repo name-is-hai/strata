@@ -1,5 +1,5 @@
-# Strata 1.1.23
+# Strata 1.1.24
 
-- Enable fingerprint authentication for sudo and pkexec on laptops with supported readers; enroll using fprintd-enroll
-- Add AppImage installation and removal with app-menu icons and improved Zalo system font support
-- Install Nautilus image thumbnail support
+- Check per-user fingerprint enrollment before offering login or lock-screen scans
+- Keep machines without fingerprint setup free of fingerprint errors
+- Display pkexec fingerprint instructions and mismatch feedback while preserving password fallback

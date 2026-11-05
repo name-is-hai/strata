@@ -17,7 +17,7 @@ Item {
   property color foreground: Color.polkit.text
   property color border: Color.polkit.border
   property color borderError: Color.polkit.borderError
-  property var borderSpec: Border.surfaceSpec("polkit", errorFlash ? "border-error" : "border", errorFlash ? borderError : border, Math.max(1, Style.space(2)), "border-alpha")
+  property var borderSpec: Border.surfaceSpec("polkit", feedbackError ? "border-error" : "border", feedbackError ? borderError : border, Math.max(1, Style.space(2)), "border-alpha")
   property color scrim: Color.polkit.scrim
   readonly property int cornerRadius: Style.cornerRadius
   property int contentMargin: Style.spacing.panelPadding
@@ -28,11 +28,14 @@ Item {
   property string currentMessage: ""
   property string currentPrompt: ""
   property string currentSupplementary: ""
+  property bool supplementaryIsError: false
+  readonly property bool feedbackError: errorFlash || (currentSupplementary !== "" && supplementaryIsError)
   property bool responseRequired: false
   property bool responseVisible: false
   property bool failed: false
   property bool errorFlash: false
-  // pam_fprintd appears in the polkit PAM stack (a sensor is enrolled).
+  // Actual PAM scan messages establish fingerprint mode; a config file cannot
+  // tell us whether the selected identity has enrolled prints or a reader.
   property bool fingerprintConfigured: false
   // Lid shut right now — the reader is physically unreachable, so we fall back
   // to the password even when a sensor is enrolled. Refreshed per request.
@@ -44,7 +47,7 @@ Item {
   // waiting on the reader (lid open, sensor enrolled); the moment PAM asks for
   // a password — including immediately when the lid is shut and the clamshell
   // gate skips pam_fprintd — we switch to the password field instead.
-  readonly property bool fingerprintMode: fingerprintConfigured && !laptopClosed && dialogVisible && !responseRequired && !submitted && !errorFlash
+  readonly property bool fingerprintMode: fingerprintConfigured && !laptopClosed && dialogVisible && !responseRequired && !submitted
   readonly property int cardHeight: panel.height > 0 ? Math.min(fieldHeight + contentMargin * 2, panel.height - Style.gapsOut * 2) : fieldHeight + contentMargin * 2
   // Password mode is a wide field; fingerprint mode collapses to a square that
   // just frames the centered sensor icon.
@@ -52,10 +55,6 @@ Item {
 
   function authorizationLabel(message) {
     return PolkitModel.authorizationLabel(message)
-  }
-
-  function loadPamConfig(raw) {
-    fingerprintConfigured = PolkitModel.fingerprintConfiguredFromPamConfig(raw)
   }
 
   function refreshLidState() {
@@ -66,6 +65,8 @@ Item {
     currentMessage = ""
     currentPrompt = ""
     currentSupplementary = ""
+    supplementaryIsError = false
+    fingerprintConfigured = false
     responseRequired = false
     responseVisible = false
     failed = false
@@ -80,10 +81,12 @@ Item {
 
     currentMessage = String(flow.message || "Authentication is needed...")
     currentPrompt = String(flow.inputPrompt || "")
-    currentSupplementary = String(flow.supplementaryMessage || "")
+    currentSupplementary = PolkitModel.visibleSupplementary(flow.supplementaryMessage)
+    supplementaryIsError = !!flow.supplementaryIsError
     responseRequired = !!flow.isResponseRequired
     responseVisible = !!flow.responseVisible
     failed = !!flow.failed
+    fingerprintConfigured = !responseRequired && PolkitModel.promptLooksFingerprint(currentSupplementary)
 
     if (responseRequired) submitted = false
   }
@@ -91,8 +94,7 @@ Item {
   function beginFlow() {
     closeTimer.stop()
     closing = false
-    submitted = false
-    passwordInput.text = ""
+    resetSnapshot()
     refreshLidState()
     syncFromFlow()
     Qt.callLater(refocus)
@@ -157,15 +159,6 @@ Item {
     NumberAnimation { target: root; property: "shakeOffset"; to: 8; duration: Style.duration(50); easing.type: Easing.InOutQuad }
     NumberAnimation { target: root; property: "shakeOffset"; to: 0; duration: Style.duration(55); easing.type: Easing.OutQuad }
   }
-  FileView {
-    path: "/etc/pam.d/polkit-1"
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.loadPamConfig(text())
-    onLoadFailed: root.fingerprintConfigured = false
-    onFileChanged: reload()
-  }
-
   Process {
     id: laptopClosedProc
     command: ["bash", "-c", "strata-hw-laptop-closed && echo closed || echo open"]
@@ -200,6 +193,7 @@ Item {
     function onInputPromptChanged() { root.syncFromFlow() }
     function onResponseVisibleChanged() { root.syncFromFlow() }
     function onSupplementaryMessageChanged() { root.syncFromFlow() }
+    function onSupplementaryIsErrorChanged() { root.syncFromFlow() }
     function onFailedChanged() { root.syncFromFlow() }
 
     function onAuthenticationFailed() {
@@ -268,8 +262,7 @@ Item {
         }
       }
 
-      // Fingerprint mode shows just the sensor icon, centered and alone \u2014 no
-      // padlock, no field, no prompt text.
+      // Keep the sensor icon visible during a mismatch; scan feedback is below.
       OpticalGlyph {
         anchors.centerIn: parent
         width: Math.round(root.fieldHeight * 0.7)
@@ -278,7 +271,7 @@ Item {
         text: "\udb80\ude37"
         fontFamily: root.fontFamily
         fontSize: Math.round(root.fieldHeight * 0.7)
-        color: root.errorFlash ? Color.polkit.textError : root.accent
+        color: root.feedbackError ? Color.polkit.textError : root.accent
       }
 
       Row {
@@ -386,6 +379,32 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideMiddle
+      }
+    }
+
+    Rectangle {
+      anchors.horizontalCenter: card.horizontalCenter
+      anchors.top: card.bottom
+      anchors.topMargin: Style.space(10)
+      width: Math.min(Style.space(480), panel.width - Style.gapsOut * 2)
+      height: supplementaryText.implicitHeight + Style.space(20)
+      visible: root.currentSupplementary !== ""
+      color: root.background
+      radius: root.cornerRadius
+
+      Text {
+        id: supplementaryText
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.margins: Style.space(12)
+        text: root.currentSupplementary
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
+        color: root.supplementaryIsError ? Color.polkit.textError : root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
       }
     }
   }

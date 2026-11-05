@@ -38,9 +38,9 @@ function shouldNudge(nowMs, lastNudgeMs, lastSettleMs, currentIntervalMs) {
 // A failed probe is unknown, so it cannot disable authentication for the lock.
 function classifyProbe(text) {
   var s = String(text || "").trim()
-  if (/^[ \t]*-[ \t]*#[0-9]+:/m.test(s)) return "yes"
+  if (s === "yes" || /^[ \t]*-[ \t]*#[0-9]+:/m.test(s)) return "yes"
   if (s === "no") return "no"
-  if (/has no fingers enrolled/i.test(s)) return "no"
+  if (/has no fingers enrolled|no fingerprints enrolled|no devices available/i.test(s)) return "no"
   return "unknown"
 }
 
