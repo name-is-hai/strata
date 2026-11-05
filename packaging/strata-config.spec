@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.21
+Version:        1.1.22
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -416,6 +416,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.22-1
+- Keep the battery fill green when fully charged on AC power; show the bolt only during active charging
+
 * Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.21-1
 - Draw the battery percentage inside a theme-aware capsule on horizontal bars
 - Show charging and low-battery states while preserving the compact glyph toggle

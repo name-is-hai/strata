@@ -231,6 +231,7 @@ Panel {
       height: Math.max(1, Math.min(button.height - Style.bar.contentPx(6), Math.max(Style.bar.iconSize, Style.bar.labelSize + Style.bar.contentPx(4))))
       fraction: root.batteryFraction
       charging: root.charging
+      fullyCharged: root.fullyCharged && !root.discharging
       discharging: root.discharging
       foreground: button.foreground
       urgent: root.bar ? root.bar.urgent : Color.urgent

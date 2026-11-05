@@ -8,6 +8,7 @@ Item {
   id: icon
   property real fraction: 0
   property bool charging: false
+  property bool fullyCharged: false
   property bool discharging: false
   property color foreground: Color.foreground
   property color urgent: Color.urgent
@@ -16,7 +17,7 @@ Item {
   readonly property bool low: discharging && level <= 0.2
   readonly property real unit: height / 16.8
   readonly property real statusWidth: charging ? 12 * unit : 0
-  readonly property color fillColor: low ? urgent : charging ? "#a3be8c" : foreground
+  readonly property color fillColor: low ? urgent : (charging || fullyCharged) ? "#a3be8c" : foreground
   readonly property color rimColor: low ? urgent : Util.alpha(foreground, 0.55)
   readonly property color trackColor: Util.alpha(foreground, 0.6)
   // A contrasting track keeps the same digit color readable across the fill.
