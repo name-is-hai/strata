@@ -28,6 +28,31 @@ are not unconditional desktop dependencies. Rerunning the desktop installer
 also applies this check to an existing installation; a config RPM upgrade
 alone does not run the hardware installer.
 
+## NVIDIA and Secure Boot
+
+On NVIDIA machines, `strata-install-desktop` prepares an akmods signing key
+before installing the driver, builds the modules, repairs unsigned existing
+modules and rebuilds the boot image. Future akmods builds reuse that key.
+Existing signing keys are preserved; an incomplete key pair stops setup.
+
+With Secure Boot disabled, no enrollment is needed. With Secure Boot enabled,
+setup checks whether the signing key is already enrolled or pending. A new
+enrollment asks for a temporary password in the installer terminal. At the next
+boot choose **Enroll MOK → Continue → Yes**, enter that password and reboot
+again. This firmware confirmation cannot be automated by the installer.
+Secure Boot stays enabled. A noninteractive install reports the required manual
+enrollment command instead of claiming that the driver is ready.
+
+To repair an existing installation or enroll the key after enabling Secure Boot:
+
+```console
+sudo /usr/share/strata/bin/strata-install-desktop --nvidia-only
+```
+
+AMD and Intel machines skip this NVIDIA setup. Hardware must be supported by
+the installed RPM Fusion NVIDIA driver; signing does not add driver support for
+unsupported GPU models.
+
 ## Display fallback and login displays
 
 The desktop installer also runs `strata-boot-displays --apply` to prepare

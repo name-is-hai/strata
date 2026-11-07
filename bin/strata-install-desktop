@@ -56,6 +56,8 @@ Installs the Strata desktop from the configured static DNF repository.
 
 When run as a normal user, the installer also applies Strata's user
 configuration for that user without replacing existing configuration files.
+NVIDIA modules are signed for Secure Boot. If its key is not enrolled, choose
+a temporary password here and confirm Enroll MOK during the next reboot.
 USAGE
       exit 0
       ;;
@@ -79,7 +81,7 @@ export PATH="$STRATA_PATH/bin:$PATH"
 has_nvidia_hardware() {
   local device
   for device in /sys/bus/pci/devices/*; do
-    [[ -r $device/vendor ]] || continue
+    [[ -r $device/vendor && -r $device/class && $(<"$device/class") == 0x03* ]] || continue
     [[ $(<"$device/vendor") == "0x10de" ]] && return 0
   done
   return 1
@@ -154,14 +156,84 @@ install_quickshell_repository() {
   rm -f -- "$temporary"
 }
 
+prepare_nvidia_signing_key() {
+  local certificate=/etc/pki/akmods/certs/public_key.der
+  local private_key=/etc/pki/akmods/private/private_key.priv
+  # Create the key before installing akmod-nvidia: its first automatic build
+  # must already have a signing key, even if Secure Boot is currently off.
+  dnf install -y --setopt=install_weak_deps=False akmods kmodtool mokutil openssl kernel-devel-matched "kernel-devel-uname-r = $(uname -r)"
+  if [[ ! -e $certificate && ! -e $private_key ]]; then
+    kmodgenca -a
+  fi
+  [[ -s $certificate && -s $private_key ]] || {
+    echo 'The akmods signing key pair is incomplete. Refusing to replace existing keys.' >&2
+    return 1
+  }
+}
+
+enroll_nvidia_signing_key() {
+  local certificate=/etc/pki/akmods/certs/public_key.der state fingerprint pending enrolled
+  if [[ ! -d /sys/firmware/efi ]]; then
+    echo 'Legacy BIOS boot: no Secure Boot key enrollment is needed.'
+    return 0
+  fi
+  state=$(mokutil --sb-state) || return 1
+  if [[ $state == *'SecureBoot disabled'* ]]; then
+    echo 'Secure Boot is disabled. NVIDIA modules are signed and can load without MOK enrollment.'
+    return 0
+  fi
+  [[ $state == *'SecureBoot enabled'* ]] || { echo "Cannot determine Secure Boot state: $state" >&2; return 1; }
+  fingerprint=$(openssl x509 -inform DER -in "$certificate" -noout -fingerprint -sha1)
+  fingerprint=${fingerprint#*=}
+  # Some mokutil versions return success even while printing "not enrolled".
+  # Compare the certificate against the actual enrolled list instead.
+  enrolled=$(mokutil --list-enrolled) || return 1
+  if grep -Fixq -- "SHA1 Fingerprint: $fingerprint" <<< "$enrolled"; then
+    echo 'The NVIDIA signing key is already enrolled.'
+    return 0
+  fi
+  pending=$(mokutil --list-new) || return 1
+  if ! grep -Fiq -- "$fingerprint" <<< "$pending"; then
+    echo 'Secure Boot needs the akmods signing key enrolled.'
+    echo 'Choose a temporary enrollment password now. You will enter it once in the MOK screen during reboot.'
+    if [[ ! -t 0 ]]; then
+      echo "Run sudo mokutil --import $certificate from a terminal, then enroll the key during reboot." >&2
+      return 1
+    fi
+    mokutil --import "$certificate" || return 1
+    pending=$(mokutil --list-new) || return 1
+    if ! grep -Fiq -- "$fingerprint" <<< "$pending"; then
+      echo 'The signing certificate is not in the pending enrollment list. Enrollment was not scheduled.' >&2
+      return 1
+    fi
+  fi
+  echo 'Key enrollment is pending. During reboot choose Enroll MOK > Continue > Yes, enter your enrollment password, then reboot again.'
+  echo 'NVIDIA and displays connected to it cannot work until that firmware confirmation is completed.'
+}
+
 install_nvidia_driver() {
+  if ! rpm -q akmod-nvidia >/dev/null 2>&1; then
+    install_rpmfusion_release free
+    install_rpmfusion_release nonfree
+  fi
+  prepare_nvidia_signing_key
   if rpm -q akmod-nvidia >/dev/null 2>&1; then
     echo "NVIDIA driver packages are already installed."
   else
     echo "NVIDIA graphics hardware detected; installing the current RPM Fusion driver."
-    install_rpmfusion_release nonfree
     dnf install -y --refresh akmod-nvidia xorg-x11-drv-nvidia-cuda
   fi
+
+  # An existing driver may have been built before its signing key existed.
+  # Build missing modules, and repair unsigned modules for the running kernel.
+  akmods --force --akmod nvidia
+  if [[ -z $(modinfo -k "$(uname -r)" -F signer nvidia 2>/dev/null) ]]; then
+    akmods --force --rebuild --akmod nvidia
+  fi
+  [[ -n $(modinfo -k "$(uname -r)" -F signer nvidia) ]] || {
+    echo 'NVIDIA module signing failed. Refusing to report the driver as ready.' >&2
+    return 1
+  }
 
   # The open-source nouveau module may already own the GPU in the running
   # session. Keep it out of the next boot's initramfs so the NVIDIA module can
@@ -173,6 +245,7 @@ options nouveau modeset=0
 options nvidia-drm modeset=1
 EOF
   dracut --force
+  enroll_nvidia_signing_key
   echo "NVIDIA driver is prepared. Reboot to switch this GPU from nouveau to NVIDIA."
 }
 

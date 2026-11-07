@@ -1,4 +1,5 @@
-# Strata 1.1.30
+# Strata 1.1.31
 
-- Fix repository assembly dropping the independently released Celluloid RPM
-- Include the monitor wake rotation, position and resolution preservation fix
+- Sign NVIDIA modules during setup and repair existing unsigned driver builds
+- Handle Secure Boot enabled, disabled and legacy BIOS installations without replacing existing signing keys
+- Check enrolled and pending certificate fingerprints and guide one-time MOK confirmation
