@@ -167,10 +167,29 @@ read_monitor_position() {
 enable_internal_output() {
   [[ -n $INTERNAL ]] || return 0
   local scale="${1:-}"
-  local position
+  local position mode transform live mirror="" mirror_field=""
   [[ -n $scale ]] || scale=$(read_monitor_scale)
   position=$(read_monitor_position)
-  hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"preferred\", position = \"$position\", scale = $scale })" >/dev/null 2>&1 || true
+  mode=$(configured_internal_monitor_value mode)
+  transform=$(configured_internal_monitor_value transform)
+  # hl.monitor replaces the output rule. A wake-time scale correction must
+  # retain the active placement and rotation, including unsaved Apply changes.
+  # Disabled outputs have no reliable live geometry; use their saved values.
+  live=$(hyprctl monitors all -j | jq -c --arg name "$INTERNAL" \
+    '[.[] | select(.name == $name and .disabled != true and .width > 0 and .height > 0)][0] // empty')
+  if [[ -n $live ]]; then
+    mode=$(jq -r '"\(.width)x\(.height)@\(.refreshRate)"' <<<"$live")
+    position=$(jq -r '"\(.x)x\(.y)"' <<<"$live")
+    transform=$(jq -r '.transform // 0' <<<"$live")
+    mirror=$(jq -r '.mirrorOf // ""' <<<"$live")
+  fi
+  [[ $mode =~ ^[0-9]+x[0-9]+(@[0-9]+([.][0-9]+)?(Hz)?)?$ ]] || mode=preferred
+  [[ $position =~ ^-?[0-9]+x-?[0-9]+$ || $position == auto ]] || position=auto
+  [[ $transform =~ ^[0-7]$ ]] || transform=0
+  if [[ $mirror != none && $mirror =~ ^[A-Za-z0-9._-]+$ ]]; then
+    mirror_field=", mirror = \"$mirror\""
+  fi
+  hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform$mirror_field })" >/dev/null 2>&1 || true
 }
 
 sync_internal_scale() {

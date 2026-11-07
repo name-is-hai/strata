@@ -1,4 +1,4 @@
-# Strata 1.1.28
+# Strata 1.1.29
 
-- Import Celluloid Preview 0.30-4 from its independently built and tested RPM release
-- Verify the pinned Celluloid release checksum before including it in the Strata repository
+- Keep laptop display rotation, position and resolution when correcting its scale after wake
+- Restore saved geometry when re-enabling a disabled laptop display
