@@ -27,6 +27,8 @@ function fingerprints() {
     if (!/^[a-z][a-z0-9-]*$/.test(target) ||
         !(definition.release ? !definition.spec &&
           /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(definition.release.repository) &&
+          /^[a-z0-9][a-z0-9+_.-]*$/.test(definition.release.name) &&
+          /^[0-9]+:[A-Za-z0-9+_.~^-]+$/.test(definition.release.evr) &&
           /^v[0-9][A-Za-z0-9_.-]*$/.test(definition.release.tag) && safeRPM(definition.release.asset)
           : /^[a-z0-9-]+\.spec$/.test(definition.spec)) || !Array.isArray(definition.inputs)) {
       throw Error('Invalid build target definition: ' + target);

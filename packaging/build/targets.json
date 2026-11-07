@@ -57,7 +57,9 @@
     "release": {
       "repository": "name-is-hai/celluloid-preview",
       "tag": "v0.30-4",
-      "asset": "celluloid-0.30-4.fc44.x86_64.rpm"
+      "asset": "celluloid-0.30-4.fc44.x86_64.rpm",
+      "name": "celluloid",
+      "evr": "1:0.30-4.fc44"
     },
     "inputs": ["packaging/build/download-rpm.sh"]
   }

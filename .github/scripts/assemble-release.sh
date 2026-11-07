@@ -8,6 +8,8 @@ declare -A expected selected
 versions=$(for spec in packaging/*.spec; do
   rpmspec -q --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' "$spec" || exit 1
 done)
+imports=$(jq -er 'to_entries[] | select(.value.release) | .value.release | [.name, .evr] | @tsv' packaging/build/targets.json)
+versions+=$'\n'"$imports"
 while IFS=$'\t' read -r name evr; do expected[$name]=$evr; done <<< "$versions"
 bin/strata-release-version --check
 

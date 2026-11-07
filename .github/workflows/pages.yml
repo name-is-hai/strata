@@ -51,7 +51,7 @@ jobs:
       - name: Generate and verify DNF metadata
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo fedora:44 \
-            bash -lc 'dnf install -y createrepo_c rpm-build && bin/strata-repo-refresh && bin/strata-repo-verify'
+            bash -lc 'dnf install -y createrepo_c rpm-build jq && bin/strata-repo-refresh && bin/strata-repo-verify'
           rm -rf public-site
           mkdir public-site
           cp -a packages repodata strata.repo VERSION LICENSE public-site/

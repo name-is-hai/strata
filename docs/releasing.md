@@ -71,7 +71,7 @@ same Celluloid desktop entry; explicit user MIME preferences take precedence.
 To update the player, bump its RPM version or release in the Celluloid fork and
 push a matching tag (for example `v0.30-4`). Its release workflow builds and tests
 the RPM, then publishes runtime RPMs, the source RPM and SHA256SUMS. After that
-release exists, update the tag and asset in `packaging/build/targets.json`.
+release exists, update the tag, asset and expected RPM name/EVR in `packaging/build/targets.json`.
 `bin/strata-build-rpms celluloid` downloads and checks that exact release without
 compiling. Strata CI uses the same download path, then includes the RPM in its
 normal DNF repository. Missing assets or invalid checksums fail the import;

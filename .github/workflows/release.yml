@@ -163,7 +163,7 @@ jobs:
         run: |
           podman run --rm --user 0 -v "$PWD:/repo:Z" -w /repo \
             registry.fedoraproject.org/fedora:44 bash -euc '
-              dnf install -y --setopt=install_weak_deps=False createrepo_c rpm-build
+              dnf install -y --setopt=install_weak_deps=False createrepo_c rpm-build jq
               bash .github/scripts/assemble-release.sh incoming
             '
       - uses: actions/setup-node@v7.1.0

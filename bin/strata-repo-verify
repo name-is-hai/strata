@@ -15,7 +15,7 @@ fi
 repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
 repo_url="file://$repo_root"
 
-for command in dnf rpm rpmspec; do
+for command in dnf rpm rpmspec jq; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "$command is required to verify repository packages and source versions." >&2
     exit 1
@@ -39,6 +39,8 @@ declare -A expected_versions package_files published_versions
 expected=$(for spec in "$repo_root"/packaging/*.spec; do
   rpmspec -q --qf $'%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n' "$spec" || exit 1
 done)
+imports=$(jq -er 'to_entries[] | select(.value.release) | .value.release | [.name, .evr] | @tsv' "$repo_root/packaging/build/targets.json")
+expected+=$'\n'"$imports"
 while IFS=$'\t' read -r name version; do
   expected_versions[$name]=$version
 done <<< "$expected"

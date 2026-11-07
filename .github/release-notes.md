@@ -1,4 +1,4 @@
-# Strata 1.1.29
+# Strata 1.1.30
 
-- Keep laptop display rotation, position and resolution when correcting its scale after wake
-- Restore saved geometry when re-enabling a disabled laptop display
+- Fix repository assembly dropping the independently released Celluloid RPM
+- Include the monitor wake rotation, position and resolution preservation fix
