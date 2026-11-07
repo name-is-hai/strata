@@ -25,10 +25,13 @@ function fingerprints() {
     !value.startsWith('/') && !value.split('/').some(part => part === '..' || part === '.');
   for (const [target, definition] of Object.entries(declared)) {
     if (!/^[a-z][a-z0-9-]*$/.test(target) ||
-        !/^[a-z0-9-]+\.spec$/.test(definition.spec) || !Array.isArray(definition.inputs)) {
+        !(definition.release ? !definition.spec &&
+          /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(definition.release.repository) &&
+          /^v[0-9][A-Za-z0-9_.-]*$/.test(definition.release.tag) && safeRPM(definition.release.asset)
+          : /^[a-z0-9-]+\.spec$/.test(definition.spec)) || !Array.isArray(definition.inputs)) {
       throw Error('Invalid build target definition: ' + target);
     }
-    const paths = [...common, 'packaging/' + definition.spec, ...definition.inputs,
+    const paths = [...(definition.release ? [] : [...common, 'packaging/' + definition.spec]), ...definition.inputs,
       ...(definition.recipe ? [definition.recipe] : [])];
     if (!paths.every(safePath)) throw Error('Invalid build input path: ' + target);
     inputs[target] = paths;

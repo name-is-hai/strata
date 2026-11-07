@@ -102,14 +102,17 @@ jobs:
           ref: ${{ needs.validate.outputs.commit }}
           persist-credentials: false
       - name: Install Podman
-        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true && matrix.target != 'celluloid'
         run: sudo apt-get update && sudo apt-get install -y podman
       - name: Build Fedora 44 RPMs
-        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true && matrix.target != 'celluloid'
         env:
           TARGET: ${{ matrix.target }}
           STRATA_BUILD_CPUS: '2'
         run: bin/strata-build-rpms "$TARGET"
+      - name: Download verified Celluloid release RPM
+        if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true && matrix.target == 'celluloid'
+        run: bash packaging/build/download-rpm.sh celluloid build-output/RPMS/x86_64
       - name: Select runtime RPMs
         if: fromJSON(needs.plan.outputs.reuse)[matrix.target] != true
         run: |

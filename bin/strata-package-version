@@ -5,7 +5,7 @@ repo_root=$("$(dirname -- "${BASH_SOURCE[0]}")/strata-cmd-repo-root")
 cd "$repo_root"
 usage() {
   echo 'Usage: strata-package-version TARGET VERSION [--release NUMBER] [-m MESSAGE]...'
-  echo 'Targets: config desktop ghostty uwsm celluloid lock-auth hyprland utilities fonts'
+  echo 'Targets: config desktop ghostty uwsm lock-auth hyprland utilities fonts'
 }
 [[ ${1:-} == -h || ${1:-} == --help ]] && { usage; exit 0; }
 (( $# >= 2 )) || { usage >&2; exit 64; }
@@ -16,7 +16,7 @@ case "$target" in
   desktop) spec=packaging/hyprland-desktop.spec ;;
   ghostty) spec=packaging/ghostty.spec ;;
   uwsm) spec=packaging/uwsm.spec ;;
-  celluloid) spec=packaging/celluloid.spec ;;
+  celluloid) echo 'Release Celluloid in its own repository, then update packaging/build/targets.json.' >&2; exit 64 ;;
   lock-auth) spec=packaging/strata-lock-auth.spec ;;
   hyprland) spec=packaging/hyprland-minimal.spec ;;
   utilities) spec=packaging/hyprland-utilities.spec ;;

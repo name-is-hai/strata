@@ -54,7 +54,11 @@
     "inputs": []
   },
   "celluloid": {
-    "spec": "celluloid.spec",
-    "inputs": []
+    "release": {
+      "repository": "name-is-hai/celluloid-preview",
+      "tag": "v0.30-4",
+      "asset": "celluloid-0.30-4.fc44.x86_64.rpm"
+    },
+    "inputs": ["packaging/build/download-rpm.sh"]
   }
 }

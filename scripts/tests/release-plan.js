@@ -40,7 +40,7 @@ try {
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
     'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password', 'packaging/strata-lock-fingerprint', 'packaging/strata-greetd',
-    'packaging/ghostty.spec', 'packaging/uwsm.spec', 'packaging/celluloid.spec',
+    'packaging/ghostty.spec', 'packaging/uwsm.spec', 'packaging/build/download-rpm.sh',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
   put('packaging/build/targets.json', buildDefinitions);
   for (const file of ['common.sh', 'environment.sh', 'config-source.sh', 'run.sh']) {
@@ -80,9 +80,11 @@ try {
   put('packaging/uwsm.spec', 'new UWSM version'); commit();
   assert.deepEqual(choices(), {...all(true), uwsm: false}, 'UWSM builds independently');
   put('packaging/uwsm.spec', 'original\n'); commit();
-  put('packaging/celluloid.spec', 'new preview fork commit'); commit();
-  assert.deepEqual(choices(), {...all(true), celluloid: false}, 'Celluloid fork updates rebuild only Celluloid');
-  put('packaging/celluloid.spec', 'original\n'); commit();
+  const changed = JSON.parse(buildDefinitions);
+  changed.celluloid.release.tag = 'v0.30-5';
+  put('packaging/build/targets.json', JSON.stringify(changed)); commit();
+  assert.deepEqual(choices(), {...all(true), celluloid: false}, 'Celluloid release pin updates import only Celluloid');
+  put('packaging/build/targets.json', buildDefinitions); commit();
   put('packaging/hyprland-desktop.spec', 'new dependency'); commit();
   assert.deepEqual(choices(), {...all(true), desktop: false}, 'desktop dependencies build independently');
   put('packaging/hyprland-desktop.spec', 'original\n'); commit();
@@ -127,7 +129,7 @@ try {
   }
   for (const file of ['packaging/build/common.sh', 'packaging/build/environment.sh']) {
     put(file, 'changed shared settings'); commit();
-    assert.deepEqual(choices(), all(false), file + ' rebuilds every target');
+    assert.deepEqual(choices(), {...all(false), celluloid: true}, file + ' rebuilds compiled targets, not imported RPMs');
     put(file, 'original\n'); commit();
   }
 

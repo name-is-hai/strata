@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -422,6 +422,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Nov 07 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-2
+- Import independently released Celluloid RPMs instead of compiling the player in Strata
+
 * Sat Nov 07 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-1
 - Use the preview-enabled Celluloid fork with video defaults and separate windows
 - Show friendly application names in audio controls
