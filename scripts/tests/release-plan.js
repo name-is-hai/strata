@@ -40,7 +40,7 @@ try {
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
     'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password', 'packaging/strata-lock-fingerprint', 'packaging/strata-greetd',
-    'packaging/ghostty.spec', 'packaging/uwsm.spec',
+    'packaging/ghostty.spec', 'packaging/uwsm.spec', 'packaging/celluloid.spec',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
   put('packaging/build/targets.json', buildDefinitions);
   for (const file of ['common.sh', 'environment.sh', 'config-source.sh', 'run.sh']) {
@@ -80,6 +80,9 @@ try {
   put('packaging/uwsm.spec', 'new UWSM version'); commit();
   assert.deepEqual(choices(), {...all(true), uwsm: false}, 'UWSM builds independently');
   put('packaging/uwsm.spec', 'original\n'); commit();
+  put('packaging/celluloid.spec', 'new preview fork commit'); commit();
+  assert.deepEqual(choices(), {...all(true), celluloid: false}, 'Celluloid fork updates rebuild only Celluloid');
+  put('packaging/celluloid.spec', 'original\n'); commit();
   put('packaging/hyprland-desktop.spec', 'new dependency'); commit();
   assert.deepEqual(choices(), {...all(true), desktop: false}, 'desktop dependencies build independently');
   put('packaging/hyprland-desktop.spec', 'original\n'); commit();

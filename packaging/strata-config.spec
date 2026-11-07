@@ -1,7 +1,7 @@
 Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
-Version:        1.1.22
+Version:        1.1.23
 Release:        1%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
@@ -95,7 +95,7 @@ Requires:       perl(Fcntl)
 Requires:       perl(IO::Handle)
 Requires:       imv
 Requires:       ffmpeg-free
-Requires:       celluloid
+Requires:       celluloid >= 1:0.30-3
 Requires:       strata-casting = 1:%{version}-%{release}
 Requires:       zenity
 Requires:       util-linux-core
@@ -262,6 +262,8 @@ install -Dpm 0644 defaults/fontconfig/66-strata-jetbrains-mono-nerd.conf \
     %{buildroot}%{_sysconfdir}/fonts/conf.d/66-strata-jetbrains-mono-nerd.conf
 install -Dpm 0644 defaults/mpv/mpv.conf \
     %{buildroot}%{_sysconfdir}/mpv/mpv.conf
+install -Dpm 0644 defaults/glib-2.0/90-strata-celluloid.gschema.override \
+    %{buildroot}%{_datadir}/glib-2.0/schemas/90-strata-celluloid.gschema.override
 install -Dpm 0644 defaults/polkit-1/rules.d/49-strata-greeter.rules \
     %{buildroot}%{_sysconfdir}/polkit-1/rules.d/49-strata-greeter.rules
 
@@ -272,6 +274,8 @@ install -Dpm 0644 defaults/applications/strata-editor.desktop \
     %{buildroot}%{_datadir}/applications/strata-editor.desktop
 install -Dpm 0644 defaults/applications/strata-image-editor.desktop \
     %{buildroot}%{_datadir}/applications/strata-image-editor.desktop
+install -Dpm 0644 defaults/applications/hyprland-mimeapps.list \
+    %{buildroot}%{_datadir}/applications/hyprland-mimeapps.list
 cp -a runtime-version %{buildroot}%{_datadir}/strata/version
 
 install -d %{buildroot}%{_datadir}/quickshell/strata
@@ -361,10 +365,12 @@ fi
 %{_datadir}/applications/strata-snip.desktop
 %{_datadir}/applications/strata-editor.desktop
 %{_datadir}/applications/strata-image-editor.desktop
+%{_datadir}/applications/hyprland-mimeapps.list
 %license %{_datadir}/licenses/strata-snip/
 %{_prefix}/lib/systemd/user/strata-stay-awake.service
 %config(noreplace) %{_sysconfdir}/fonts/conf.d/66-strata-jetbrains-mono-nerd.conf
 %config(noreplace) %{_sysconfdir}/mpv/mpv.conf
+%{_datadir}/glib-2.0/schemas/90-strata-celluloid.gschema.override
 %config(noreplace) %{_sysconfdir}/polkit-1/rules.d/49-strata-greeter.rules
 %{_datadir}/icons/Win11OSX/
 %dir %{_datadir}/strata
@@ -416,6 +422,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Sat Nov 07 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-1
+- Use the preview-enabled Celluloid fork with video defaults and separate windows
+- Show friendly application names in audio controls
+
 * Thu Nov 05 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.22-1
 - Keep the battery fill green when fully charged on AC power; show the bolt only during active charging
 

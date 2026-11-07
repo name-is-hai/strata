@@ -32,7 +32,7 @@ required_packages=(
   hyprland-desktop-apps hyprland-utilities strata-lock-auth
   strata-casting strata-waycast strata-doubletake strata-cast
   hyprland hyprland-guiutils xdg-desktop-portal-hyprland
-  jetbrains-mono-nerd-fonts ghostty uwsm hypridle hyprpicker hyprsunset
+  jetbrains-mono-nerd-fonts ghostty uwsm celluloid hypridle hyprpicker hyprsunset
 )
 
 declare -A expected_versions package_files published_versions

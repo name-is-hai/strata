@@ -1,0 +1,3 @@
+# Open each video in its own window. Explicit user preferences take precedence.
+[io.github.celluloid-player.Celluloid]
+always-open-new-window=true

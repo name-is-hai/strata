@@ -1,4 +1,4 @@
-# Strata 1.1.26
+# Strata 1.1.27
 
-- Fix the fully charged battery icon to stay green while connected to AC power
-- Keep the charging bolt limited to active charging
+- Ship the Celluloid fork with native timeline thumbnail previews as the default video player
+- Open videos in separate windows and show friendly application names in audio controls

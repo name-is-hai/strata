@@ -52,5 +52,9 @@
   "fonts": {
     "spec": "jetbrains-mono-nerd-fonts.spec",
     "inputs": []
+  },
+  "celluloid": {
+    "spec": "celluloid.spec",
+    "inputs": []
   }
 }

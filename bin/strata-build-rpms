@@ -8,7 +8,7 @@ fedora_updates_baseurl=${STRATA_FEDORA_UPDATES_BASEURL:-}
 
 usage() {
   cat <<'USAGE'
-Usage: bin/strata-build-rpms [config|desktop|ghostty|uwsm|lock-auth|hyprland|utilities|fonts|all]...
+Usage: bin/strata-build-rpms [config|desktop|ghostty|uwsm|celluloid|lock-auth|hyprland|utilities|fonts|all]...
 
 Build selected Strata RPM source packages on this host through rootless Podman.
 All compilers and build dependencies remain in the disposable container.
@@ -18,6 +18,7 @@ Pass multiple targets to reuse the same build container and DNF dependencies.
   desktop     desktop dependency meta-packages only
   ghostty     Ghostty terminal emulator
   uwsm        Universal Wayland Session Manager
+  celluloid   Celluloid preview fork with native timeline thumbnails
   lock-auth   Fedora PAM policy for the lock screen
   hyprland    hyprland, hyprland-guiutils, and xdg-desktop-portal-hyprland
   utilities   Hyprland utilities, including Hyprcursor theme-tool dependencies
@@ -38,7 +39,7 @@ USAGE
 (( $# > 0 )) || { usage >&2; exit 2; }
 for target in "$@"; do
   case "$target" in
-    config|desktop|ghostty|uwsm|lock-auth|hyprland|utilities|fonts|all) ;;
+    config|desktop|ghostty|uwsm|celluloid|lock-auth|hyprland|utilities|fonts|all) ;;
     *) usage >&2; exit 2 ;;
   esac
 done

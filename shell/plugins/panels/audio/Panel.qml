@@ -626,7 +626,11 @@ Panel {
   // displayAudioStreams carries primitives now, and resolving each row back
   // would only rebuild what audioStreams already is.
   function streamLabel(node) {
-    return Model.streamLabel(node, mprisPlayers, audioStreams)
+    var label = Model.streamLabel(node, mprisPlayers, audioStreams)
+    // Some apps publish their desktop ID as application.name. Resolve that ID
+    // through the installed launcher, including its localized display name.
+    var entry = DesktopEntries.byId(label.replace(/\.desktop$/, ""))
+    return entry && entry.name ? entry.name : label
   }
 
   function streamDetail(node) {

@@ -54,6 +54,7 @@ checked individually against its recorded digest.
 | Desktop | Dependency metapackage spec and its local license. No application compilation. |
 | Ghostty | Standalone `packaging/ghostty.spec`. |
 | UWSM | Standalone `packaging/uwsm.spec`. |
+| Celluloid | Standalone `packaging/celluloid.spec`, pinned to a tested commit of `name-is-hai/celluloid-preview`. |
 | Lock auth | PAM spec, policy and license. |
 | Hyprland | Compositor, portal and GUI utility spec. |
 | Utilities | Utility spec; Hypridle, Hyprpicker and Hyprsunset remain one target. |
@@ -63,6 +64,14 @@ checked individually against its recorded digest.
 update rebuilds only Ghostty; it does not rebuild config, desktop or UWSM.
 The config source archive includes only its casting packaging assets, not other
 packages' specs. Its installed documentation and commands remain build inputs.
+
+Strata requires the preview-enabled Celluloid RPM (Epoch 1), rather than Fedora's
+unpatched package. Fresh Hyprland sessions default common video formats to the
+same Celluloid desktop entry; explicit user MIME preferences take precedence.
+To update the player, test and push the fork first, update its pinned commit in
+`packaging/celluloid.spec`, and increase that RPM's version or release. Build just
+the player with `bin/strata-build-rpms celluloid`; other unchanged targets can be
+reused. The separate fork remains the source of the playback and preview code.
 
 Reuse operates per target, so a config change still rebuilds its casting
 backends, and a utilities change rebuilds its grouped utilities.
