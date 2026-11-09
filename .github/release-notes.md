@@ -1,4 +1,5 @@
-# Strata 1.1.32
+# Strata 1.1.33
 
-- Add Use password to administrator prompts to stop fingerprint scanning and continue the same authorization with a password
-- Ship the guarded Polkit helper and PAM integration with automated authentication and dialog checks
+- Deactivate the laptop display while its lid is closed and an external monitor is active
+- Restore saved layout, scale and rotation on opening without changing permanent monitor or greeter preferences
+- Handle fresh startup, rapid lid transitions and external monitor disconnection safely

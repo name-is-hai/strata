@@ -4,10 +4,12 @@
 # strata:hidden=true
 
 TOGGLES_DIR="$HOME/.local/state/strata/toggles/hypr"
-CLAMSHELL_FLAG="$TOGGLES_DIR/internal-monitor-clamshell.lua"
+RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+# Session-only state: never write a lid-close override into monitors.lua.
+CLAMSHELL_FLAG="$RUNTIME_DIR/strata-monitor-clamshell.json"
 MANUAL_DISABLE_FLAG="$TOGGLES_DIR/internal-monitor-disable.lua"
 SCALE_STATE="$TOGGLES_DIR/internal-monitor-scale"
-MONITOR_LUA="$HOME/.config/hypr/monitors.lua"
+MONITOR_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/monitors.lua"
 
 INTERNAL=$(strata-hyprland-monitor-laptop)
 
@@ -229,12 +231,12 @@ enable_internal() {
   local changed=0
 
   if [[ -f $CLAMSHELL_FLAG ]]; then
+    hyprctl reload >/dev/null 2>&1 || return 1
+    local errors
+    errors=$(hyprctl configerrors) || return 1
+    [[ -z ${errors//[[:space:]]/} ]] || { echo "$errors" >&2; return 1; }
     rm -f "$CLAMSHELL_FLAG"
     changed=1
-  fi
-
-  if (( changed )); then
-    hyprctl reload >/dev/null 2>&1 || true
   fi
 
   [[ -f $MANUAL_DISABLE_FLAG ]] && strata-hyprland-monitor-external-active && return 0
@@ -256,23 +258,34 @@ disable_internal() {
   [[ -n $INTERNAL ]] || exit 0
   [[ -f $MANUAL_DISABLE_FLAG ]] && return 0
 
-  mkdir -p "$TOGGLES_DIR"
+  local monitor created=0 temporary
+  monitor=$(hyprctl monitors all -j | jq -c --arg internal "$INTERNAL" \
+    '[.[] | select(.name == $internal and .disabled != true)][0] // empty')
+  # A display disabled in the saved layout must remain off after opening.
+  [[ -n $monitor ]] || return 0
   remember_internal_scale
-
-  local config
-  config=$(printf 'hl.monitor({ output = "%s", disabled = true })' "$INTERNAL")
-
-  if [[ ! -f $CLAMSHELL_FLAG ]] || [[ $(< "$CLAMSHELL_FLAG") != $config ]]; then
-    printf '%s\n' "$config" >"$CLAMSHELL_FLAG"
-    hyprctl reload >/dev/null 2>&1 || true
+  if [[ ! -f $CLAMSHELL_FLAG ]]; then
+    temporary=$(mktemp "$RUNTIME_DIR/.strata-monitor-clamshell.XXXXXX") || return 1
+    if ! jq '{name,disabled:false,scale}' <<< "$monitor" > "$temporary"; then rm -f -- "$temporary"; return 1; fi
+    mv -f -- "$temporary" "$CLAMSHELL_FLAG" || return 1
+    created=1
+  fi
+  if ! hyprctl eval "hl.monitor({ output = \"$INTERNAL\", disabled = true })" >/dev/null; then
+    (( created == 0 )) || rm -f -- "$CLAMSHELL_FLAG"
+    return 1
   fi
 }
 
 strata-hyprland-monitor-internal recover >/dev/null 2>&1 || true
 strata-hyprland-monitor-internal-mirror recover >/dev/null 2>&1 || true
 
-if strata-hw-clamshell && strata-hyprland-monitor-external-active; then
-  disable_internal
-else
-  enable_internal
-fi
+exec 9>"$RUNTIME_DIR/strata-monitor-clamshell.lock"
+flock -w 2 9 || exit 0
+case "${1:-sync}" in
+  closed) if strata-hyprland-monitor-external-active; then disable_internal; else enable_internal; fi ;;
+  open) enable_internal ;;
+  sync)
+    if strata-hw-clamshell && strata-hyprland-monitor-external-active; then disable_internal
+    else enable_internal; fi ;;
+  *) echo 'Usage: strata-hyprland-monitor-clamshell [closed|open|sync]' >&2; exit 64 ;;
+esac

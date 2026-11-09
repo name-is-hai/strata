@@ -24,6 +24,8 @@ Item {
   property string pendingDisplayAction: ""
   property string powerAction: ""
   property bool monitorRestarting: false
+  property bool clamshellSyncPending: false
+  property int connectedScreenCount: Quickshell.screens.length
 
   readonly property bool managed: action !== "system"
   // Intercept only logind's lid handling. A global sleep inhibitor would also
@@ -43,6 +45,7 @@ Item {
     if (!root.stateKnown) {
       root.closed = next
       root.stateKnown = true
+      root.syncClamshell()
       return
     }
     if (root.closed === next) return
@@ -52,6 +55,7 @@ Item {
   }
 
   function handleClosed() {
+    root.syncClamshell()
     if (!root.managed) return
     if (root.action === "display") turnDisplayOff()
     else if (root.action === "sleep") requestPowerAction("suspend")
@@ -59,7 +63,24 @@ Item {
   }
 
   function handleOpened() {
+    root.syncClamshell()
     if (root.displayOff) turnDisplayOn()
+  }
+
+  function syncClamshell() {
+    if (!root.present || !root.stateKnown) return
+    if (clamshellProcess.running) {
+      root.clamshellSyncPending = true
+      return
+    }
+    root.clamshellSyncPending = false
+    clamshellProcess.command = ["strata-hyprland-monitor-clamshell", root.closed ? "closed" : "open"]
+    clamshellProcess.running = true
+  }
+
+  function clamshellFinished(exitCode) {
+    if (exitCode !== 0) root.errorOccurred("Could not update the laptop display for the lid state")
+    if (root.clamshellSyncPending) Qt.callLater(root.syncClamshell)
   }
 
   function turnDisplayOff() {
@@ -139,7 +160,7 @@ Item {
   }
 
   function ensureMonitorRunning() {
-    if (root.managed && root.present) {
+    if (root.present) {
       if (!monitorProcess.running && !root.monitorRestarting) monitorProcess.running = true
     } else if (monitorProcess.running) {
       monitorProcess.running = false
@@ -163,18 +184,19 @@ Item {
   }
 
   onInhibitorWhatChanged: restartMonitor()
-  onManagedChanged: ensureMonitorRunning()
-  onPresentChanged: ensureMonitorRunning()
+  onManagedChanged: restartMonitor()
+  onPresentChanged: { ensureMonitorRunning(); syncClamshell() }
+  onConnectedScreenCountChanged: syncClamshell()
+  Component.onCompleted: scheduleStateQuery()
 
   Process {
     id: capabilityProcess
-    command: ["busctl", "get-property", "org.freedesktop.UPower", "/org/freedesktop/UPower", "org.freedesktop.UPower", "LidIsPresent", "LidIsClosed"]
+    command: ["busctl", "get-property", "org.freedesktop.UPower", "/org/freedesktop/UPower", "org.freedesktop.UPower", "LidIsPresent"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        var values = String(text).match(/b\s+(true|false)/g) || []
-        root.present = values.length > 0 && values[0].indexOf("true") >= 0
-        if (values.length > 1) root.applyState(values[1].indexOf("true") >= 0)
+        root.present = /b\s+true/.test(String(text))
+        root.scheduleStateQuery()
       }
     }
     Component.onCompleted: running = true
@@ -263,17 +285,26 @@ Item {
 
   Process {
     id: monitorProcess
-    command: ["systemd-inhibit", "--what=" + root.inhibitorWhat, "--who=Strata", "--why=Handle the configured lid-close action", "--mode=block", "gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1", "--object-path", "/org/freedesktop/login1"]
+    // Observe lid events even when logind owns the power action. Only custom
+    // actions take an inhibitor; monitoring alone must not change sleep policy.
+    command: (root.managed
+      ? ["systemd-inhibit", "--what=" + root.inhibitorWhat, "--who=Strata", "--why=Handle the configured lid-close action", "--mode=block"] : [])
+      .concat(["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1", "--object-path", "/org/freedesktop/login1"])
     stdout: SplitParser {
       onRead: function(line) {
         if (String(line).indexOf("LidClosed") >= 0) root.scheduleStateQuery()
       }
     }
     onExited: function(exitCode) {
-      if (!root.monitorRestarting && root.managed && root.present && exitCode !== 0)
+      if (!root.monitorRestarting && root.present && exitCode !== 0)
         root.errorOccurred("Could not monitor laptop lid events")
       if (!root.monitorRestarting) Qt.callLater(root.ensureMonitorRunning)
     }
+  }
+
+  Process {
+    id: clamshellProcess
+    onExited: function(exitCode) { root.clamshellFinished(exitCode) }
   }
 
   Process {

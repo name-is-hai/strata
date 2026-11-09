@@ -13,6 +13,16 @@ rows=$(hyprctl monitors all -j | jq -ce '
     (if .disabled == true then {} else
       {scale:(if ((.scale // 0) > 0) then .scale else 1 end)} end))
   else error("No usable display state") end')
+# Closing the lid temporarily removes an enabled panel from the desktop; that
+# is not a permanent preference for the next login screen.
+clamshell=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/strata-monitor-clamshell.json
+if [[ -f $clamshell ]]; then
+  name=$(jq -r 'select(.disabled == false) | .name // empty' "$clamshell")
+  if [[ $name =~ ^(eDP|LVDS|DSI)-[A-Za-z0-9._-]+$ ]]; then
+    rows=$(jq -c --slurpfile original "$clamshell" --arg name "$name" \
+      'map(if .name == $name then .disabled = false | .scale = $original[0].scale else . end)' <<<"$rows")
+  fi
+fi
 # An emergency laptop fallback is temporary; publish its original disabled
 # preference, not the recovered runtime state, to the next login screen.
 fallback=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/strata-monitor-fallback.json

@@ -484,6 +484,18 @@ normal press; holding the physical button for a hardware power-off is unchanged.
 The power-menu action requires an unlocked session. Custom handling releases
 its logind inhibitor when the shell exits or System default is selected.
 
+On laptops with an active external display, closing the lid temporarily
+deactivates the built-in output, including when that output is enabled in
+Display Layout. Opening the lid restores the saved layout, scale and rotation.
+This is part of the default lid service on fresh installs, including the System
+default power action; no personal binding or monitor configuration is needed.
+The monitor override is session-only and does not rewrite `monitors.lua` or
+save a disabled-panel preference for the greeter. A panel explicitly disabled
+in the saved layout remains disabled. If the external display is disconnected,
+Strata keeps a usable laptop output rather than disabling the last display.
+Configured sleep/hibernate actions still apply. Lid detection uses logind and
+falls back to legacy ACPI state when the service is unavailable.
+
 The suspend-then-hibernate delay still applies to all profiles.
 The Stay Awake indicator only toggles a temporary pause for automatic
 display-off and sleep; it does not block a manual suspend.

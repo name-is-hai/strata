@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        6%{?dist}
+Release:        7%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -422,6 +422,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Mon Nov 09 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-7
+- Temporarily deactivate the laptop output on lid close and restore its saved layout on opening
+- Monitor lid changes with system-default power handling and support logind lid detection on fresh installs
+
 * Mon Nov 09 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-6
 - Add Use password to Polkit fingerprint prompts with immediate fallback in the same authorization request
 

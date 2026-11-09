@@ -3,6 +3,14 @@
 # strata:summary=Returns true when the laptop lid is closed
 # strata:hidden=true
 
+# logind supports lid switches that have no legacy /proc/acpi entry.
+state=$(busctl --system --timeout=2s get-property org.freedesktop.login1 \
+  /org/freedesktop/login1 org.freedesktop.login1.Manager LidClosed 2>/dev/null) || state=""
+case "$state" in
+  'b true') exit 0 ;;
+  'b false') exit 1 ;;
+esac
+
 for state in /proc/acpi/button/lid/*/state; do
   [[ -r $state ]] || continue
   [[ $(< "$state") == *"closed"* ]] && exit 0
