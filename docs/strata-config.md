@@ -496,6 +496,32 @@ a lock surface during resume can crash the locker and leave Hyprland's failsafe.
 External displays that still need cable reconnection require graphics-stack
 investigation; an automatic output-removal workaround is not enabled.
 
+## Password fallback in administrator prompts
+
+The fingerprint view of Strata's Polkit prompt includes **Use password**.
+Click it, or press Enter while the sensor icon has focus, to stop the current
+fingerprint scan and continue the same authorization request with a password.
+Escape still cancels the whole request.
+
+`strata-lock-auth` supplies an optional PAM signal shim and an unprivileged
+helper in `/usr/share/strata/bin`. The shim lets `pam_fprintd` consume an
+interrupt and fall through to Fedora's existing `system-auth` stack. It never
+authenticates anyone itself. The helper only signals one matching Polkit child
+of the calling shell, owned by the same real user, with SIGINT blocked; pidfds
+prevent PID reuse. It refuses unrelated, ambiguous or unprepared processes.
+Password checks, account restrictions and authentication failure handling remain
+in Fedora's PAM policy. The password field opens only when PAM requests it.
+
+The package supplies `/etc/pam.d/polkit-1` as `%config(noreplace)`. Administrators
+with a custom Polkit PAM policy should review RPM's config-file merge results;
+the optional `pam_strata_polkit.so` line must precede the fingerprint stack for
+the switch to work. When interruption is unavailable, the dialog reports it
+and lets the existing authentication attempt finish.
+
+The authentication RPM's checks exercise a synthetic PAM conversation, including
+wrong-password rejection and process-selection guards. The offscreen dialog
+test verifies the button, input visibility and focus without authenticating.
+
 ## Lock-screen and login power controls
 
 The `strata-lock-auth` package supplies separate password and fingerprint PAM

@@ -1,5 +1,4 @@
-# Strata 1.1.31
+# Strata 1.1.32
 
-- Sign NVIDIA modules during setup and repair existing unsigned driver builds
-- Handle Secure Boot enabled, disabled and legacy BIOS installations without replacing existing signing keys
-- Check enrolled and pending certificate fingerprints and guide one-time MOK confirmation
+- Add Use password to administrator prompts to stop fingerprint scanning and continue the same authorization with a password
+- Ship the guarded Polkit helper and PAM integration with automated authentication and dialog checks

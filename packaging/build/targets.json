@@ -38,6 +38,10 @@
       "packaging/strata-lock-password",
       "packaging/strata-lock-fingerprint",
       "packaging/strata-greetd",
+      "packaging/strata-polkit",
+      "packaging/pam_strata_polkit.c",
+      "packaging/strata-polkit-use-password.c",
+      "packaging/polkit-password-switch-test.c",
       "packaging/hyprland-desktop-LICENSE"
     ]
   },

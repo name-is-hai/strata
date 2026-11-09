@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -60,7 +60,7 @@ Requires:       pulseaudio-utils
 Requires:       pam
 Requires:       gnome-keyring
 Requires:       gnome-keyring-pam
-Requires:       strata-lock-auth >= 0.1-3
+Requires:       strata-lock-auth >= 0.1-4
 Requires:       fcitx5
 Requires:       fcitx5-gtk
 Requires:       fcitx5-qt
@@ -422,6 +422,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Mon Nov 09 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-6
+- Add Use password to Polkit fingerprint prompts with immediate fallback in the same authorization request
+
 * Sat Nov 07 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-5
 - Prepare signed NVIDIA modules and guide one-time MOK enrollment with Secure Boot enabled
 - Verify enrollment using certificate fingerprints instead of unreliable mokutil exit status

@@ -40,6 +40,8 @@ try {
     'packaging/hyprland-desktop.spec', 'packaging/hyprland-minimal.spec',
     'packaging/hyprland-utilities.spec', 'packaging/jetbrains-mono-nerd-fonts.spec',
     'packaging/hyprland-desktop-LICENSE', 'packaging/strata-lock-password', 'packaging/strata-lock-fingerprint', 'packaging/strata-greetd',
+    'packaging/strata-polkit', 'packaging/pam_strata_polkit.c', 'packaging/strata-polkit-use-password.c',
+    'packaging/polkit-password-switch-test.c',
     'packaging/ghostty.spec', 'packaging/uwsm.spec', 'packaging/build/download-rpm.sh',
     'packaging/casting/strata-castd.service', 'VERSION', '.github/release-notes.md']) put(file, 'original\n');
   put('packaging/build/targets.json', buildDefinitions);

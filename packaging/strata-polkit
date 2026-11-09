@@ -1,0 +1,8 @@
+#%PAM-1.0
+# pam_fprintd handles SIGINT via signalfd. The optional shim only blocks that
+# signal; Fedora's maintained system-auth still makes every auth decision.
+auth       optional     pam_strata_polkit.so
+auth       include      system-auth
+account    include      system-auth
+password   include      system-auth
+session    include      system-auth

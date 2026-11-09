@@ -34,6 +34,9 @@ Item {
   property bool responseVisible: false
   property bool failed: false
   property bool errorFlash: false
+  property bool switchingToPassword: false
+  property string passwordSwitchError: ""
+  property int flowGeneration: 0
   // Actual PAM scan messages establish fingerprint mode; a config file cannot
   // tell us whether the selected identity has enrolled prints or a reader.
   property bool fingerprintConfigured: false
@@ -62,6 +65,10 @@ Item {
   }
 
   function resetSnapshot() {
+    passwordSwitchTimer.stop()
+    flowGeneration += 1
+    switchingToPassword = false
+    passwordSwitchError = ""
     currentMessage = ""
     currentPrompt = ""
     currentSupplementary = ""
@@ -88,7 +95,12 @@ Item {
     failed = !!flow.failed
     fingerprintConfigured = !responseRequired && PolkitModel.promptLooksFingerprint(currentSupplementary)
 
-    if (responseRequired) submitted = false
+    if (responseRequired) {
+      passwordSwitchTimer.stop()
+      submitted = false
+      switchingToPassword = false
+      passwordSwitchError = ""
+    }
   }
 
   function beginFlow() {
@@ -116,6 +128,24 @@ Item {
     flow.submit(passwordInput.text)
     passwordInput.text = ""
     keyCatcher.forceActiveFocus()
+  }
+
+  function usePassword() {
+    if (!fingerprintMode || switchingToPassword || passwordSwitchProcess.running) return
+    passwordSwitchError = ""
+    switchingToPassword = true
+    passwordSwitchProcess.generation = flowGeneration
+    passwordSwitchProcess.running = true
+  }
+
+  function passwordSwitchFinished(generation, exitCode) {
+    if (generation !== flowGeneration || !dialogVisible || responseRequired) return
+    if (exitCode !== 0) {
+      switchingToPassword = false
+      passwordSwitchError = "Could not stop the fingerprint scan. Wait for it to finish, then enter your password."
+    } else {
+      passwordSwitchTimer.restart()
+    }
   }
 
   function cancelRequest() {
@@ -159,6 +189,24 @@ Item {
     NumberAnimation { target: root; property: "shakeOffset"; to: 8; duration: Style.duration(50); easing.type: Easing.InOutQuad }
     NumberAnimation { target: root; property: "shakeOffset"; to: 0; duration: Style.duration(55); easing.type: Easing.OutQuad }
   }
+  Process {
+    id: passwordSwitchProcess
+    property int generation: -1
+    command: ["/usr/share/strata/bin/strata-polkit-use-password"]
+    onExited: function(exitCode) { root.passwordSwitchFinished(generation, exitCode) }
+  }
+
+  Timer {
+    id: passwordSwitchTimer
+    interval: 3000
+    repeat: false
+    onTriggered: {
+      if (!root.switchingToPassword || root.responseRequired) return
+      root.switchingToPassword = false
+      root.passwordSwitchError = "The fingerprint scan has not stopped yet. Wait for the password prompt."
+    }
+  }
+
   Process {
     id: laptopClosedProc
     command: ["bash", "-c", "strata-hw-laptop-closed && echo closed || echo open"]
@@ -257,6 +305,7 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (root.responseRequired) root.submitResponse()
+            else if (root.fingerprintMode) root.usePassword()
             event.accepted = true
           }
         }
@@ -382,13 +431,31 @@ Item {
       }
     }
 
+    Button {
+      id: usePasswordButton
+      objectName: "polkitUsePasswordButton"
+      visible: root.fingerprintMode
+      enabled: !root.switchingToPassword
+      text: root.switchingToPassword ? "Switching to password..." : "Use password"
+      focusable: true
+      fontFamily: root.fontFamily
+      foreground: root.foreground
+      background: root.background
+      bordered: true
+      anchors.horizontalCenter: card.horizontalCenter
+      anchors.top: supplementaryCard.visible ? supplementaryCard.bottom : card.bottom
+      anchors.topMargin: Style.space(10)
+      onClicked: root.usePassword()
+    }
+
     Rectangle {
+      id: supplementaryCard
       anchors.horizontalCenter: card.horizontalCenter
       anchors.top: card.bottom
       anchors.topMargin: Style.space(10)
       width: Math.min(Style.space(480), panel.width - Style.gapsOut * 2)
       height: supplementaryText.implicitHeight + Style.space(20)
-      visible: root.currentSupplementary !== ""
+      visible: root.currentSupplementary !== "" || root.passwordSwitchError !== ""
       color: root.background
       radius: root.cornerRadius
 
@@ -398,11 +465,11 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         anchors.margins: Style.space(12)
-        text: root.currentSupplementary
+        text: root.passwordSwitchError || root.currentSupplementary
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         horizontalAlignment: Text.AlignHCenter
-        color: root.supplementaryIsError ? Color.polkit.textError : root.foreground
+        color: root.passwordSwitchError !== "" || root.supplementaryIsError ? Color.polkit.textError : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
       }
