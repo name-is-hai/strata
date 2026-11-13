@@ -68,8 +68,9 @@ strata-update --check > "$work/check-output"
 rg -q '4.0.0~alpha-4.fc44' "$work/check-output"
 rg -q '1:4.0.0~alpha-2.fc44 → 4.0.0~alpha-4.fc44' "$work/check-output"
 strata-update > "$work/update-output"
-[[ $(count sudo) == 1 ]]
+[[ $(count sudo) == 2 ]]
 [[ $(count strata-restart-shell) == 1 ]]
 rg -q '^sudo dnf upgrade --refresh strata-config$' "$work/calls"
+rg -q '^sudo /usr/share/strata/bin/strata-video-acceleration install$' "$work/calls"
 if rg -q -- '--assumeyes' "$work/calls"; then echo 'Update skipped confirmation' >&2; exit 1; fi
 echo 'PASS: Bash checker/updater, cache, version notifications, offline/malformed metadata, clearing, and explicit transaction'

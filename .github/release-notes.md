@@ -1,5 +1,3 @@
-# Strata 1.1.36
+# Strata 1.1.37
 
-- Connect directly by hostname, NetBird address or IP using any RDP client; SSH tunneling is no longer needed
-- Keep TLS, RDP password authentication, keyboard capture and workspace restoration
-- Configure TCP port 3389 with administrator authorization on first start
+- Automatically configure and verify RDP video acceleration on fresh installs and updates

@@ -65,6 +65,32 @@ and its access policy must permit TCP port 3389. Internet access through a
 router also depends on that router's forwarding policy; Strata does not change
 router or NetBird policy.
 
+## Automatic video acceleration
+
+Strata detects display-class PCI devices during desktop installation and
+updates, installing Intel or AMD codec-enabled VA-API drivers as appropriate.
+First RDP start also checks for missing drivers, covering machines upgraded
+from an older installer. Package changes use administrator authorization and
+the standard Fedora/RPM Fusion repositories. An unavailable repository or
+declined optional driver installation does not prevent software RDP.
+
+Before starting capture, Strata probes the render devices as the desktop user.
+It checks the H.264 profile and encoding entrypoint used by the bundled backend,
+then encodes three synthetic black frames. It never records the desktop for
+this test. A successful test selects hardware-auto encoding at up to 60 FPS;
+otherwise the default is software encoding at 30 FPS. Explicit `fps` and
+`h264_backend` settings in the RDP configuration remain unchanged.
+
+Driver presence or hardware decoding support alone does not qualify. In
+particular, the current backend requires H.264 `EncSlice`; low-power-only
+`EncSliceLP` devices and NVIDIA-only systems without a compatible VA-API encoder
+remain on software. Existing NVIDIA display-driver and Secure Boot setup is
+kept separate. Inspect the result with:
+
+```bash
+strata-video-acceleration probe
+```
+
 ## What happens to the local desktop
 
 Once the RDP connection is authenticated, Strata pauses its idle timers,

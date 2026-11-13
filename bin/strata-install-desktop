@@ -320,6 +320,11 @@ fi
 
 install_intel_arrow_lake_firmware
 
+# Run package installation outside RPM scriptlets, after DNF has finished.
+if ! strata-video-acceleration install; then
+  echo 'Optional GPU video drivers could not be prepared; RDP will use software encoding.' >&2
+fi
+
 # Prepare Plymouth only after the Fedora graphics stack and Strata's
 # hardware-aware dracut policy are installed. No connector is forced on/off.
 strata-boot-displays --apply

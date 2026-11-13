@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# strata:summary=Prepare GPU video drivers and verify RDP hardware encoding
+# strata:args=<install|check|probe>
+set -euo pipefail
+mode=${1:-probe}
+
+missing_drivers() {
+  local device intel=0 amd=0
+  for device in /sys/bus/pci/devices/*; do
+    [[ -r $device/vendor && -r $device/class && $(<"$device/class") == 0x03* ]] || continue
+    case $(<"$device/vendor") in 0x8086) intel=1 ;; 0x1002|0x1022) amd=1 ;; esac
+  done
+  # Fedora's free Intel build may omit H.264 encoding. RDP needs the full
+  # codec-enabled package, not merely an iHD library that loads successfully.
+  if (( intel )) && ! rpm -q --quiet intel-media-driver; then
+    echo intel-media-driver
+  fi
+  if (( amd )) && ! rpm -q --quiet mesa-va-drivers-freeworld; then echo mesa-va-drivers-freeworld; fi
+}
+
+enable_codec_repository() {
+  local edition=$1 release base
+  rpm -q --quiet "rpmfusion-$edition-release" && return 0
+  release=$(rpm -E '%fedora')
+  [[ $release =~ ^[0-9]+$ ]] || return 1
+  for base in https://download1.rpmfusion.org https://mirrors.rpmfusion.org; do
+    if dnf --repo=fedora --repo=updates install -y --setopt=install_weak_deps=False \
+      "$base/$edition/fedora/rpmfusion-$edition-release-$release.noarch.rpm"; then return 0; fi
+  done
+  return 1
+}
+
+probe() {
+  local device capabilities profile reason='No compatible H.264 hardware encoder found'
+  local selected= backend=software fps=30 hardware=false
+  if command -v vainfo >/dev/null && command -v ffmpeg >/dev/null; then
+    shopt -s nullglob
+    for device in /dev/dri/renderD*; do
+      capabilities=$(timeout 8s vainfo --display drm --device "$device" 2>/dev/null) || continue
+      # Match hypr-rdp's profile selection and EncSlice requirement exactly.
+      # EncSliceLP alone is insufficient for the current bundled backend.
+      if grep -Eq 'VAProfileH264High[[:space:]]*:' <<<"$capabilities"; then profile=High
+      elif grep -Eq 'VAProfileH264Main[[:space:]]*:' <<<"$capabilities"; then profile=Main
+      else continue
+      fi
+      if ! grep -Eq "VAProfileH264$profile[[:space:]]*:[[:space:]]*VAEntrypointEncSlice[[:space:]]*$" <<<"$capabilities"; then
+        if grep -q VAEntrypointEncSliceLP <<<"$capabilities"; then
+          reason='Only low-power H.264 encoding is available; the bundled RDP backend requires EncSlice'
+        fi
+        continue
+      fi
+      selected=$device
+      if timeout 10s ffmpeg -nostdin -hide_banner -loglevel error \
+          -vaapi_device "$device" -f lavfi -i 'color=c=black:s=1920x1080:r=60' \
+          -vf 'format=nv12,hwupload' -c:v h264_vaapi -low_power 0 \
+          -profile:v "${profile,,}" -frames:v 3 -f null - >/dev/null 2>&1; then
+        hardware=true; backend=auto; fps=60; reason='Verified H.264 hardware encoding'
+      else reason='H.264 hardware encoding test failed'
+      fi
+      # The backend selects the first compatible render device, too.
+      break
+    done
+  else reason='Video capability checker is unavailable'
+  fi
+  jq -n --arg backend "$backend" --arg device "$selected" --arg reason "$reason" \
+    --argjson fps "$fps" --argjson hardware "$hardware" \
+    '{backend:$backend,fps:$fps,hardware:$hardware,device:$device,reason:$reason}'
+}
+
+case "$mode" in
+  check) [[ -z $(missing_drivers) ]] ;;
+  install)
+    [[ $EUID == 0 ]] || { echo 'Run with administrator authorization: pkexec strata-video-acceleration install' >&2; exit 1; }
+    mapfile -t packages < <(missing_drivers)
+    if (( ${#packages[@]} )); then
+      repositories=(--repo=fedora --repo=updates)
+      enable_codec_repository free
+      repositories+=('--repo=rpmfusion-free*')
+      if [[ " ${packages[*]} " == *' intel-media-driver '* ]]; then
+        enable_codec_repository nonfree
+        repositories+=('--repo=rpmfusion-nonfree*')
+      fi
+      for package in "${packages[@]}"; do
+        old=
+        if [[ $package == intel-media-driver ]] && rpm -q --quiet libva-intel-media-driver; then old=libva-intel-media-driver
+        elif [[ $package == mesa-va-drivers-freeworld ]]; then
+          for candidate in mesa-va-drivers mesa-va-drivers-free; do
+            if rpm -q --quiet "$candidate"; then old=$candidate; break; fi
+          done
+        fi
+        # Swap only the known codec-driver counterpart. Do not use
+        # --allowerasing or change NVIDIA/display/kernel drivers.
+        if [[ -n $old ]]; then
+          dnf "${repositories[@]}" swap -y --setopt=install_weak_deps=False "$old" "$package"
+        else dnf "${repositories[@]}" install -y --setopt=install_weak_deps=False "$package"
+        fi
+      done
+    else echo 'GPU video drivers are already prepared; unsupported GPUs use software encoding.'
+    fi
+    ;;
+  probe) probe ;;
+  *) echo 'Usage: strata-video-acceleration {install|check|probe}' >&2; exit 64 ;;
+esac

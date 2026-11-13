@@ -17,5 +17,8 @@ jq -r '.updates[] | "\(.name): \(.installedVersion // "Unknown") → \(.version 
 mapfile -t packages < <(jq -r '.updates[].name' <<<"$status" | sort -u)
 # DNF displays the transaction and asks for confirmation in the user's terminal.
 sudo dnf upgrade --refresh "${packages[@]}"
+if ! sudo /usr/share/strata/bin/strata-video-acceleration install; then
+  echo 'Optional GPU video drivers could not be prepared; RDP will use software encoding.' >&2
+fi
 strata-update-check --refresh >/dev/null || true
 strata-restart-shell

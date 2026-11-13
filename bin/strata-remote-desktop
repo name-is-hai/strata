@@ -209,10 +209,22 @@ serve() {
   trap cleanup EXIT
   trap 'exit 0' INT TERM HUP
   output=$(create_output)
+  local performance performance_helper=$STRATA_PATH/bin/strata-video-acceleration
+  local performance_options=()
+  if [[ -x $performance_helper ]] && performance=$("$performance_helper" probe); then
+    # Respect explicit per-user tuning; only supply defaults for unset keys.
+    if ! grep -Eq '^[[:space:]]*fps[[:space:]]*=' "$config/config.toml"; then
+      performance_options+=(--fps "$(jq -er '.fps' <<<"$performance")")
+    fi
+    if ! grep -Eq '^[[:space:]]*h264_backend[[:space:]]*=' "$config/config.toml"; then
+      performance_options+=(--h264-backend "$(jq -er '.backend' <<<"$performance")")
+    fi
+    echo "RDP encoding: $(jq -r '.reason + "; target " + (.fps|tostring) + " FPS"' <<<"$performance")"
+  fi
   # Logind prevents automatic sleep; Strata's idle timers pause only while the
   # authenticated connection's marker exists. A disconnect locks normally.
   systemd-inhibit --what=idle:sleep --mode=block --who=Strata --why='RDP server reachable' \
-    "$backend" --config "$config/config.toml" --bind "$listen" \
+    "$backend" --config "$config/config.toml" --bind "$listen" "${performance_options[@]}" \
     --auth-mode configured --username "$(id -un)" --password-file "$config/password" \
     --cert "$config/cert.pem" --key "$config/key.pem" \
     --output "$output" \
@@ -235,6 +247,10 @@ case ${1:---help} in
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -n ${WAYLAND_DISPLAY:-} ]] || fail 'Log in to Strata before starting RDP.'
     [[ -f $config/config.toml ]] || setup
     if systemctl --user is-active --quiet "$unit"; then echo 'RDP is already running.'; exit 0; fi
+    video=$STRATA_PATH/bin/strata-video-acceleration
+    if [[ -x $video ]] && ! "$video" check; then
+      if ! pkexec "$video" install; then echo 'Video driver setup was skipped; software encoding remains available.' >&2; fi
+    fi
     firewall=$STRATA_PATH/bin/strata-remote-desktop-firewall
     [[ -x $firewall ]] || fail 'RDP firewall helper is missing. Update strata-config first.'
     if ! "$firewall" check; then pkexec "$firewall" open; fi

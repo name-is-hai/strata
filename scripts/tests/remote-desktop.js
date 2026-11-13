@@ -28,6 +28,8 @@ if(command==='systemd-inhibit') {
   else if(a.includes('is-active')) status=m.serverActive?0:3;
 } else if(command==='systemd-run') {
   out='started';
+} else if(command==='pkexec') {
+  status=7;
 } else if(command==='strata-shell') {
   if(a[0]==='lock' && a[1]==='lock') m.secure=!m.failLock;
   else if(a[0]==='lock') out=JSON.stringify({secure:m.secure});
@@ -67,7 +69,7 @@ process.stdout.write(out+'\n'); process.exit(status);
 // recorder so they cannot truncate each other's state or lose events.
 fs.writeFileSync(mock, '#!/usr/bin/env bash\nexec flock "$RDP_MODEL.lock" node "' + mock + '.js" "${0##*/}" "$@"\n');
 fs.chmodSync(mock, 0o755);
-for (const name of ['hyprctl', 'strata-shell', 'sleep', 'systemd-inhibit','systemctl','systemd-run']) fs.symlinkSync(mock, path.join(bin,name));
+for (const name of ['hyprctl', 'strata-shell', 'sleep', 'systemd-inhibit','systemctl','systemd-run','pkexec']) fs.symlinkSync(mock, path.join(bin,name));
 const env = {...process.env, XDG_RUNTIME_DIR:work, HYPRLAND_INSTANCE_SIGNATURE:'test-instance', RDP_MODEL:modelFile,
   STRATA_PATH:path.join(work,'strata'),XDG_DATA_HOME:path.join(work,'data'),XDG_CONFIG_HOME:path.join(work,'config')};
 function reset(extra={}) {
@@ -168,5 +170,17 @@ try {
   const password=fs.readFileSync(path.join(config,'password'),'utf8');
   run('setup',false);
   assert.equal(fs.readFileSync(path.join(config,'password'),'utf8'),password,'setup never replaces existing credentials');
+  const video=path.join(env.STRATA_PATH,'bin/strata-video-acceleration');
+  fs.writeFileSync(video,'#!/bin/bash\nprintf \'%s\\n\' \'{"backend":"auto","fps":60,"hardware":true,"reason":"fixture hardware"}\'\n',{mode:0o755});
+  fs.writeFileSync(path.join(config,'config.toml'),'');reset();run('serve');
+  let launch=model().events.find(x=>x[0]==='systemd-inhibit');
+  assert.equal(launch[launch.indexOf('--fps')+1],'60');
+  assert.equal(launch[launch.indexOf('--h264-backend')+1],'auto');
+  fs.writeFileSync(path.join(config,'config.toml'),'fps = 24\nh264_backend = "software"\n');reset();run('serve');
+  launch=model().events.find(x=>x[0]==='systemd-inhibit');
+  assert.ok(!launch.includes('--fps')&&!launch.includes('--h264-backend'),'explicit performance settings are preserved');
+  fs.writeFileSync(video,'#!/bin/bash\nexit 1\n');reset();run('start');
+  assert.ok(model().events.some(x=>x[0]==='pkexec'&&x.includes('install')),'missing drivers request administrator setup');
+  assert.ok(model().events.some(x=>x[0]==='systemd-run'),'declined or failed optional driver setup does not prevent RDP startup');
   console.log('PASS: workspace handoff, collision allocation, lock-before-wake, failed-lock recovery, unplugged outputs, new remote windows and session isolation');
 } finally { fs.rmSync(work,{recursive:true,force:true}); }
