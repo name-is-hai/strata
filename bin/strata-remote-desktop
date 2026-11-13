@@ -195,10 +195,25 @@ serve() {
   exec 8>"$state_dir/server.lock"
   flock -n 8 || fail 'The remote desktop server is already running.'
   restore
+  if [[ -f $output_file ]]; then
+    secure_lock || fail 'Refusing to remove a stale remote output without a working lock screen.'
+    remove_output
+  fi
+  # The backend requires an output at initialization. Keep only a TCP listener
+  # while idle, and give each connection its own backend/output lifetime.
+  exec "$STRATA_PATH/bin/strata-remote-desktop-listener" "$self" serve-session
+}
+serve_session() {
+  [[ -x $backend && -f $config/config.toml ]] || fail 'Update strata-config and run strata-remote-desktop setup first.'
+  [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || fail 'Start from the current Strata session.'
+  mkdir -p "$state_dir"
+  [[ ${1:-} =~ ^127\.0\.0\.1:[0-9]+$ ]] || fail 'A loopback listener address is required.'
+  exec 8>"$state_dir/session.lock"
+  flock -n 8 || fail 'A remote desktop connection is already running.'
+  restore
   rm -f "$state_dir/hook-failed"
   secure_lock || fail 'Refusing to listen without a working lock screen.'
-  local status=0 output listen='[::]:3389'
-  [[ -e /proc/net/if_inet6 ]] || listen='0.0.0.0:3389'
+  local status=0 output listen=$1
   server_pid=0
   cleanup() {
     trap - EXIT INT TERM HUP
@@ -242,6 +257,7 @@ serve() {
 case ${1:---help} in
   setup) setup ;;
   serve) serve ;;
+  serve-session) serve_session "${2:-}" ;;
   start)
     session_environment
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -n ${WAYLAND_DISPLAY:-} ]] || fail 'Log in to Strata before starting RDP.'
@@ -255,7 +271,7 @@ case ${1:---help} in
     [[ -x $firewall ]] || fail 'RDP firewall helper is missing. Update strata-config first.'
     if ! "$firewall" check; then pkexec "$firewall" open; fi
     systemd-run --user --unit="$unit" --collect --property=KillMode=mixed \
-      --property=TimeoutStopSec=20 --setenv="PATH=$PATH" --setenv="STRATA_PATH=$STRATA_PATH" \
+      --property=TimeoutStopSec=40 --setenv="PATH=$PATH" --setenv="STRATA_PATH=$STRATA_PATH" \
       --setenv="WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" --setenv="HYPRLAND_INSTANCE_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-}" \
       --setenv="XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}" --setenv="XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}" "$self" serve
     ;;
@@ -280,7 +296,10 @@ case ${1:---help} in
     fi
     if [[ $1 == hook-start ]]; then
       begin
-    else restore; fi
+    else
+      restore
+      if [[ $1 == recover ]]; then remove_output; fi
+    fi
     ;;
   *)
     echo 'Usage: strata-remote-desktop {setup|start|stop|status|credentials|recover|connect ADDRESS}'

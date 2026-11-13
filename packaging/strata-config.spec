@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        12%{?dist}
+Release:        13%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -439,6 +439,9 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Nov 13 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-13
+- Remove the RDP virtual monitor after disconnect and recreate it on the next connection
+
 * Fri Nov 13 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-12
 - Make bar transparency toggle immediately without waiting for wallpaper contrast sampling
 

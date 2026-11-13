@@ -83,7 +83,7 @@ function reset(extra={}) {
 const model = () => JSON.parse(fs.readFileSync(modelFile));
 const state = () => JSON.parse(fs.readFileSync(path.join(work,'strata-remote-desktop/state.json')));
 function run(action, success=true) {
-  const r=spawnSync(script,[action],{env,encoding:'utf8',timeout:20000});
+  const r=spawnSync(script,action==='serve' ? ['serve-session','127.0.0.1:3390'] : [action],{env,encoding:'utf8',timeout:20000});
   if(success) assert.equal(r.status,0,r.stdout+r.stderr);
   else assert.notEqual(r.status,0,'expected refusal: '+r.stdout+r.stderr);
   return r;

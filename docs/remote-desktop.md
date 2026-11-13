@@ -103,6 +103,8 @@ On disconnect, Strata locks the session before returning workspaces and
 restoring physical display and input-wake settings. Unlock locally to continue.
 If an original monitor was unplugged, its windows return to an available
 physical display. Workspaces created remotely also return to a physical display.
+The virtual monitor is then removed. While idle, only the RDP listener remains;
+the next connection starts a new backend and virtual monitor automatically.
 
 **Blanking is not a secure local-console handoff.** Local keyboards and mice
 remain attached. Someone at the computer can interfere with the running

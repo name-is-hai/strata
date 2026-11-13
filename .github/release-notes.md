@@ -1,3 +1,3 @@
-# Strata 1.1.38
+# Strata 1.1.39
 
-- Make bar transparency respond immediately to double-clicks while text contrast updates in the background
+- Remove unused RDP virtual monitors after disconnect while keeping direct connections available
