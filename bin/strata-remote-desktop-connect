@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# strata:hidden=true
+# strata:summary=Open an RDP connection through a configured SSH host
+set -euo pipefail
+umask 077
+fail() { echo "$*" >&2; exit 1; }
+(( $# == 1 )) || fail 'Usage: strata-remote-desktop connect SSH_TARGET'
+target=$1
+[[ $target != -* && $target =~ ^[A-Za-z0-9_.@:-]+$ ]] || fail 'Use an SSH alias, hostname or user@hostname.'
+command -v remmina >/dev/null || fail 'Remmina is missing. Update strata-config first.'
+settings=$(ssh -G -- "$target" 2>/dev/null) || fail 'Could not resolve the SSH settings.'
+setting() { awk -v key="$1" '$1 == key { sub(/^[^[:space:]]+[[:space:]]+/, ""); print; exit }' <<<"$settings"; }
+host=$(setting hostname)
+user=$(setting user)
+port=$(setting port)
+[[ -n $host && -n $user && $port =~ ^[0-9]+$ ]] || fail 'SSH host, user or port is missing.'
+[[ $host != *:* ]] || host="[$host]"
+
+auth=3 # Remmina's automatic public-key mode; it can also use ssh-agent.
+identity=
+while IFS= read -r candidate; do
+  case "$candidate" in '~/'*) candidate="$HOME/${candidate#\~/}" ;; esac
+  if [[ -f $candidate ]]; then identity=$candidate; auth=1; break; fi
+done < <(awk '$1 == "identityfile" {sub(/^[^[:space:]]+[[:space:]]+/, ""); print}' <<<"$settings")
+
+directory=${XDG_DATA_HOME:-$HOME/.local/share}/remmina
+mkdir -p "$directory"
+key=$(printf '%s' "$target" | sha256sum)
+profile=$directory/strata-rdp-${key:0:16}.remmina
+if [[ ! -e $profile ]]; then
+  temporary=$(mktemp "$directory/.strata-rdp.XXXXXX")
+  trap 'rm -f -- "$temporary"' EXIT
+  {
+    printf '[remmina]\nname=Strata RDP (%s)\nprotocol=RDP\n' "$target"
+    printf 'server=127.0.0.1:3389\nusername=%s\nkeyboard_grab=1\n' "$user"
+    printf 'ssh_tunnel_enabled=1\nssh_tunnel_loopback=1\n'
+    printf 'ssh_tunnel_server=%s:%s\nssh_tunnel_username=%s\n' "$host" "$port" "$user"
+    printf 'ssh_tunnel_auth=%s\n' "$auth"
+    [[ -z $identity ]] || printf 'ssh_tunnel_privatekey=%s\n' "$identity"
+  } > "$temporary"
+  mv "$temporary" "$profile"
+fi
+exec remmina -c "$profile"

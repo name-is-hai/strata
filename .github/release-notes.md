@@ -1,3 +1,5 @@
-# Strata 1.1.34
+# Strata 1.1.35
 
-- Add clock format d MMM 'W'ww HH:mm:ss to the right-click cycle
+- Include the RDP server and Remmina client in the Strata update for both machines
+- Connect through SSH aliases with keyboard capture enabled; preserve workspace recovery and localhost-only RDP
+- Fix RDP startup on Hyprland virtual displays without numeric name suffixes

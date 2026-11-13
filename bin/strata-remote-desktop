@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# strata:summary=Manage an optional RDP connection to the existing desktop
-# strata:args=<setup|start|stop|status|credentials|recover>
+# strata:summary=Host or connect to a Strata desktop using RDP over SSH
+# strata:args=<setup|start|stop|status|credentials|recover|connect SSH_TARGET>
 # strata:examples=strata remote desktop setup | strata remote desktop start
 set -euo pipefail
 umask 077
@@ -10,16 +10,28 @@ runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 state_dir=$runtime/strata-remote-desktop
 state=$state_dir/state.json
 active=$state_dir/active
-data=${XDG_DATA_HOME:-$HOME/.local/share}/strata/remote-desktop
+backend=$STRATA_PATH/rdp/hypr-rdp
 config=${XDG_CONFIG_HOME:-$HOME/.config}/strata/remote-desktop
 unit=strata-remote-desktop.service
 self=$(readlink -f "$0")
 output_file=$state_dir/output
 
 fail() { echo "$*" >&2; exit 1; }
+session_environment() {
+  local key value
+  if [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} || -z ${WAYLAND_DISPLAY:-} ]]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        HYPRLAND_INSTANCE_SIGNATURE|WAYLAND_DISPLAY) [[ -n $value ]] && export "$key=$value" ;;
+      esac
+    done < <(timeout 5s systemctl --user show-environment)
+  fi
+}
 save() { jq "$@" "$state" >"$state.new" && mv "$state.new" "$state"; }
 physical() { jq '[.[] | select(.name != "FALLBACK" and (.name | test("^(hypr-rdp-|HEADLESS-)" ) | not) and .disabled != true)]'; }
 safe_name() { [[ $1 =~ ^[A-Za-z0-9._:-]+$ ]]; }
+owned_output() { [[ $1 == hypr-rdp-strata || $1 == hypr-rdp-strata-* ]] && safe_name "$1"; }
+remote_outputs() { jq '[.[] | select(.name == "hypr-rdp-strata" or (.name | startswith("hypr-rdp-strata-")))]'; }
 action() {
   local response
   response=$(hyprctl "$@") || return 1
@@ -52,16 +64,22 @@ blank() {
   while IFS= read -r name; do dpms off "$name"; done < <(hyprctl monitors -j | physical | jq -r '.[] | select(.dpmsStatus != false) | .name')
 }
 create_output() {
-  local output
+  local output outputs
   if [[ -f $output_file ]]; then
     output=$(<"$output_file")
-    [[ $output == hypr-rdp-strata-* ]] && safe_name "$output" || fail 'Invalid saved remote output.'
+    owned_output "$output" || fail 'Invalid saved remote output.'
     if hyprctl monitors -j | jq -e --arg name "$output" 'any(.[]; .name == $name)' >/dev/null; then
       printf '%s\n' "$output"; return
     fi
   fi
-  hyprctl output create headless hypr-rdp-strata >/dev/null
-  output=$(hyprctl monitors -j | jq -er '[.[] | select(.name | startswith("hypr-rdp-strata-"))] | if length == 1 then .[0].name else error("Expected one Strata RDP output") end')
+  # Some Hyprland versions use the requested name verbatim; others append an
+  # index. Reuse an output left by interrupted startup before creating one.
+  outputs=$(hyprctl monitors -j | remote_outputs)
+  if [[ $(jq length <<<"$outputs") == 0 ]]; then
+    hyprctl output create headless hypr-rdp-strata >/dev/null
+    outputs=$(hyprctl monitors -j | remote_outputs)
+  fi
+  output=$(jq -er 'if length == 1 then .[0].name else error("Expected one Strata RDP output") end' <<<"$outputs")
   safe_name "$output" || return 1
   printf '%s\n' "$output" >"$output_file"
   action eval "hl.monitor({ output = \"$output\", mode = \"1920x1080@60\", position = \"-9999x0\", scale = 1 })" >/dev/null
@@ -71,7 +89,7 @@ remove_output() {
   [[ -f $output_file ]] || return 0
   local output
   output=$(<"$output_file")
-  [[ $output == hypr-rdp-strata-* ]] && safe_name "$output" || return 1
+  owned_output "$output" || return 1
   # Keep this output if recovery is pending, avoiding an all-outputs-lost
   # transition while locked. Upstream captures it but does not own its lifetime.
   [[ ! -f $state ]] || return 1
@@ -82,7 +100,7 @@ begin() {
   [[ ! -f $state ]] || fail 'An earlier remote handoff needs recovery. Run strata-remote-desktop recover.'
   local monitors remote source_id name destination base used count ready=0
   monitors=$(hyprctl monitors -j)
-  remote=$(jq -er '[.[] | select(.name | startswith("hypr-rdp-strata-"))] | if length == 1 then .[0].name else error("Expected exactly one Strata RDP output") end' <<<"$monitors")
+  remote=$(remote_outputs <<<"$monitors" | jq -er 'if length == 1 then .[0].name else error("Expected exactly one Strata RDP output") end')
   safe_name "$remote" || fail 'Invalid remote output name.'
   mkdir -p "$state_dir"
   jq -n --arg instance "$HYPRLAND_INSTANCE_SIGNATURE" --arg remote "$remote" \
@@ -150,19 +168,12 @@ restore() {
   rm -f "$state"
 }
 setup() {
-  [[ $(uname -m) == x86_64 ]] || fail 'The pinned upstream binary supports x86_64 only.'
   [[ ! -e $config/config.toml ]] || fail "Already configured: $config/config.toml"
+  [[ -x $backend ]] || fail 'Bundled RDP server is missing. Update strata-config first.'
   local dependency
-  for dependency in curl openssl sha256sum tar jq; do command -v "$dependency" >/dev/null || fail "Install the optional dependency first: $dependency"; done
-  mkdir -p "$config" "$data"
-  local archive
-  archive=$(mktemp "$data/download.XXXXXX")
-  if ! curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
-    https://github.com/MuNeNiCK/hypr-rdp/releases/download/v0.1.7/hypr-rdp-v0.1.7-x86_64-linux.tar.gz -o "$archive"; then rm -f "$archive"; fail 'Download failed.'; fi
-  if ! printf '%s  %s\n' bf8b42a1764e420001cd4b3f672d94165e4203f21ff38de269ec67aa75eeba58 "$archive" | sha256sum --check --status; then rm -f "$archive"; fail 'Upstream binary checksum mismatch.'; fi
-  tar -xzf "$archive" -C "$data" --no-same-owner -- hypr-rdp LICENSE
-  rm -f "$archive"
-  "$data/hypr-rdp" --version
+  for dependency in openssl jq; do command -v "$dependency" >/dev/null || fail "Missing Strata dependency: $dependency"; done
+  "$backend" --version
+  mkdir -p "$config"
   openssl rand -hex 24 >"$config/password"
   openssl req -x509 -newkey rsa:3072 -nodes -days 365 \
     -subj /CN=Strata-RDP -keyout "$config/key.pem" -out "$config/cert.pem" 2>/dev/null
@@ -172,7 +183,7 @@ setup() {
   echo 'Configured localhost RDP. Run strata-remote-desktop start when ready to lock this computer.'
 }
 serve() {
-  [[ -x $data/hypr-rdp && -f $config/config.toml ]] || fail 'Run strata-remote-desktop setup first.'
+  [[ -x $backend && -f $config/config.toml ]] || fail 'Update strata-config and run strata-remote-desktop setup first.'
   [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || fail 'Start from the current Strata session.'
   mkdir -p "$state_dir"
   exec 8>"$state_dir/server.lock"
@@ -194,7 +205,7 @@ serve() {
   # Logind prevents automatic sleep; Strata's idle timers pause only while the
   # authenticated connection's marker exists. A disconnect locks normally.
   systemd-inhibit --what=idle:sleep --mode=block --who=Strata --why='RDP server reachable' \
-    "$data/hypr-rdp" --config "$config/config.toml" \
+    "$backend" --config "$config/config.toml" \
     --auth-mode configured --username "$(id -un)" --password-file "$config/password" \
     --cert "$config/cert.pem" --key "$config/key.pem" \
     --output "$output" \
@@ -213,13 +224,17 @@ case ${1:---help} in
   setup) setup ;;
   serve) serve ;;
   start)
-    [[ -f $config/config.toml ]] || fail 'Run strata-remote-desktop setup first.'
+    session_environment
+    [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -n ${WAYLAND_DISPLAY:-} ]] || fail 'Log in to Strata before starting RDP.'
+    [[ -f $config/config.toml ]] || setup
+    if systemctl --user is-active --quiet "$unit"; then echo 'RDP is already running.'; exit 0; fi
     systemd-run --user --unit="$unit" --collect --property=KillMode=mixed \
       --property=TimeoutStopSec=20 --setenv="PATH=$PATH" --setenv="STRATA_PATH=$STRATA_PATH" \
       --setenv="WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" --setenv="HYPRLAND_INSTANCE_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-}" \
       --setenv="XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}" --setenv="XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}" "$self" serve
     ;;
-  stop) systemctl --user stop "$unit"; "$self" recover ;;
+  stop) session_environment; systemctl --user stop "$unit"; "$self" recover ;;
+  connect) shift; exec "$(dirname "$self")/strata-remote-desktop-connect" "$@" ;;
   status) systemctl --user status "$unit" --no-pager; ;;
   credentials)
     [[ -f $config/password ]] || fail 'Not configured.'
@@ -242,7 +257,7 @@ case ${1:---help} in
     else restore; fi
     ;;
   *)
-    echo 'Usage: strata-remote-desktop {setup|start|stop|status|credentials|recover}'
+    echo 'Usage: strata-remote-desktop {setup|start|stop|status|credentials|recover|connect SSH_TARGET}'
     echo 'Experimental: reuses existing windows and blanks physical displays; local input is not securely locked.'
     ;;
 esac

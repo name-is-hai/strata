@@ -26,6 +26,7 @@ try {
   fs.mkdirSync(path.dirname(path.join(work,helper)),{recursive:true});
   fs.copyFileSync(path.join(repo,helper),path.join(work,helper));
   for(const file of ['strata-font-ink','strata-wiggle-monitor','casting-target/release/waycast-networkd',
+    'hypr-rdp-upstream/hypr-rdp',
     'casting-target/release/strata-castd','waycast-v0.6.1-linux-amd64/waycast',
     'doubletake-v0.4.0-alchemy.5-linux-amd64/doubletake','doubletake-v0.4.0-alchemy.5-linux-amd64/doubletake-ctl']) {
     fs.mkdirSync(path.dirname(path.join(work,file)),{recursive:true});
@@ -40,6 +41,8 @@ try {
   assert.ok(buildroot.startsWith(work+'/'),'isolated buildroot');
   run('bash',['-euo','pipefail','-c',install],{cwd:work,env:{...process.env,PATH:path.join(work,'tools')+':'+process.env.PATH}});
   const bindir=path.join(buildroot,'usr/share/strata/bin');
+  assert.ok(fs.statSync(path.join(buildroot,'usr/share/strata/rdp/hypr-rdp')).mode&0o111,
+    'RDP backend is included in the package');
   assert.equal(fs.existsSync(path.join(buildroot,'usr/bin')),false,'no command copies or links in /usr/bin');
   assert.equal(fs.existsSync(path.join(buildroot,'usr/libexec')),false,'no separate Strata helper executable directory');
   for(const name of fs.readdirSync(path.join(repo,'bin'))) {

@@ -23,6 +23,11 @@ m.events.push([command,...a]);
 let out='ok', status=0;
 if(command==='systemd-inhibit') {
   status=m.failServer?7:0;
+} else if(command==='systemctl') {
+  if(a.includes('show-environment')) out='HYPRLAND_INSTANCE_SIGNATURE=test-instance\nWAYLAND_DISPLAY=wayland-test';
+  else if(a.includes('is-active')) status=m.serverActive?0:3;
+} else if(command==='systemd-run') {
+  out='started';
 } else if(command==='strata-shell') {
   if(a[0]==='lock' && a[1]==='lock') m.secure=!m.failLock;
   else if(a[0]==='lock') out=JSON.stringify({secure:m.secure});
@@ -31,7 +36,7 @@ if(command==='systemd-inhibit') {
   if(a[0]==='monitors') out=JSON.stringify(m.monitors);
   else if(a[0]==='workspaces') out=JSON.stringify(m.workspaces);
   else if(a[0]==='getoption') out=JSON.stringify({int:a[1].includes('key_press')?0:1});
-  else if(a[0]==='output' && a[1]==='create') m.monitors.push({id:2,name:'hypr-rdp-strata-1',dpmsStatus:true});
+  else if(a[0]==='output' && a[1]==='create') m.monitors.push({id:2,name:m.outputName||'hypr-rdp-strata-1',dpmsStatus:true});
   else if(a[0]==='output' && a[1]==='remove') m.monitors=m.monitors.filter(x=>x.name!==a[2]);
   else if(a[0]==='dispatch' && a[1].includes('dpms')) {
     const [,action,name]=a[1].match(/action = "([^"]+)", monitor = "([^"]+)"/);
@@ -59,9 +64,9 @@ process.stdout.write(out+'\n'); process.exit(status);
 // recorder so they cannot truncate each other's state or lose events.
 fs.writeFileSync(mock, '#!/usr/bin/env bash\nexec flock "$RDP_MODEL.lock" node "' + mock + '.js" "${0##*/}" "$@"\n');
 fs.chmodSync(mock, 0o755);
-for (const name of ['hyprctl', 'strata-shell', 'sleep', 'systemd-inhibit']) fs.symlinkSync(mock, path.join(bin,name));
+for (const name of ['hyprctl', 'strata-shell', 'sleep', 'systemd-inhibit','systemctl','systemd-run']) fs.symlinkSync(mock, path.join(bin,name));
 const env = {...process.env, XDG_RUNTIME_DIR:work, HYPRLAND_INSTANCE_SIGNATURE:'test-instance', RDP_MODEL:modelFile,
-  XDG_DATA_HOME:path.join(work,'data'),XDG_CONFIG_HOME:path.join(work,'config')};
+  STRATA_PATH:path.join(work,'strata'),XDG_DATA_HOME:path.join(work,'data'),XDG_CONFIG_HOME:path.join(work,'config')};
 function reset(extra={}) {
   fs.rmSync(path.join(work,'strata-remote-desktop'),{recursive:true,force:true});
   fs.writeFileSync(modelFile, JSON.stringify({
@@ -116,10 +121,18 @@ try {
   const r=spawnSync(script,['recover'],{env:{...env,HYPRLAND_INSTANCE_SIGNATURE:'other-instance'},encoding:'utf8'});
   assert.notEqual(r.status,0,'another compositor cannot consume this handoff journal');
   assert.ok(fs.existsSync(path.join(work,'strata-remote-desktop/state.json')));
-  for(const failServer of [false,true]) {
-    reset({failServer});
+  // Current Hyprland uses the exact requested output name. Older versions
+  // append an index; both names must support startup, handoff and cleanup.
+  reset(); m=model();
+  m.monitors.find(x=>x.name==='hypr-rdp-strata-1').name='hypr-rdp-strata';
+  m.workspaces.find(x=>x.monitor==='hypr-rdp-strata-1').monitor='hypr-rdp-strata';
+  fs.writeFileSync(modelFile,JSON.stringify(m));
+  run('hook-start'); run('hook-end');
+  assert.deepEqual(model().workspaces.filter(x=>x.windows).map(x=>x.id),[101,201]);
+  for(const outputName of ['hypr-rdp-strata','hypr-rdp-strata-1']) for(const failServer of [false,true]) {
+    reset({failServer,outputName});
     m=model(); m.monitors=m.monitors.filter(x=>!x.name.startsWith('hypr-rdp-')); fs.writeFileSync(modelFile,JSON.stringify(m));
-    const data=path.join(env.XDG_DATA_HOME,'strata/remote-desktop');
+    const data=path.join(env.STRATA_PATH,'rdp');
     const config=path.join(env.XDG_CONFIG_HOME,'strata/remote-desktop');
     fs.mkdirSync(data,{recursive:true}); fs.mkdirSync(config,{recursive:true});
     fs.copyFileSync('/usr/bin/true',path.join(data,'hypr-rdp')); fs.writeFileSync(path.join(config,'config.toml'),'');
@@ -128,5 +141,23 @@ try {
     assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'normal exit and startup failure clean up owned virtual output');
     assert.ok(!fs.existsSync(path.join(work,'strata-remote-desktop/output')));
   }
+  reset(); run('serve');
+  assert.ok(!model().events.some(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create'),
+    'reuse an owned output left by interrupted startup');
+  assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'reused output is cleaned up');
+  const config=path.join(env.XDG_CONFIG_HOME,'strata/remote-desktop');
+  fs.rmSync(config,{recursive:true,force:true});
+  reset();
+  const fresh=spawnSync(script,['start'],{env:{...env,HYPRLAND_INSTANCE_SIGNATURE:'',WAYLAND_DISPLAY:''},encoding:'utf8',timeout:15000});
+  assert.equal(fresh.status,0,fresh.stdout+fresh.stderr);
+  assert.ok(fs.existsSync(path.join(config,'config.toml')),'first start configures the bundled server without downloading');
+  assert.equal(fs.statSync(path.join(config,'password')).mode&0o777,0o600);
+  assert.match(fs.readFileSync(path.join(config,'config.toml'),'utf8'),/127\.0\.0\.1:3389/);
+  assert.ok(model().events.some(x=>x[0]==='systemd-run'&&x.includes('--setenv=HYPRLAND_INSTANCE_SIGNATURE=test-instance')&&x.includes('--setenv=WAYLAND_DISPLAY=wayland-test')),
+    'SSH start imports only the desktop session variables');
+  assert.ok(!model().events.some(x=>x[0]==='curl'),'setup uses the packaged backend');
+  const password=fs.readFileSync(path.join(config,'password'),'utf8');
+  run('setup',false);
+  assert.equal(fs.readFileSync(path.join(config,'password'),'utf8'),password,'setup never replaces existing credentials');
   console.log('PASS: workspace handoff, collision allocation, lock-before-wake, failed-lock recovery, unplugged outputs, new remote windows and session isolation');
 } finally { fs.rmSync(work,{recursive:true,force:true}); }

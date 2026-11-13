@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -10,6 +10,7 @@ URL:            https://github.com/name-is-hai/strata
 Source0:        %{name}-%{version}.tar.gz
 Source1:        https://github.com/alchemy/waycast/releases/download/v0.6.1/waycast-v0.6.1-linux-amd64.tar.gz
 Source2:        https://github.com/alchemy/doubletake/releases/download/v0.4.0-alchemy.5/doubletake-v0.4.0-alchemy.5-linux-amd64.tar.gz
+Source3:        https://github.com/MuNeNiCK/hypr-rdp/releases/download/v0.1.7/hypr-rdp-v0.1.7-x86_64-linux.tar.gz
 
 ExclusiveArch:   x86_64
 BuildRequires:    cmake
@@ -78,6 +79,15 @@ Requires:       iw
 Requires:       NetworkManager-wifi
 Requires:       nftables
 Requires:       curl
+# Same-session RDP server and client, ready without manual package installs.
+Requires:       openssl
+Requires:       openssh-clients
+Requires:       remmina
+Requires:       remmina-plugins-rdp
+Requires:       libva
+Requires:       mesa-libgbm
+Requires:       pipewire-libs
+Requires:       libxkbcommon
 Requires:       dracut
 Requires:       plymouth
 Requires:       plymouth-system-theme
@@ -194,6 +204,9 @@ printf 'af118d64e7f2d3cbab30806fd274b3d128e6c796e176a59b1d3e5a75a83e3a21  %%s\n'
 printf 'ff60045c443c49e5b98810a42e7f35b2495fab54036eb16d187716899b66a1b2  %%s\n' '%{SOURCE2}' | sha256sum -c -
 tar -xzf %{SOURCE1}
 tar -xzf %{SOURCE2}
+printf 'bf8b42a1764e420001cd4b3f672d94165e4203f21ff38de269ec67aa75eeba58  %%s\n' '%{SOURCE3}' | sha256sum -c -
+mkdir hypr-rdp-upstream
+tar -xzf %{SOURCE3} -C hypr-rdp-upstream --no-same-owner -- hypr-rdp LICENSE
 
 %build
 g++ %{optflags} -std=c++17 native/strata-font-ink.cpp $(pkg-config --cflags --libs Qt6Gui) -o strata-font-ink
@@ -216,6 +229,7 @@ CARGO_TARGET_DIR="${STRATA_CASTING_BUILD_CACHE:-$PWD/casting-target}" cargo test
 CARGO_TARGET_DIR="${STRATA_CASTING_BUILD_CACHE:-$PWD/casting-target}" cargo test --locked --manifest-path third_party/strata-cast/Cargo.toml
 
 %install
+install -Dpm755 hypr-rdp-upstream/hypr-rdp %{buildroot}%{_datadir}/strata/rdp/hypr-rdp
 DESTDIR=%{buildroot} cmake --install strata-snip-build
 install -Dpm 0755 strata-font-ink %{buildroot}%{_datadir}/strata/bin/strata-font-ink
 install -Dpm 0755 strata-wiggle-monitor %{buildroot}%{_datadir}/strata/bin/strata-wiggle-monitor
@@ -350,6 +364,7 @@ fi
 %systemd_user_postun strata-castd.service
 
 %files
+%license hypr-rdp-upstream/LICENSE
 %{_prefix}/lib/dracut/dracut.conf.d/60-strata-early-graphics.conf
 %license defaults/icons/Win11OSX/LICENSE.txt
 %license LICENSE third_party/wiggle/LICENSE shell/plugins/services/media/MEDIA-CONTROL-LICENSE shell/plugins/panels/wireless-display/LICENSE shell/plugins/panels/cast/LICENSE
@@ -383,6 +398,7 @@ fi
 %{_datadir}/strata/config/
 %{_datadir}/strata/default/
 %{_datadir}/strata/docs/
+%{_datadir}/strata/rdp/
 %{_datadir}/strata/shell/
 %{_datadir}/strata/themes/
 %{_datadir}/strata/user-config/
@@ -422,6 +438,11 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Nov 13 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-9
+- Bundle the verified RDP server and install Remmina with its RDP runtime dependencies
+- Add SSH-alias RDP connections with keyboard capture enabled and automatic first-use server setup
+- Accept exact and indexed virtual display names and recover interrupted RDP startup
+
 * Mon Nov 09 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-8
 - Add date, abbreviated month, ISO week and time with seconds to the clock format cycle
 
