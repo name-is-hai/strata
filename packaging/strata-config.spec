@@ -2,7 +2,7 @@ Name:           strata-config
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.23
-Release:        9%{?dist}
+Release:        10%{?dist}
 Summary:        Desktop configuration defaults for Strata
 
 License:        MIT AND LicenseRef-Win11OSX AND GPL-2.0-or-later AND LGPL-3.0-or-later AND CC-BY-SA-4.0 AND CC-BY-SA-3.0 AND CC-BY-3.0 AND CC0-1.0
@@ -81,7 +81,7 @@ Requires:       nftables
 Requires:       curl
 # Same-session RDP server and client, ready without manual package installs.
 Requires:       openssl
-Requires:       openssh-clients
+Requires:       firewalld
 Requires:       remmina
 Requires:       remmina-plugins-rdp
 Requires:       libva
@@ -438,6 +438,10 @@ fi
 %{_userunitdir}/strata-castd.service
 
 %changelog
+* Fri Nov 13 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-10
+- Accept direct authenticated RDP on all IPv4 and IPv6 interfaces without SSH tunneling
+- Configure the RDP firewall service on active and default zones through pkexec
+
 * Fri Nov 13 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.23-9
 - Bundle the verified RDP server and install Remmina with its RDP runtime dependencies
 - Add SSH-alias RDP connections with keyboard capture enabled and automatic first-use server setup

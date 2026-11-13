@@ -1,42 +1,41 @@
 #!/usr/bin/env bash
 # strata:hidden=true
-# strata:summary=Open an RDP connection through a configured SSH host
+# strata:summary=Open a direct RDP connection to an address or hostname
 set -euo pipefail
 umask 077
 fail() { echo "$*" >&2; exit 1; }
-(( $# == 1 )) || fail 'Usage: strata-remote-desktop connect SSH_TARGET'
+(( $# == 1 )) || fail 'Usage: strata-remote-desktop connect [USER@]HOST[:PORT]'
 target=$1
-[[ $target != -* && $target =~ ^[A-Za-z0-9_.@:-]+$ ]] || fail 'Use an SSH alias, hostname or user@hostname.'
+[[ $target != -* && $target =~ ^[][A-Za-z0-9_.@:%-]+$ ]] || fail 'Use a hostname or IP address, optionally with USER@ and :PORT.'
 command -v remmina >/dev/null || fail 'Remmina is missing. Update strata-config first.'
-settings=$(ssh -G -- "$target" 2>/dev/null) || fail 'Could not resolve the SSH settings.'
-setting() { awk -v key="$1" '$1 == key { sub(/^[^[:space:]]+[[:space:]]+/, ""); print; exit }' <<<"$settings"; }
-host=$(setting hostname)
-user=$(setting user)
-port=$(setting port)
-[[ -n $host && -n $user && $port =~ ^[0-9]+$ ]] || fail 'SSH host, user or port is missing.'
-[[ $host != *:* ]] || host="[$host]"
-
-auth=3 # Remmina's automatic public-key mode; it can also use ssh-agent.
-identity=
-while IFS= read -r candidate; do
-  case "$candidate" in '~/'*) candidate="$HOME/${candidate#\~/}" ;; esac
-  if [[ -f $candidate ]]; then identity=$candidate; auth=1; break; fi
-done < <(awk '$1 == "identityfile" {sub(/^[^[:space:]]+[[:space:]]+/, ""); print}' <<<"$settings")
+user=
+address=$target
+if [[ $target == *@* ]]; then user=${target%@*}; address=${target##*@}; fi
+port=3389
+if [[ $address == \[* ]]; then
+  [[ $address =~ ^\[([A-Za-z0-9_.:%-]+)\](:([0-9]+))?$ ]] || fail 'Invalid bracketed IPv6 address.'
+  host=${BASH_REMATCH[1]}
+  port=${BASH_REMATCH[3]:-3389}
+  host="[$host]"
+elif [[ $address == *:* && $address != *:*:* ]]; then
+  host=${address%:*}; port=${address##*:}
+elif [[ $address == *:* ]]; then
+  host="[$address]"
+else host=$address
+fi
+[[ -n $host && $port =~ ^[0-9]{1,5}$ ]] || fail 'Invalid host or port.'
+(( 10#$port >= 1 && 10#$port <= 65535 )) || fail 'Port must be between 1 and 65535.'
 
 directory=${XDG_DATA_HOME:-$HOME/.local/share}/remmina
 mkdir -p "$directory"
 key=$(printf '%s' "$target" | sha256sum)
-profile=$directory/strata-rdp-${key:0:16}.remmina
+profile=$directory/strata-rdp-direct-${key:0:16}.remmina
 if [[ ! -e $profile ]]; then
   temporary=$(mktemp "$directory/.strata-rdp.XXXXXX")
   trap 'rm -f -- "$temporary"' EXIT
   {
     printf '[remmina]\nname=Strata RDP (%s)\nprotocol=RDP\n' "$target"
-    printf 'server=127.0.0.1:3389\nusername=%s\nkeyboard_grab=1\n' "$user"
-    printf 'ssh_tunnel_enabled=1\nssh_tunnel_loopback=1\n'
-    printf 'ssh_tunnel_server=%s:%s\nssh_tunnel_username=%s\n' "$host" "$port" "$user"
-    printf 'ssh_tunnel_auth=%s\n' "$auth"
-    [[ -z $identity ]] || printf 'ssh_tunnel_privatekey=%s\n' "$identity"
+    printf 'server=%s:%s\nusername=%s\nkeyboard_grab=1\nssh_tunnel_enabled=0\n' "$host" "$port" "$user"
   } > "$temporary"
   mv "$temporary" "$profile"
 fi

@@ -22,32 +22,37 @@ First start creates a random RDP password and TLS certificate with private
 permissions under `~/.config/strata/remote-desktop`. Existing credentials are
 preserved. The backend is RPM-owned at `/usr/share/strata/rdp/hypr-rdp`.
 
-Start locks the desktop before listening on **127.0.0.1:3389**. It also works
-through SSH when the user already has a running Strata session: the command
-imports the desktop's Wayland display and Hyprland instance from the user
-manager. For example, using your own SSH alias:
+Start locks the desktop before listening on **TCP port 3389 on all IPv4 and
+IPv6 interfaces**. Any client that can reach the computer can connect using its
+LAN address, NetBird address, or hostname. TLS and RDP password authentication
+are required. No SSH connection or tunnel is needed.
 
-```bash
-ssh my-laptop /usr/share/strata/bin/strata-remote-desktop start
-```
+On first start, `pkexec` requests administrator authorization to allow the
+standard RDP service in firewalld's active and default zones, in both runtime
+and permanent configuration. An inactive firewall is left inactive. The rule
+remains for later starts; stopping RDP closes its listening socket.
+
+Starting from an SSH administrative shell is also supported when a Strata
+desktop is already running. SSH is only an optional way to manage the server.
 
 Display credentials in your own terminal; do not share the password. The RDP
 password is separate from the normal Linux login password.
 
 ## Connect from the other computer
 
-Configure SSH access first, using a hostname, NetBird name or `~/.ssh/config`
-alias. Then run:
+Enter the server's address in Remmina, Windows Remote Desktop Connection, or
+another RDP client. You can also open a saved Strata profile with:
 
 ```bash
-strata-remote-desktop connect my-laptop
+strata-remote-desktop connect example.netbird.cloud
+# Or prefill the remote username:
+strata-remote-desktop connect remote-user@192.168.1.10
 ```
 
-Strata opens Remmina with a private saved profile, an SSH tunnel to the target's
-localhost RDP listener, the SSH username, port and configured identity file,
-and keyboard capture enabled. It supports SSH public keys and ssh-agent.
+Strata opens Remmina with a private saved profile and keyboard capture enabled.
+Hostnames, IPv4, bracketed IPv6 and an optional custom port are supported.
 Profiles live under `~/.local/share/remmina`; repeated connections preserve
-changes you make in Remmina. No personal hostname or key is shipped by Strata.
+changes you make in Remmina. No personal hostname or credentials are shipped.
 
 Enter the generated RDP password in Remmina and leave Domain empty. Once the
 remote Strata lock screen appears, enter your normal Linux password there.
@@ -55,14 +60,10 @@ Remmina's **Grab all keyboard events** toolbar button toggles whether shortcuts
 such as Super and Alt+Tab go to the remote desktop. The default toggle key is
 Right Ctrl; you can change it in Remmina's keyboard preferences.
 
-From Windows or another RDP client, make an SSH tunnel manually:
-
-```bash
-ssh -N -L 13389:127.0.0.1:3389 my-laptop
-```
-
-Keep that terminal running and connect the RDP client to **127.0.0.1:13389**.
-The target must already accept SSH; Strata does not configure SSH or NetBird.
+For NetBird names and addresses, both computers must be connected to NetBird,
+and its access policy must permit TCP port 3389. Internet access through a
+router also depends on that router's forwarding policy; Strata does not change
+router or NetBird policy.
 
 ## What happens to the local desktop
 

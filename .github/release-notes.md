@@ -1,5 +1,5 @@
-# Strata 1.1.35
+# Strata 1.1.36
 
-- Include the RDP server and Remmina client in the Strata update for both machines
-- Connect through SSH aliases with keyboard capture enabled; preserve workspace recovery and localhost-only RDP
-- Fix RDP startup on Hyprland virtual displays without numeric name suffixes
+- Connect directly by hostname, NetBird address or IP using any RDP client; SSH tunneling is no longer needed
+- Keep TLS, RDP password authentication, keyboard capture and workspace restoration
+- Configure TCP port 3389 with administrator authorization on first start

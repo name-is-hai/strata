@@ -33,7 +33,7 @@ if(command==='systemd-inhibit') {
   else if(a[0]==='lock') out=JSON.stringify({secure:m.secure});
   else out=JSON.stringify({remoteDesktopActive:!m.failIdle});
 } else if(command==='hyprctl') {
-  if(a[0]==='monitors') out=JSON.stringify(m.monitors);
+  if(a[0]==='monitors') out=JSON.stringify(a.includes('all')?m.monitors:m.monitors.filter(x=>!x.disabled));
   else if(a[0]==='workspaces') out=JSON.stringify(m.workspaces);
   else if(a[0]==='getoption') out=JSON.stringify({int:a[1].includes('key_press')?0:1});
   else if(a[0]==='output' && a[1]==='create') m.monitors.push({id:2,name:m.outputName||'hypr-rdp-strata-1',dpmsStatus:true});
@@ -41,6 +41,9 @@ if(command==='systemd-inhibit') {
   else if(a[0]==='dispatch' && a[1].includes('dpms')) {
     const [,action,name]=a[1].match(/action = "([^"]+)", monitor = "([^"]+)"/);
     m.monitors.find(x=>x.name===name).dpmsStatus=action!=='off';
+  } else if(a[0]==='eval' && a[1].includes('hl.monitor')) {
+    const name=a[1].match(/output = "([^"]+)"/)[1];
+    m.monitors.find(x=>x.name===name).disabled=false;
   } else if(a[0]==='eval' && a[1].includes('w.transfer')) {
     const [,source,name,preferred]=a[1].match(/w.transfer\((\d+), "([^"]+)", (nil|\d+)\)/);
     const ws=m.workspaces.find(x=>x.id===Number(source));
@@ -145,14 +148,20 @@ try {
   assert.ok(!model().events.some(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create'),
     'reuse an owned output left by interrupted startup');
   assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'reused output is cleaned up');
+  reset();m=model();m.monitors.find(x=>x.name==='hypr-rdp-strata-1').disabled=true;
+  fs.writeFileSync(modelFile,JSON.stringify(m));run('serve');
+  assert.ok(!model().events.some(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create'),
+    'a disabled owned output is reactivated instead of creating a duplicate');
   const config=path.join(env.XDG_CONFIG_HOME,'strata/remote-desktop');
+  fs.mkdirSync(path.join(env.STRATA_PATH,'bin'),{recursive:true});
+  fs.writeFileSync(path.join(env.STRATA_PATH,'bin/strata-remote-desktop-firewall'),'#!/bin/bash\nexit 0\n',{mode:0o755});
   fs.rmSync(config,{recursive:true,force:true});
   reset();
   const fresh=spawnSync(script,['start'],{env:{...env,HYPRLAND_INSTANCE_SIGNATURE:'',WAYLAND_DISPLAY:''},encoding:'utf8',timeout:15000});
   assert.equal(fresh.status,0,fresh.stdout+fresh.stderr);
   assert.ok(fs.existsSync(path.join(config,'config.toml')),'first start configures the bundled server without downloading');
   assert.equal(fs.statSync(path.join(config,'password')).mode&0o777,0o600);
-  assert.match(fs.readFileSync(path.join(config,'config.toml'),'utf8'),/127\.0\.0\.1:3389/);
+  assert.match(fs.readFileSync(path.join(config,'config.toml'),'utf8'),/\[::\]:3389/);
   assert.ok(model().events.some(x=>x[0]==='systemd-run'&&x.includes('--setenv=HYPRLAND_INSTANCE_SIGNATURE=test-instance')&&x.includes('--setenv=WAYLAND_DISPLAY=wayland-test')),
     'SSH start imports only the desktop session variables');
   assert.ok(!model().events.some(x=>x[0]==='curl'),'setup uses the packaged backend');
