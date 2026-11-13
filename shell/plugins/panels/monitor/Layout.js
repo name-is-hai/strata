@@ -6,6 +6,29 @@
 // of an edge, so the pointer always has room to cross between them.
 var MIN_SHARED = 120
 
+// Enabling a closed laptop output makes the lid service immediately remove it
+// again. Prevent that extra modeset while another real display is enabled.
+function lidBlocksEnable(monitors, index, known, closed) {
+  var monitor = monitors && monitors[index]
+  if (!monitor || !/^(eDP|LVDS|DSI)-/.test(monitor.name)) return false
+  if (known && !closed) return false
+  for (var i = 0; i < monitors.length; i++) {
+    var other = monitors[i]
+    if (i !== index && other && other.name && other.name !== "FALLBACK"
+        && !/^(eDP|LVDS|DSI)-/.test(other.name) && !other.disabled) return true
+  }
+  return false
+}
+
+function pendingLidActivation(monitors, live, known, closed) {
+  for (var i = 0; i < monitors.length; i++) {
+    var before = liveOf(monitors[i], live)
+    if (!monitors[i].disabled && (!before || before.disabled)
+        && lidBlocksEnable(monitors, i, known, closed)) return true
+  }
+  return false
+}
+
 function logicalSize(width, height, scale, transform) {
   var s = Number(scale) > 0 ? Number(scale) : 1
   var w = Math.round(Number(width) / s)
@@ -847,6 +870,8 @@ function updateConfig(text, monitors, workspaces) {
 if (typeof module !== "undefined") {
   module.exports = {
     MIN_SHARED: MIN_SHARED,
+    lidBlocksEnable: lidBlocksEnable,
+    pendingLidActivation: pendingLidActivation,
     logicalSize: logicalSize,
     parseMonitors: parseMonitors,
     copy: copy,

@@ -61,6 +61,17 @@ bash "$work/clamshell" open
 test ! -f "$work/runtime/strata-monitor-clamshell.json"
 diff <(jq '.[0]' "$work/live.json") "$work/saved.json"
 cmp "$work/original.lua" "$work/config/hypr/monitors.lua"
+# Disabling the preference while closed restores the temporary override and
+# prevents later close events from deactivating the saved laptop layout.
+bash "$work/clamshell" closed
+mkdir -p "$work/config/strata"
+echo '{"disableOnLidClose":false}' > "$work/config/strata/display-settings.json"
+bash "$work/clamshell" closed
+jq -e '.[0].disabled==false' "$work/live.json" >/dev/null
+test ! -f "$work/runtime/strata-monitor-clamshell.json"
+bash "$work/clamshell" closed
+jq -e '.[0].disabled==false' "$work/live.json" >/dev/null
+echo '{"disableOnLidClose":true}' > "$work/config/strata/display-settings.json"
 # Close again, then unplug the external display while closed: keep a usable
 # laptop panel rather than disabling the last physical output.
 bash "$work/clamshell" closed

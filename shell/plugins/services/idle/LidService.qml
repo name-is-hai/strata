@@ -189,6 +189,14 @@ Item {
   onConnectedScreenCountChanged: syncClamshell()
   Component.onCompleted: scheduleStateQuery()
 
+  FileView {
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/strata/display-settings.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.syncClamshell()
+  }
+
   Process {
     id: capabilityProcess
     command: ["busctl", "get-property", "org.freedesktop.UPower", "/org/freedesktop/UPower", "org.freedesktop.UPower", "LidIsPresent"]

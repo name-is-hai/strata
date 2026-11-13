@@ -281,6 +281,17 @@ strata-hyprland-monitor-internal-mirror recover >/dev/null 2>&1 || true
 
 exec 9>"$RUNTIME_DIR/strata-monitor-clamshell.lock"
 flock -w 2 9 || exit 0
+# Display Layout owns this preference. Missing settings retain fresh-install
+# behavior; power/sleep actions are independent of output deactivation.
+display_settings="${XDG_CONFIG_HOME:-$HOME/.config}/strata/display-settings.json"
+disable_on_close=true
+if [[ -f $display_settings ]]; then
+  disable_on_close=$(jq -r 'if .disableOnLidClose == false then "false" else "true" end' "$display_settings") || exit 1
+fi
+if [[ $disable_on_close == false ]]; then
+  enable_internal
+  exit $?
+fi
 case "${1:-sync}" in
   closed) if strata-hyprland-monitor-external-active; then disable_internal; else enable_internal; fi ;;
   open) enable_internal ;;

@@ -9,6 +9,16 @@ const laptop = {name: 'eDP-1', description: 'Laptop panel', width: 1920,
   activeWorkspace: {id: 101}};
 const raw = JSON.stringify([laptop]);
 const initial = layout.parseMonitors(raw);
+const docked = layout.parseMonitors(JSON.stringify([laptop, {...laptop,name:'HDMI-A-1',transform:0,x:0,y:0}]));
+assert(layout.lidBlocksEnable(docked,0,true,true),'closed lid blocks enabling the laptop with an external display');
+assert(!layout.lidBlocksEnable(docked,0,true,false),'opening the lid permits activation');
+assert(layout.lidBlocksEnable(docked,0,false,false),'wait for the initial lid query before activation');
+assert(!layout.lidBlocksEnable(docked,1,true,true),'external display activation is unaffected');
+assert(!layout.lidBlocksEnable([docked[0]],0,true,true),'last-display recovery remains possible');
+const dockedOff = layout.setEnabled(docked,0,false);
+assert(layout.pendingLidActivation(docked,dockedOff,true,true),'Apply and Save reject a pending re-enable after the lid closes');
+assert(!layout.pendingLidActivation(docked,docked,true,true),'an already-active display does not block unrelated layout edits');
+assert(!layout.pendingLidActivation(docked,dockedOff,true,false),'pending enable is allowed when open');
 const activeConfig = layout.updateConfig('', initial, false);
 const disabled = layout.setEnabled(initial, 0, false);
 const disabledConfig = layout.updateConfig(activeConfig, disabled, false);
@@ -58,6 +68,14 @@ assert.equal(layout.parseMonitors(rebootRaw,dynamic)[0].scale,1);
 // FileView and hyprctl finish independently. Either load order must restore
 // disabled geometry, without overwriting changes the user is still editing.
 const panelSource = fs.readFileSync(path.join(__dirname, '../../shell/plugins/panels/monitor/Panel.qml'), 'utf8');
+const validateLidActivation = panelSource.match(/  function validateLidActivation\(\) \{[\s\S]*?\n  \}/)[0];
+const lidValidation = {Logic:layout, arrangement:docked, live:dockedOff, lidStateKnown:true,
+  laptopLidClosed:true, lidDisplaySetting:{disableOnClose:true}, lidBlockedReason:'Lid closed', error:''};
+vm.createContext(lidValidation);
+vm.runInContext(validateLidActivation,lidValidation);
+assert.equal(lidValidation.validateLidActivation(),false,'automatic lid handling blocks re-enabling a closed display');
+lidValidation.lidDisplaySetting.disableOnClose=false;
+assert.equal(lidValidation.validateLidActivation(),true,'disabling automatic lid handling permits the saved layout');
 const rebuild = panelSource.match(/  function rebuild\(rulesJson\) \{[\s\S]*?\n  \}/)[0];
 for (const configFirst of [false, true]) {
   const state = {Logic:layout, live:[], arrangement:[], selected:0, pinWorkspaces:false,

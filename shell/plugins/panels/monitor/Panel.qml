@@ -35,6 +35,8 @@ Panel {
   property string brightnessReadMonitorName: ""
   property int textSize: 12
   property bool textSizeLoaded: false
+  property bool laptopLidClosed: false
+  property bool lidStateKnown: false
   // Refresh the editor after HDMI, DisplayPort, USB-C, or dock hotplug events.
   property int connectedScreenCount: Quickshell.screens.length
 
@@ -49,6 +51,9 @@ Panel {
   readonly property bool busy: applyProcess.running || saveProcess.running
   readonly property var current: arrangement[selected] || null
   readonly property int enabledCount: arrangement.filter(function(m) { return !m.disabled }).length
+  readonly property bool currentLidBlocked: lidDisplaySetting.disableOnClose && Logic.lidBlocksEnable(arrangement, selected, lidStateKnown, laptopLidClosed)
+  readonly property string lidBlockedReason: lidStateKnown
+    ? "Open the laptop lid to turn on this display" : "Checking laptop lid state"
 
   readonly property string pluginPath: decodeURIComponent(
     Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
@@ -78,7 +83,7 @@ Panel {
   readonly property string currentDetails: {
     var m = current
     if (!m) return ""
-    if (m.disabled) return "Off"
+    if (m.disabled) return currentLidBlocked && lidStateKnown ? "Off · lid closed" : "Off"
     if (m.mirrorOf) return "Mirrors " + m.mirrorOf
     return m.width + "×" + m.height + " @ " + Math.round(m.refreshRate) + " Hz"
       + (m.scale !== 1 ? " · scale " + m.scale : "")
@@ -87,6 +92,7 @@ Panel {
   }
 
   function refresh() {
+    if (!lidStateProcess.running) lidStateProcess.running = true
     if (!monitorsProcess.running) monitorsProcess.running = true
     configFile.reload()
   }
@@ -234,7 +240,15 @@ Panel {
 
   function setCurrentEnabled(enabled) {
     if (!current || (!enabled && enabledCount <= 1)) return
+    if (enabled && currentLidBlocked) { error = lidBlockedReason; return }
     arrangement = Logic.setEnabled(arrangement, selected, enabled)
+  }
+
+  function validateLidActivation() {
+    if (!lidDisplaySetting.disableOnClose) return true
+    if (!Logic.pendingLidActivation(arrangement, live, lidStateKnown, laptopLidClosed)) return true
+    error = lidBlockedReason
+    return false
   }
 
   // Arrow keys and the side buttons: the first press moves the selected
@@ -259,6 +273,7 @@ Panel {
   // Live only: Hyprland forgets this on the next reload until it is saved.
   function apply() {
     if (busy || arrangement.length === 0) return
+    if (!validateLidActivation()) return
     error = ""
     applyProcess.command = ["hyprctl", "eval", Logic.liveScript(configText, arrangement, live, pinWorkspaces)]
     applyProcess.running = true
@@ -266,6 +281,7 @@ Panel {
 
   function save() {
     if (busy || arrangement.length === 0) return
+    if (!validateLidActivation()) return
     error = ""
     saveProcess.command = [
       "strata-save-display-layout",
@@ -287,6 +303,7 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
+      lidStateKnown = false
       viewport.contentY = 0
       error = ""
       lastSide = ""
@@ -301,6 +318,22 @@ Panel {
 
   onConnectedScreenCountChanged: hotplugSettle.restart()
   onSelectedChanged: refreshDisplaySettings(false)
+
+  Process {
+    id: lidStateProcess
+    command: ["strata-hw-laptop-closed"]
+    onExited: function(code) {
+      root.lidStateKnown = code === 0 || code === 1
+      root.laptopLidClosed = code === 0
+    }
+  }
+
+  Timer {
+    interval: 750
+    running: root.opened
+    repeat: true
+    onTriggered: if (!lidStateProcess.running) lidStateProcess.running = true
+  }
 
   Process {
     id: monitorsProcess
@@ -812,6 +845,14 @@ Panel {
           }
         }
 
+        LidDisplaySetting {
+          id: lidDisplaySetting
+          width: parent.width
+          visible: root.arrangement.some(function(m) { return /^(eDP|LVDS|DSI)/i.test(m.name) })
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+        }
+
         // Settings always follow the selected preview tile.
         Column {
           width: parent.width
@@ -857,13 +898,14 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               foreground: root.foreground
               checked: root.current !== null && !root.current.disabled
-              enabled: root.current !== null && (root.current.disabled || root.enabledCount > 1)
+              enabled: root.current !== null && (root.current.disabled ? !root.currentLidBlocked : root.enabledCount > 1)
               opacity: enabled ? 1 : 0.45
               onToggled: root.setCurrentEnabled(root.current.disabled)
 
               PanelToolTip {
                 visible: displayPower.containsMouse
-                text: !displayPower.enabled ? "Keep at least one display enabled"
+                text: root.current && root.current.disabled && root.currentLidBlocked ? root.lidBlockedReason
+                  : !displayPower.enabled ? "Keep at least one display enabled"
                   : displayPower.checked ? "Turn off this display" : "Turn on this display"
               }
             }

@@ -1,3 +1,3 @@
-# Strata 1.1.39
+# Strata 1.1.40
 
-- Remove unused RDP virtual monitors after disconnect while keeping direct connections available
+- Control automatic laptop-display deactivation from Display Layout with a saved lid-close switch

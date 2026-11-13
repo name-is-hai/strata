@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# strata:summary=Read or update Display Layout preferences
+# strata:args=get | set disableOnLidClose <true|false>
+set -euo pipefail
+file=${XDG_CONFIG_HOME:-$HOME/.config}/strata/display-settings.json
+settings='{}'
+if [[ -f $file ]]; then
+  settings=$(jq -ce 'if type == "object" then . else error("Expected display settings object") end' "$file")
+fi
+case ${1:-get} in
+  get)
+    jq -c '.disableOnLidClose = (if (.disableOnLidClose|type) == "boolean" then .disableOnLidClose else true end)' <<<"$settings"
+    ;;
+  set)
+    [[ $# == 3 && $2 == disableOnLidClose && ( $3 == true || $3 == false ) ]] || { echo 'Usage: strata-display-settings set disableOnLidClose <true|false>' >&2; exit 2; }
+    mkdir -p "${file%/*}"
+    temporary=$(mktemp "${file%/*}/.display-settings.XXXXXX")
+    trap 'rm -f -- "$temporary"' EXIT
+    jq --argjson enabled "$3" '.disableOnLidClose=$enabled' <<<"$settings" >"$temporary"
+    mv -f -- "$temporary" "$file"
+    strata-hyprland-monitor-clamshell sync
+    ;;
+  *) echo 'Usage: strata-display-settings get | set disableOnLidClose <true|false>' >&2; exit 2 ;;
+esac

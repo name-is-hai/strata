@@ -487,12 +487,21 @@ its logind inhibitor when the shell exits or System default is selected.
 On laptops with an active external display, closing the lid temporarily
 deactivates the built-in output, including when that output is enabled in
 Display Layout. Opening the lid restores the saved layout, scale and rotation.
+Display Layout provides **Disable laptop display when lid closes** to control
+this behavior. It defaults to on and saves immediately in
+`~/.config/strata/display-settings.json` as `disableOnLidClose`. Turning it off
+restores any temporary lid override and lets the saved display layout apply
+even with the lid closed. Lid-close sleep and power actions remain separate
+in the Power panel.
 This is part of the default lid service on fresh installs, including the System
 default power action; no personal binding or monitor configuration is needed.
 The monitor override is session-only and does not rewrite `monitors.lua` or
 save a disabled-panel preference for the greeter. A panel explicitly disabled
 in the saved layout remains disabled. If the external display is disconnected,
 Strata keeps a usable laptop output rather than disabling the last display.
+With this switch on, Display Layout blocks turning the laptop output on while its lid is closed
+and an external output is enabled. Its tooltip asks you to open the lid first;
+this avoids briefly enabling a display that lid handling immediately removes.
 Configured sleep/hibernate actions still apply. Lid detection uses logind and
 falls back to legacy ACPI state when the service is unavailable.
 
