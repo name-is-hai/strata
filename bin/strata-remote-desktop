@@ -173,6 +173,15 @@ restore() {
   done < <(jq -r '.monitors[] | [.name, (if .dpmsStatus == false then "off" else "enable" end)] | @tsv' "$state")
   rm -f "$state"
 }
+restore_handoff() (
+  # Backend hooks may still be restoring when shutdown reaches its EXIT trap.
+  # Serialize every restoration against those hooks before reading the journal
+  # or deciding whether it is safe to remove the capture output.
+  exec 9>"$state_dir/handoff.lock"
+  flock -w 8 9 || fail 'Another handoff is still running.'
+  restore || return $?
+  if [[ ${1:-} == remove ]]; then remove_output; fi
+)
 setup() {
   [[ ! -e $config/config.toml ]] || fail "Already configured: $config/config.toml"
   [[ -x $backend ]] || fail 'Bundled RDP server is missing. Update strata-config first.'
@@ -194,7 +203,7 @@ serve() {
   mkdir -p "$state_dir"
   exec 8>"$state_dir/server.lock"
   flock -n 8 || fail 'The remote desktop server is already running.'
-  restore
+  restore_handoff
   if [[ -f $output_file ]]; then
     secure_lock || fail 'Refusing to remove a stale remote output without a working lock screen.'
     remove_output
@@ -210,7 +219,7 @@ serve_session() {
   [[ ${1:-} =~ ^127\.0\.0\.1:[0-9]+$ ]] || fail 'A loopback listener address is required.'
   exec 8>"$state_dir/session.lock"
   flock -n 8 || fail 'A remote desktop connection is already running.'
-  restore
+  restore_handoff
   rm -f "$state_dir/hook-failed"
   secure_lock || fail 'Refusing to listen without a working lock screen.'
   local status=0 output listen=$1
@@ -218,8 +227,7 @@ serve_session() {
   cleanup() {
     trap - EXIT INT TERM HUP
     if (( server_pid > 0 )); then kill -TERM "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
-    restore || { echo 'Recovery pending: run strata-remote-desktop recover.' >&2; return 1; }
-    remove_output
+    restore_handoff remove || { echo 'Recovery pending: run strata-remote-desktop recover.' >&2; return 1; }
   }
   trap cleanup EXIT
   trap 'exit 0' INT TERM HUP

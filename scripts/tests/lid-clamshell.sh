@@ -84,6 +84,13 @@ test ! -f "$work/runtime/strata-monitor-clamshell.json"
 jq '. + [{name:"FALLBACK",disabled:false,width:1920,height:1080}]' "$work/live.json" > "$work/next.json"
 mv "$work/next.json" "$work/live.json"
 if strata-hyprland-monitor-external-active; then echo 'FAIL: FALLBACK counted as external'; exit 1; fi
+# A capture output is not a physical external display: closing the laptop lid
+# during RDP must not remove the only physical destination for disconnect.
+jq '. + [{name:"hypr-rdp-strata",disabled:false,width:1920,height:1080},{name:"HEADLESS-2",disabled:false,width:1920,height:1080}]' "$work/live.json" > "$work/next.json"
+mv "$work/next.json" "$work/live.json"
+if strata-hyprland-monitor-external-active; then echo 'FAIL: RDP capture counted as a physical external display'; exit 1; fi
+jq 'map(select(.name!="hypr-rdp-strata" and .name!="HEADLESS-2"))' "$work/live.json" > "$work/next.json"
+mv "$work/next.json" "$work/live.json"
 # An explicitly disabled saved panel must stay disabled when the lid opens.
 jq '.disabled=true' "$work/saved.json" > "$work/next.json"; mv "$work/next.json" "$work/saved.json"
 jq '.[0].disabled=true | . + [{name:"HDMI-A-1",disabled:false,width:2560,height:1440}]' "$work/live.json" > "$work/next.json"

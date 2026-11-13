@@ -150,6 +150,24 @@ try {
   assert.ok(!model().events.some(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create'),
     'reuse an owned output left by interrupted startup');
   assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'reused output is cleaned up');
+  // Model an end hook still holding the handoff lock as shutdown/reconnect
+  // begins. The supervisor must not read or delete that hook's journal yet.
+  reset(); run('hook-start');
+  const journal=path.join(work,'strata-remote-desktop/state.json');
+  fs.writeFileSync(path.join(work,'strata-remote-desktop/output'),'hypr-rdp-strata-1\n');
+  const ordered=spawnSync('/bin/bash',['-c',`
+    exec 9>"$1/handoff.lock"
+    flock -x 9
+    "$2" serve-session 127.0.0.1:3390 9>&- &
+    child=$!
+    /usr/bin/sleep 0.5
+    test -f "$1/state.json" || { flock -u 9; wait "$child"; exit 12; }
+    flock -u 9
+    wait "$child"
+  `,'test',path.dirname(journal),script],{env,encoding:'utf8',timeout:20000});
+  assert.equal(ordered.status,0,ordered.stdout+ordered.stderr);
+  assert.ok(!fs.existsSync(journal),'restoration completes after the hook releases its lock');
+  assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'serialized cleanup removes the virtual monitor');
   reset();m=model();m.monitors.find(x=>x.name==='hypr-rdp-strata-1').disabled=true;
   fs.writeFileSync(modelFile,JSON.stringify(m));run('serve');
   assert.ok(!model().events.some(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create'),

@@ -105,6 +105,9 @@ If an original monitor was unplugged, its windows return to an available
 physical display. Workspaces created remotely also return to a physical display.
 The virtual monitor is then removed. While idle, only the RDP listener remains;
 the next connection starts a new backend and virtual monitor automatically.
+The end hook and server shutdown share a handoff lock so restoration completes
+before the virtual output is removed. RDP and headless capture outputs do not
+count as physical external displays for laptop lid handling.
 
 **Blanking is not a secure local-console handoff.** Local keyboards and mice
 remain attached. Someone at the computer can interfere with the running

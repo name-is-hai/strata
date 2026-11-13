@@ -4,5 +4,6 @@
 # strata:hidden=true
 
 hyprctl monitors all -j | jq -e 'any(.[]; .name != "FALLBACK" and
+  (.name | test("^(hypr-rdp-|HEADLESS-)") | not) and
   (.name | test("^(eDP|LVDS|DSI)-") | not) and .disabled != true and
   (.width // 0) > 0 and (.height // 0) > 0)' >/dev/null 2>&1

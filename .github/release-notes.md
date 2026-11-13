@@ -1,3 +1,3 @@
-# Strata 1.1.40
+# Strata 1.1.41
 
-- Control automatic laptop-display deactivation from Display Layout with a saved lid-close switch
+- Fix leftover RDP virtual monitors after disconnect and prevent capture displays from triggering laptop lid deactivation
