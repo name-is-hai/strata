@@ -1093,13 +1093,11 @@ Item {
   function setRequestedTransparency(value) {
     var nextTransparent = value === true
     requestedTransparent = nextTransparent
-    if (!nextTransparent) {
-      foregroundAnimationEnabled = false
-      transparent = false
-      restoreForegroundAnimation()
-      scheduleTransparentForegroundRefresh()
-      return
-    }
+    // Paint the requested mode immediately. Wallpaper sampling can take seconds
+    // and must only refine contrast, never delay or undo the user's toggle.
+    foregroundAnimationEnabled = false
+    transparent = nextTransparent
+    restoreForegroundAnimation()
     scheduleTransparentForegroundRefresh()
   }
 
@@ -1185,7 +1183,6 @@ Item {
             root.localForegroundSamples = data.samples || ({})
             root.transparentForeground = root.themeForeground
             root.useTransparentForeground = true
-            if (root.requestedTransparent) root.transparent = true
           } catch (error) { console.warn("Invalid bar contrast samples:", error) }
           return
         }
@@ -1195,9 +1192,6 @@ Item {
         if (root.foregroundRequestTransparent) root.transparentForeground = value
         else root.opaqueForeground = value
         root.useTransparentForeground = true
-        if (root.foregroundRequestTransparent && root.requestedTransparent) {
-          root.transparent = true
-        }
         root.restoreForegroundAnimation()
       }
     }

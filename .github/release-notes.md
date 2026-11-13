@@ -1,3 +1,3 @@
-# Strata 1.1.37
+# Strata 1.1.38
 
-- Automatically configure and verify RDP video acceleration on fresh installs and updates
+- Make bar transparency respond immediately to double-clicks while text contrast updates in the background
