@@ -46,6 +46,12 @@ cat > "$work/live.json" <<'JSON'
 [{"name":"eDP-1","disabled":false,"width":1920,"height":1080,"refreshRate":120,"x":-864,"y":120,"scale":1.25,"transform":1},{"name":"HDMI-A-1","disabled":false,"width":2560,"height":1440,"scale":1}]
 JSON
 jq '.[0]' "$work/live.json" > "$work/saved.json"
+mkdir -p "$work/runtime/strata-remote-desktop"
+echo test-instance > "$work/runtime/strata-remote-desktop/active"
+HYPRLAND_INSTANCE_SIGNATURE=test-instance bash "$work/clamshell" closed
+jq -e '.[0].disabled==false' "$work/live.json" >/dev/null
+test ! -f "$work/runtime/strata-monitor-clamshell.json"
+rm "$work/runtime/strata-remote-desktop/active"
 bash "$work/clamshell" closed
 jq -e '.[0].disabled and (.[1].disabled|not)' "$work/live.json" >/dev/null
 jq -e '.name=="eDP-1" and .disabled==false and .scale==1.25' "$work/runtime/strata-monitor-clamshell.json" >/dev/null

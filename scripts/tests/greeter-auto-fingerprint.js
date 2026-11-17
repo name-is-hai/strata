@@ -23,4 +23,21 @@ c=setup(); c.editingUsername=true; c.armFingerprint(); c.startFingerprint(); ass
 c=setup(); c.startFingerprint(); c.handleAuthEvent({type:'prompt', message:'Public challenge', secret:false}); assert(!c.fingerprintRetry.running);
 assert.match(fs.readFileSync(path.join(__dirname, '../../defaults/greeter/config.toml'),'utf8'), /\[general\]\s+service = "strata-greetd"/);
 assert.match(fs.readFileSync(path.join(__dirname, '../../packaging/strata-greetd'),'utf8'), /auth\s+sufficient\s+pam_fprintd\.so max-tries=1 timeout=5\s+auth\s+include\s+greetd/);
+// The isolated greeter cannot always list another user's enrollment. PAM,
+// rather than a broader polkit grant, owns the authoritative reader check.
+for (const [status, expected] of [['yes',true],['unknown',true],['no',false],['',false]]) {
+ c=setup(); c.root=c; c.fingerprintPolicyPresent=true; c.fingerprintPolicySelected=true;
+ c.applyFingerprintAvailability('sotatek',0,status);
+ assert.equal(c.fingerprintAvailable,expected,'probe status '+status);
+ c.armFingerprint(); assert.equal(c.fingerprintRetry.running,expected);
+ if (status==='unknown') {
+  c.startFingerprint();
+  c.handleAuthEvent({type:'notice',message:'No fingerprints enrolled',error:true});
+  c.handleAuthEvent({type:'prompt',message:'Password:',secret:true});
+  assert.equal(c.fingerprintAvailable,false,'PAM quietly settles unknown enrollment');
+  assert.equal(c.message,'');
+ }
+}
+c=setup();c.root=c;c.fingerprintPolicyPresent=false;c.fingerprintPolicySelected=true;
+c.applyFingerprintAvailability('sotatek',0,'unknown');assert.equal(c.fingerprintAvailable,false,'unknown never bypasses the fingerprint PAM policy gate');
 console.log('PASS: automatic start/retry, no empty password, typing preservation, queued submission, rejection, success and unavailable reader');

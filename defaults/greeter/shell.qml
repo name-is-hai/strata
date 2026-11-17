@@ -210,6 +210,18 @@ ShellRoot {
       fingerprintProbe.running = true
     }
   }
+  function applyFingerprintAvailability(user, code, result) {
+    if (user !== root.username.trim()) {
+      root.refreshFingerprintAvailability()
+      return
+    }
+    const status = String(result).trim()
+    // fprintd may deny the greeter's cross-user enrollment query. Unknown is
+    // not an absent reader: let greetd's privileged PAM conversation check it.
+    // PAM's no-reader/no-enrollment notices still disable scanning quietly.
+    root.fingerprintAvailable = code === 0 && (status === "yes" || status === "unknown")
+      && root.fingerprintPolicyPresent && root.fingerprintPolicySelected
+  }
   onFingerprintPolicyPresentChanged: refreshFingerprintAvailability()
   onFingerprintPolicySelectedChanged: refreshFingerprintAvailability()
 
@@ -235,12 +247,7 @@ ShellRoot {
     property string username: ""
     stdout: StdioCollector { id: fingerprintStatus; waitForEnd: true }
     onExited: function(code) {
-      if (username !== root.username.trim()) {
-        root.refreshFingerprintAvailability()
-        return
-      }
-      root.fingerprintAvailable = code === 0 && String(fingerprintStatus.text).trim() === "yes"
-        && root.fingerprintPolicyPresent && root.fingerprintPolicySelected
+      root.applyFingerprintAvailability(username, code, fingerprintStatus.text)
     }
   }
 

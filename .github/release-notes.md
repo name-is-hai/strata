@@ -1,3 +1,4 @@
-# Strata 1.1.41
+# Strata 1.1.42
 
-- Fix leftover RDP virtual monitors after disconnect and prevent capture displays from triggering laptop lid deactivation
+- Keep only the RDP display enabled during remote sessions and restore the previous physical layout on disconnect
+- Start automatic greeter fingerprint scanning when fprintd cannot expose enrollment status to the greeter

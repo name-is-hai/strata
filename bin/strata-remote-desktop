@@ -68,9 +68,6 @@ create_output() {
   if [[ -f $output_file ]]; then
     output=$(<"$output_file")
     owned_output "$output" || fail 'Invalid saved remote output.'
-    if hyprctl monitors -j | jq -e --arg name "$output" 'any(.[]; .name == $name)' >/dev/null; then
-      printf '%s\n' "$output"; return
-    fi
   fi
   # Some Hyprland versions use the requested name verbatim; others append an
   # index. Reuse an output left by interrupted startup before creating one.
@@ -82,7 +79,7 @@ create_output() {
   output=$(jq -er 'if length == 1 then .[0].name else error("Expected one Strata RDP output") end' <<<"$outputs")
   safe_name "$output" || return 1
   printf '%s\n' "$output" >"$output_file"
-  action eval "hl.monitor({ output = \"$output\", disabled = false, mode = \"1920x1080@60\", position = \"-9999x0\", scale = 1 })" >/dev/null
+  action eval "hl.monitor({ output = \"$output\", disabled = false, mode = \"1920x1080@60\", position = \"0x0\", scale = 1 })" >/dev/null
   for count in {1..30}; do
     if hyprctl monitors -j | jq -e --arg name "$output" 'any(.[]; .name == $name and .disabled != true)' >/dev/null; then
       printf '%s\n' "$output"; return
@@ -101,6 +98,56 @@ remove_output() {
   [[ ! -f $state ]] || return 1
   hyprctl output remove "$output" >/dev/null
   rm -f "$output_file"
+  strata-hyprland-monitor-clamshell sync >/dev/null 2>&1 || true
+}
+disable_physical_outputs() {
+  local monitor name
+  while IFS= read -r monitor; do
+    name=$(jq -r .name <<<"$monitor")
+    safe_name "$name" || return 1
+    # Record new hotplug outputs before disabling them as well. Keep the
+    # original workspace/focus snapshot for outputs already in the journal.
+    save --argjson monitor "$monitor" '
+      if any(.monitors[]; .name == $monitor.name) then . else .monitors += [$monitor] end
+      | .physicalDisabled = true' || return 1
+    action eval "hl.monitor({ output = \"$name\", disabled = true })" >/dev/null || return 1
+  done < <(hyprctl monitors -j | physical | jq -c '.[]')
+}
+maintain_remote_output() (
+  exec 9>"$state_dir/handoff.lock"
+  flock -n 9 || return 0
+  [[ -f $active && -f $state ]] || return 0
+  disable_physical_outputs
+)
+restore_physical_outputs() {
+  jq -e '.physicalDisabled == true' "$state" >/dev/null || return 0
+  local monitor name mode position scale transform mirror mirror_field count ready
+  while IFS= read -r monitor; do
+    name=$(jq -r .name <<<"$monitor")
+    safe_name "$name" || return 1
+    # Only re-enable connected outputs that this handoff disabled. An unplugged
+    # monitor stays unplugged; already restored outputs need no extra modeset.
+    hyprctl monitors all -j | jq -e --arg name "$name" 'any(.[]; .name == $name and .disabled == true)' >/dev/null || continue
+    mode=$(jq -r '"\(.width)x\(.height)@\(.refreshRate)"' <<<"$monitor")
+    position=$(jq -r '"\(.x)x\(.y)"' <<<"$monitor")
+    scale=$(jq -r .scale <<<"$monitor")
+    transform=$(jq -r '.transform // 0' <<<"$monitor")
+    mirror=$(jq -r '.mirrorOf // "none"' <<<"$monitor")
+    [[ $mode =~ ^[0-9]+x[0-9]+@[0-9]+([.][0-9]+)?$ && $position =~ ^-?[0-9]+x-?[0-9]+$ \
+      && $scale =~ ^[0-9]+([.][0-9]+)?$ && $transform =~ ^[0-7]$ ]] || return 1
+    mirror_field=
+    if [[ $mirror != none && -n $mirror ]]; then
+      safe_name "$mirror" || return 1
+      mirror_field=", mirror = \"$mirror\""
+    fi
+    action eval "hl.monitor({ output = \"$name\", disabled = false, mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform$mirror_field })" >/dev/null || return 1
+    ready=0
+    for count in {1..30}; do
+      if hyprctl monitors -j | jq -e --arg name "$name" 'any(.[]; .name == $name and .disabled != true)' >/dev/null; then ready=1; break; fi
+      sleep 0.1
+    done
+    (( ready )) || return 1
+  done < <(jq -c '.monitors | sort_by((.mirrorOf // "none") != "none") | .[]' "$state")
 }
 begin() {
   [[ ! -f $state ]] || fail 'An earlier remote handoff needs recovery. Run strata-remote-desktop recover.'
@@ -138,12 +185,16 @@ begin() {
     transfer "$source_id" "$remote"
   done < <(hyprctl workspaces -j | jq -r --arg remote "$remote" '.[] | select(.id > 0 and .monitor != $remote and .windows > 0) | [.id,.monitor] | @tsv')
   action dispatch "hl.dsp.focus({ monitor = \"$remote\" })" >/dev/null
+  # Transfer windows first so disabling their old outputs cannot evacuate them
+  # before their original homes are recorded. The remote output owns (0,0).
+  disable_physical_outputs
 }
 restore() {
   [[ -f $state ]] || return 0
   [[ $(jq -r .instance "$state") == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || fail 'Recovery belongs to a different Hyprland session.'
   # Do not expose the desktop while restoring physical output or wake settings.
   secure_lock || return 1
+  restore_physical_outputs || return 1
   local fallback remote id home home_id key mouse name enabled slot focused
   fallback=$(hyprctl monitors -j | physical | jq -r '.[0].name // empty') || return 1
   [[ -n $fallback ]] || fail 'No physical display is available; reconnect one, then run recover.'
@@ -254,7 +305,7 @@ serve_session() {
     --on-session-start "'$self' hook-start" --on-session-end "'$self' hook-end" &
   server_pid=$!
   while kill -0 "$server_pid" 2>/dev/null; do
-    if [[ -f $active ]]; then blank; fi
+    if [[ -f $active ]]; then maintain_remote_output || return 1; fi
     if [[ -f $state_dir/hook-failed ]]; then rm -f "$state_dir/hook-failed"; return 1; fi
     sleep 1
   done

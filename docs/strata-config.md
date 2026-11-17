@@ -567,6 +567,10 @@ selected account when a reader is available. Failed matches and timeouts retry
 while the form is idle; there is no fingerprint button to press again.
 The greeter sends the authentication request to greetd; it never treats a
 local reader check or UI event as permission to start a session.
+If fprintd denies the greeter's cross-user enrollment query, Strata lets PAM
+check the reader instead of suppressing the initial scan. PAM still decides
+authentication, and missing-reader or missing-enrollment notices quietly stop
+automatic scanning without granting additional fingerprint permissions.
 
 greetd uses one PAM conversation. The `strata-greetd` policy therefore gives
 fingerprint authentication one attempt with a five-second timeout, then falls

@@ -94,13 +94,17 @@ strata-video-acceleration probe
 ## What happens to the local desktop
 
 Once the RDP connection is authenticated, Strata pauses its idle timers,
-prevents input from waking physical displays, blanks those displays, and moves
-occupied normal workspaces to an owned 1920×1080 virtual display. The original
+prevents input from waking physical displays, moves occupied normal workspaces
+to an owned 1920×1080 virtual display at `(0, 0)`, then disables the physical
+outputs. Only the RDP monitor stays enabled. The original
 window and workspace contents are retained; scratchpads remain scratchpads.
 Both exact and indexed Hyprland virtual-output names are supported.
 
 On disconnect, Strata locks the session before returning workspaces and
-restoring physical display and input-wake settings. Unlock locally to continue.
+restoring physical display and input-wake settings. Outputs disabled by RDP are
+re-enabled with their original resolution, refresh rate, position, scale and
+rotation before windows are returned. Outputs already disabled before RDP stay
+disabled. Unlock locally to continue.
 If an original monitor was unplugged, its windows return to an available
 physical display. Workspaces created remotely also return to a physical display.
 The virtual monitor is then removed. While idle, only the RDP listener remains;
@@ -108,8 +112,11 @@ the next connection starts a new backend and virtual monitor automatically.
 The end hook and server shutdown share a handoff lock so restoration completes
 before the virtual output is removed. RDP and headless capture outputs do not
 count as physical external displays for laptop lid handling.
+While the handoff is active, lid handling leaves output enablement to RDP.
+After restoration, normal lid behavior resumes. RustDesk sharing the RDP output
+therefore sees a single enabled monitor at the same origin as its captured image.
 
-**Blanking is not a secure local-console handoff.** Local keyboards and mice
+**Disabling displays is not a secure local-console handoff.** Local keyboards and mice
 remain attached. Someone at the computer can interfere with the running
 session or change its display state. The normal session lock also covers the
 remote display; there is no password-bypass IPC.

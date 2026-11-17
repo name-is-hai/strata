@@ -45,7 +45,18 @@ if(command==='systemd-inhibit') {
     m.monitors.find(x=>x.name===name).dpmsStatus=action!=='off';
   } else if(a[0]==='eval' && a[1].includes('hl.monitor')) {
     const name=a[1].match(/output = "([^"]+)"/)[1];
-    m.monitors.find(x=>x.name===name).disabled=false;
+    const monitor=m.monitors.find(x=>x.name===name);
+    monitor.disabled=a[1].includes('disabled = true');
+    if(monitor.disabled) {monitor.width=0;monitor.height=0;monitor.scale=0;}
+    else {
+      const mode=a[1].match(/mode = "(\d+)x(\d+)@([\d.]+)"/);
+      if(mode) {monitor.width=Number(mode[1]);monitor.height=Number(mode[2]);monitor.refreshRate=Number(mode[3]);}
+      const position=a[1].match(/position = "(-?\d+)x(-?\d+)"/);
+      if(position) {monitor.x=Number(position[1]);monitor.y=Number(position[2]);}
+      const scale=a[1].match(/scale = ([\d.]+)/);if(scale)monitor.scale=Number(scale[1]);
+      const transform=a[1].match(/transform = (\d+)/);if(transform)monitor.transform=Number(transform[1]);
+      monitor.dpmsStatus=true;
+    }
   } else if(a[0]==='eval' && a[1].includes('w.transfer')) {
     const [,source,name,preferred]=a[1].match(/w.transfer\((\d+), "([^"]+)", (nil|\d+)\)/);
     const ws=m.workspaces.find(x=>x.id===Number(source));
@@ -69,13 +80,15 @@ process.stdout.write(out+'\n'); process.exit(status);
 // recorder so they cannot truncate each other's state or lose events.
 fs.writeFileSync(mock, '#!/usr/bin/env bash\nexec flock "$RDP_MODEL.lock" node "' + mock + '.js" "${0##*/}" "$@"\n');
 fs.chmodSync(mock, 0o755);
-for (const name of ['hyprctl', 'strata-shell', 'sleep', 'systemd-inhibit','systemctl','systemd-run','pkexec']) fs.symlinkSync(mock, path.join(bin,name));
+for (const name of ['hyprctl', 'strata-shell', 'strata-hyprland-monitor-clamshell', 'sleep', 'systemd-inhibit','systemctl','systemd-run','pkexec']) fs.symlinkSync(mock, path.join(bin,name));
 const env = {...process.env, XDG_RUNTIME_DIR:work, HYPRLAND_INSTANCE_SIGNATURE:'test-instance', RDP_MODEL:modelFile,
   STRATA_PATH:path.join(work,'strata'),XDG_DATA_HOME:path.join(work,'data'),XDG_CONFIG_HOME:path.join(work,'config')};
 function reset(extra={}) {
   fs.rmSync(path.join(work,'strata-remote-desktop'),{recursive:true,force:true});
   fs.writeFileSync(modelFile, JSON.stringify({
-    monitors:[{id:0,name:'eDP-1',dpmsStatus:true},{id:1,name:'HDMI-A-1',dpmsStatus:true},{id:2,name:'hypr-rdp-strata-1',dpmsStatus:true}],
+    monitors:[{id:0,name:'eDP-1',dpmsStatus:true,width:1920,height:1200,refreshRate:120,x:0,y:1080,scale:1.25,transform:1},
+      {id:1,name:'HDMI-A-1',dpmsStatus:true,width:1920,height:1080,refreshRate:60,x:0,y:0,scale:1,transform:0},
+      {id:2,name:'hypr-rdp-strata-1',dpmsStatus:true,width:1920,height:1080,x:0,y:0,scale:1}],
     workspaces:[{id:101,monitor:'eDP-1',windows:2},{id:201,monitor:'HDMI-A-1',windows:1},{id:301,monitor:'hypr-rdp-strata-1',windows:0}],
     secure:false,events:[],...extra,
   }));
@@ -93,6 +106,7 @@ try {
   assert.deepEqual(state().moves.map(x=>[x.id,x.homeId]),[[302,101],[303,201]],'colliding local numbers allocated independently');
   assert.ok(model().monitors.filter(x=>x.name!=='hypr-rdp-strata-1').every(x=>!x.dpmsStatus));
   assert.ok(model().monitors.find(x=>x.name==='hypr-rdp-strata-1').dpmsStatus,'capture output stays on');
+  assert.deepEqual(model().monitors.filter(x=>!x.disabled).map(x=>x.name),['hypr-rdp-strata-1'],'RDP is the only enabled output');
   assert.ok(model().workspaces.filter(x=>x.windows).every(x=>x.monitor==='hypr-rdp-strata-1'));
   run('active');
   let m=model(); m.events=[]; fs.writeFileSync(modelFile,JSON.stringify(m));
@@ -101,8 +115,26 @@ try {
   assert.deepEqual(model().events[0].slice(1),['lock','lock'],'lock before restoring anything');
   assert.deepEqual(model().workspaces.filter(x=>x.windows).map(x=>[x.id,x.monitor]),[[101,'eDP-1'],[201,'HDMI-A-1']]);
   assert.ok(model().monitors.every(x=>x.dpmsStatus));
+  const restoredLaptop=model().monitors.find(x=>x.name==='eDP-1');
+  assert.equal(restoredLaptop.disabled,false);
+  assert.deepEqual([restoredLaptop.width,restoredLaptop.height,restoredLaptop.refreshRate,restoredLaptop.x,restoredLaptop.y,restoredLaptop.scale,restoredLaptop.transform],
+    [1920,1200,120,0,1080,1.25,1],'restore saved mode, refresh, position, scale and rotation');
   assert.ok(model().events.some(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('key_press_enables_dpms = false, mouse_move_enables_dpms = true')),'restore original wake options');
   run('active',false); run('recover');
+
+  reset();m=model();m.monitors.find(x=>x.name==='eDP-1').disabled=true;
+  m.workspaces.find(x=>x.monitor==='eDP-1').windows=0;
+  fs.writeFileSync(modelFile,JSON.stringify(m));run('hook-start');run('hook-end');
+  assert.equal(model().monitors.find(x=>x.name==='eDP-1').disabled,true,'a display disabled before RDP stays disabled');
+
+  reset();run('hook-start');
+  m=model();m.monitors=m.monitors.filter(x=>x.name.startsWith('hypr-rdp-'));
+  fs.writeFileSync(modelFile,JSON.stringify(m));run('hook-end',false);
+  assert.ok(fs.existsSync(path.join(work,'strata-remote-desktop/state.json')),'all physical outputs unplugged preserves recovery');
+  assert.ok(model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'never remove the only remaining display on failed restoration');
+  m=model();m.monitors.push({...state().monitors.find(x=>x.name==='HDMI-A-1'),disabled:true,width:0,height:0});
+  fs.writeFileSync(modelFile,JSON.stringify(m));run('recover');
+  assert.ok(!model().monitors.find(x=>x.name==='HDMI-A-1').disabled,'a reconnected display can recover the handoff');
 
   reset(); run('hook-start'); m=model(); m.failLock=true; m.events=[]; fs.writeFileSync(modelFile,JSON.stringify(m));
   run('hook-end',false);
@@ -142,6 +174,8 @@ try {
     fs.mkdirSync(data,{recursive:true}); fs.mkdirSync(config,{recursive:true});
     fs.copyFileSync('/usr/bin/true',path.join(data,'hypr-rdp')); fs.writeFileSync(path.join(config,'config.toml'),'');
     run('serve',!failServer);
+    const remoteRule=model().events.find(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('hl.monitor'));
+    assert.ok(remoteRule[2].includes('position = "0x0"'),'remote output uses the capture-local origin');
     assert.ok(model().secure,'server secures the lock before listening');
     assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'normal exit and startup failure clean up owned virtual output');
     assert.ok(!fs.existsSync(path.join(work,'strata-remote-desktop/output')));

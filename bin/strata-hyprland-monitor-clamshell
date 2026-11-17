@@ -7,6 +7,12 @@ TOGGLES_DIR="$HOME/.local/state/strata/toggles/hypr"
 RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 # Session-only state: never write a lid-close override into monitors.lua.
 CLAMSHELL_FLAG="$RUNTIME_DIR/strata-monitor-clamshell.json"
+# An authenticated RDP handoff owns output enablement until restoration ends.
+# Lid/hotplug events must not re-enable physical displays during remote use.
+if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -f $RUNTIME_DIR/strata-remote-desktop/active \
+  && $(<"$RUNTIME_DIR/strata-remote-desktop/active") == "$HYPRLAND_INSTANCE_SIGNATURE" ]]; then
+  exit 0
+fi
 MANUAL_DISABLE_FLAG="$TOGGLES_DIR/internal-monitor-disable.lua"
 SCALE_STATE="$TOGGLES_DIR/internal-monitor-scale"
 MONITOR_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/monitors.lua"
