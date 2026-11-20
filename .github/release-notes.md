@@ -1,4 +1,3 @@
-# Strata 1.1.44
+# Strata 1.1.45
 
-- Keep the RDP display clear of physical screens during connection and disconnect
-- Preserve the remote resolution, refresh rate and scale while restoring the saved monitor layout
+- Avoid unnecessary shell configuration refreshes when package updates rewrite unchanged defaults

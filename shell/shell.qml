@@ -86,7 +86,11 @@ ShellRoot {
         console.warn("shell.json parse failed, using defaults:", e)
       }
     }
-    shellConfig = user || defaults
+    var next = user || defaults
+    // RPM installation can rewrite the default file several times even when
+    // the effective personal config is unchanged. Keep the current object so
+    // those reads do not notify every plugin and rebuild live widget state.
+    if (JSON.stringify(next) !== JSON.stringify(shellConfig)) shellConfig = next
   }
 
   function loadDefaults(raw) {
