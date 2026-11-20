@@ -63,8 +63,34 @@ blank() {
   local name
   while IFS= read -r name; do dpms off "$name"; done < <(hyprctl monitors -j | physical | jq -r '.[] | select(.dpmsStatus != false) | .name')
 }
+staging_position() {
+  local monitors saved='[]'
+  monitors=$(hyprctl monitors all -j) || return 1
+  if [[ -f $state ]]; then saved=$(jq '.monitors' "$state") || return 1; fi
+  # Include disabled outputs and the recovery journal: their saved positions
+  # become live again during restoration. Use the larger dimension so rotated
+  # outputs are covered too, regardless of how the compositor reports width.
+  jq -nr --argjson live "$monitors" --argjson saved "$saved" '
+    [0, (($live + $saved)[]
+      | select(.name != "FALLBACK" and (.name | startswith("hypr-rdp-strata") | not))
+      | (.scale // 1) as $scale
+      | (.x // 0) + (([.width // 0, .height // 0] | max) / (if $scale > 0 then $scale else 1 end)))]
+    | ((max | ceil) + 64 | tostring) + "x0"'
+}
+position_remote_output() {
+  local output=$1 position=$2 monitor mode scale transform
+  owned_output "$output" && [[ $position =~ ^-?[0-9]+x-?[0-9]+$ ]] || return 1
+  monitor=$(hyprctl monitors -j | jq -c --arg name "$output" '.[] | select(.name == $name and .disabled != true)') || return 1
+  [[ -n $monitor ]] || return 0
+  mode=$(jq -r '"\(.width)x\(.height)@\(.refreshRate)"' <<<"$monitor")
+  scale=$(jq -r .scale <<<"$monitor")
+  transform=$(jq -r '.transform // 0' <<<"$monitor")
+  [[ $mode =~ ^[0-9]+x[0-9]+@[0-9]+([.][0-9]+)?$ && $scale =~ ^[0-9]+([.][0-9]+)?$ && $transform =~ ^[0-7]$ ]] || return 1
+  # Monitor rules replace earlier rules; preserve the client's negotiated mode.
+  action eval "hl.monitor({ output = \"$output\", disabled = false, mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform })" >/dev/null
+}
 create_output() {
-  local output outputs count
+  local output outputs count position
   if [[ -f $output_file ]]; then
     output=$(<"$output_file")
     owned_output "$output" || fail 'Invalid saved remote output.'
@@ -72,14 +98,18 @@ create_output() {
   # Some Hyprland versions use the requested name verbatim; others append an
   # index. Reuse an output left by interrupted startup before creating one.
   outputs=$(hyprctl monitors all -j | remote_outputs)
+  position=$(staging_position) || return 1
   if [[ $(jq length <<<"$outputs") == 0 ]]; then
+    # Set the rule before creation so a previous connection's origin rule
+    # cannot briefly overlap an enabled physical display.
+    action eval "hl.monitor({ output = \"hypr-rdp-strata\", disabled = false, mode = \"1920x1080@60\", position = \"$position\", scale = 1 })" >/dev/null
     hyprctl output create headless hypr-rdp-strata >/dev/null
     outputs=$(hyprctl monitors all -j | remote_outputs)
   fi
   output=$(jq -er 'if length == 1 then .[0].name else error("Expected one Strata RDP output") end' <<<"$outputs")
   safe_name "$output" || return 1
   printf '%s\n' "$output" >"$output_file"
-  action eval "hl.monitor({ output = \"$output\", disabled = false, mode = \"1920x1080@60\", position = \"0x0\", scale = 1 })" >/dev/null
+  action eval "hl.monitor({ output = \"$output\", disabled = false, mode = \"1920x1080@60\", position = \"$position\", scale = 1 })" >/dev/null
   for count in {1..30}; do
     if hyprctl monitors -j | jq -e --arg name "$output" 'any(.[]; .name == $name and .disabled != true)' >/dev/null; then
       printf '%s\n' "$output"; return
@@ -188,12 +218,18 @@ begin() {
   # Transfer windows first so disabling their old outputs cannot evacuate them
   # before their original homes are recorded. The remote output owns (0,0).
   disable_physical_outputs
+  position_remote_output "$remote" 0x0
 }
 restore() {
   [[ -f $state ]] || return 0
   [[ $(jq -r .instance "$state") == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || fail 'Recovery belongs to a different Hyprland session.'
   # Do not expose the desktop while restoring physical output or wake settings.
   secure_lock || return 1
+  # Keep the virtual output alive for workspace transfers, but move it clear
+  # before any physical display is enabled at its saved coordinates.
+  local staging
+  staging=$(staging_position) || return 1
+  position_remote_output "$(jq -r .remote "$state")" "$staging" || return 1
   restore_physical_outputs || return 1
   local fallback remote id home home_id key mouse name enabled slot focused
   fallback=$(hyprctl monitors -j | physical | jq -r '.[0].name // empty') || return 1

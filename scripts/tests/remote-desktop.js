@@ -38,7 +38,13 @@ if(command==='systemd-inhibit') {
   if(a[0]==='monitors') out=JSON.stringify(a.includes('all')?m.monitors:m.monitors.filter(x=>!x.disabled));
   else if(a[0]==='workspaces') out=JSON.stringify(m.workspaces);
   else if(a[0]==='getoption') out=JSON.stringify({int:a[1].includes('key_press')?0:1});
-  else if(a[0]==='output' && a[1]==='create') m.monitors.push({id:2,name:m.outputName||'hypr-rdp-strata-1',dpmsStatus:true});
+  else if(a[0]==='output' && a[1]==='create') {
+    const name=m.outputName||'hypr-rdp-strata-1';
+    const rule=(m.rules||{})[name]||'';
+    const position=rule.match(/position = "(-?\d+)x(-?\d+)"/);
+    m.monitors.push({id:2,name,dpmsStatus:true,width:1920,height:1080,refreshRate:60,scale:1,
+      x:position?Number(position[1]):1920,y:position?Number(position[2]):0});
+  }
   else if(a[0]==='output' && a[1]==='remove') m.monitors=m.monitors.filter(x=>x.name!==a[2]);
   else if(a[0]==='dispatch' && a[1].includes('dpms')) {
     const [,action,name]=a[1].match(/action = "([^"]+)", monitor = "([^"]+)"/);
@@ -46,6 +52,8 @@ if(command==='systemd-inhibit') {
   } else if(a[0]==='eval' && a[1].includes('hl.monitor')) {
     const name=a[1].match(/output = "([^"]+)"/)[1];
     const monitor=m.monitors.find(x=>x.name===name);
+    m.rules??={};m.rules[name]=a[1];
+    if(monitor) {
     monitor.disabled=a[1].includes('disabled = true');
     if(monitor.disabled) {monitor.width=0;monitor.height=0;monitor.scale=0;}
     else {
@@ -56,6 +64,7 @@ if(command==='systemd-inhibit') {
       const scale=a[1].match(/scale = ([\d.]+)/);if(scale)monitor.scale=Number(scale[1]);
       const transform=a[1].match(/transform = (\d+)/);if(transform)monitor.transform=Number(transform[1]);
       monitor.dpmsStatus=true;
+    }
     }
   } else if(a[0]==='eval' && a[1].includes('w.transfer')) {
     const [,source,name,preferred]=a[1].match(/w.transfer\((\d+), "([^"]+)", (nil|\d+)\)/);
@@ -73,6 +82,16 @@ if(command==='systemd-inhibit') {
     }
   }
 }
+if(command==='hyprctl' && (a[0]==='eval'||a[0]==='output')) {
+  const enabled=m.monitors.filter(x=>!x.disabled);
+  const box=x=>({x:x.x,y:x.y,w:(x.transform%2?x.height:x.width)/x.scale,
+    h:(x.transform%2?x.width:x.height)/x.scale});
+  for(let i=0;i<enabled.length;i++) for(let j=i+1;j<enabled.length;j++) {
+    const x=box(enabled[i]),y=box(enabled[j]);
+    if(x.x<y.x+y.w&&y.x<x.x+x.w&&x.y<y.y+y.h&&y.y<x.y+x.h)
+      (m.overlaps??=[]).push([enabled[i].name,enabled[j].name]);
+  }
+}
 fs.writeFileSync(file,JSON.stringify(m));
 process.stdout.write(out+'\n'); process.exit(status);
 `);
@@ -88,7 +107,7 @@ function reset(extra={}) {
   fs.writeFileSync(modelFile, JSON.stringify({
     monitors:[{id:0,name:'eDP-1',dpmsStatus:true,width:1920,height:1200,refreshRate:120,x:0,y:1080,scale:1.25,transform:1},
       {id:1,name:'HDMI-A-1',dpmsStatus:true,width:1920,height:1080,refreshRate:60,x:0,y:0,scale:1,transform:0},
-      {id:2,name:'hypr-rdp-strata-1',dpmsStatus:true,width:1920,height:1080,x:0,y:0,scale:1}],
+      {id:2,name:'hypr-rdp-strata-1',dpmsStatus:true,width:1920,height:1080,refreshRate:60,x:1984,y:0,scale:1}],
     workspaces:[{id:101,monitor:'eDP-1',windows:2},{id:201,monitor:'HDMI-A-1',windows:1},{id:301,monitor:'hypr-rdp-strata-1',windows:0}],
     secure:false,events:[],...extra,
   }));
@@ -108,6 +127,10 @@ try {
   assert.ok(model().monitors.find(x=>x.name==='hypr-rdp-strata-1').dpmsStatus,'capture output stays on');
   assert.deepEqual(model().monitors.filter(x=>!x.disabled).map(x=>x.name),['hypr-rdp-strata-1'],'RDP is the only enabled output');
   assert.ok(model().workspaces.filter(x=>x.windows).every(x=>x.monitor==='hypr-rdp-strata-1'));
+  const originIndex=model().events.findIndex(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('position = "0x0"'));
+  const disableIndices=model().events.flatMap((x,i)=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('disabled = true')?[i]:[]);
+  assert.ok(disableIndices.length===2&&disableIndices.every(i=>i<originIndex),'disable all physical outputs before moving capture to the origin');
+  assert.equal(model().monitors.find(x=>x.name==='hypr-rdp-strata-1').x,0);
   run('active');
   let m=model(); m.events=[]; fs.writeFileSync(modelFile,JSON.stringify(m));
   run('hook-end');
@@ -115,12 +138,26 @@ try {
   assert.deepEqual(model().events[0].slice(1),['lock','lock'],'lock before restoring anything');
   assert.deepEqual(model().workspaces.filter(x=>x.windows).map(x=>[x.id,x.monitor]),[[101,'eDP-1'],[201,'HDMI-A-1']]);
   assert.ok(model().monitors.every(x=>x.dpmsStatus));
+  const restoreEvents=model().events;
+  const parkIndex=restoreEvents.findIndex(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('output = "hypr-rdp-strata-1"'));
+  const enableIndex=restoreEvents.findIndex(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('disabled = false')&&!x[2].includes('hypr-rdp-strata'));
+  assert.ok(parkIndex>=0&&parkIndex<enableIndex,'move the virtual output clear before restoring physical displays');
+  assert.ok(restoreEvents[parkIndex][2].includes('position = "1984x0"'),'journal supplies bounds after disabled outputs lose their geometry');
   const restoredLaptop=model().monitors.find(x=>x.name==='eDP-1');
   assert.equal(restoredLaptop.disabled,false);
   assert.deepEqual([restoredLaptop.width,restoredLaptop.height,restoredLaptop.refreshRate,restoredLaptop.x,restoredLaptop.y,restoredLaptop.scale,restoredLaptop.transform],
     [1920,1200,120,0,1080,1.25,1],'restore saved mode, refresh, position, scale and rotation');
   assert.ok(model().events.some(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('key_press_enables_dpms = false, mouse_move_enables_dpms = true')),'restore original wake options');
+  assert.deepEqual(model().overlaps||[],[],'no enabled outputs overlap during handoff or restoration');
   run('active',false); run('recover');
+
+  reset();run('hook-start');
+  m=model();Object.assign(m.monitors.find(x=>x.name==='hypr-rdp-strata-1'),
+    {width:2560,height:1440,refreshRate:120,scale:1.25,transform:0});
+  fs.writeFileSync(modelFile,JSON.stringify(m));run('hook-end');
+  const negotiated=model().monitors.find(x=>x.name==='hypr-rdp-strata-1');
+  assert.deepEqual([negotiated.width,negotiated.height,negotiated.refreshRate,negotiated.scale],
+    [2560,1440,120,1.25],'parking preserves the client-negotiated resolution, refresh rate and scale');
 
   reset();m=model();m.monitors.find(x=>x.name==='eDP-1').disabled=true;
   m.workspaces.find(x=>x.monitor==='eDP-1').windows=0;
@@ -175,9 +212,13 @@ try {
     fs.copyFileSync('/usr/bin/true',path.join(data,'hypr-rdp')); fs.writeFileSync(path.join(config,'config.toml'),'');
     run('serve',!failServer);
     const remoteRule=model().events.find(x=>x[0]==='hyprctl'&&x[1]==='eval'&&x[2].includes('hl.monitor'));
-    assert.ok(remoteRule[2].includes('position = "0x0"'),'remote output uses the capture-local origin');
+    assert.ok(remoteRule[2].includes('position = "1984x0"'),'stage beyond physical displays before authentication');
+    const ruleIndex=model().events.indexOf(remoteRule);
+    const createIndex=model().events.findIndex(x=>x[0]==='hyprctl'&&x[1]==='output'&&x[2]==='create');
+    assert.ok(ruleIndex<createIndex,'configure safe position before creating the output');
     assert.ok(model().secure,'server secures the lock before listening');
     assert.ok(!model().monitors.some(x=>x.name.startsWith('hypr-rdp-')),'normal exit and startup failure clean up owned virtual output');
+    assert.deepEqual(model().overlaps||[],[],'startup and cleanup never overlap enabled outputs');
     assert.ok(!fs.existsSync(path.join(work,'strata-remote-desktop/output')));
   }
   reset(); run('serve');

@@ -1,4 +1,4 @@
-# Strata 1.1.43
+# Strata 1.1.44
 
-- Use Nautilus for portal file selection on fresh installs, with GTK fallback
-- Install the GNOME portal backend while preserving existing personal portal settings
+- Keep the RDP display clear of physical screens during connection and disconnect
+- Preserve the remote resolution, refresh rate and scale while restoring the saved monitor layout
