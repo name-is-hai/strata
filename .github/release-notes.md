@@ -1,4 +1,4 @@
-# Strata 1.1.42
+# Strata 1.1.43
 
-- Keep only the RDP display enabled during remote sessions and restore the previous physical layout on disconnect
-- Start automatic greeter fingerprint scanning when fprintd cannot expose enrollment status to the greeter
+- Use Nautilus for portal file selection on fresh installs, with GTK fallback
+- Install the GNOME portal backend while preserving existing personal portal settings

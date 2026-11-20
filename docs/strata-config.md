@@ -644,6 +644,17 @@ existing runtime paths; `config/` holds per-user entry files.
 Personal Ghostty, Neovim, Zsh, Tmux, Git, Fcitx5, Zed, and Mise settings are
 kept in the separate `dotfiles` repository and are never packaged by Strata.
 
+Portal-enabled applications use GNOME's Nautilus file chooser, with GTK as a
+fallback. The application chooser uses GTK, while other portals prefer Hyprland.
+These defaults are seeded from
+`config/xdg-desktop-portal/hyprland-portals.conf`; existing personal portal
+configuration is preserved. To adopt the file chooser on an existing install,
+set `org.freedesktop.impl.portal.FileChooser=gnome;gtk` in
+`~/.config/xdg-desktop-portal/hyprland-portals.conf`, restart
+`xdg-desktop-portal.service` with `systemctl --user restart`, and reopen the
+affected applications. Applications with their own file dialogs may not use
+portals.
+
 ## Wireless display and media casting
 
 Use **Tools → Toggle → Cast** in the menu (or search “Cast”). Off is the

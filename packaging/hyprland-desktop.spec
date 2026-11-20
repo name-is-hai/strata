@@ -2,7 +2,7 @@ Name:           hyprland-desktop
 # Preserve upgrades from the 4.0.0-alpha development packages.
 Epoch:          1
 Version:        1.1.1
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Personal Hyprland desktop package set
 
 License:        MIT AND Unicode-DFS-2016
@@ -73,6 +73,7 @@ Requires:       bolt
 # Portals and core Wayland desktop integration.
 Requires:       xdg-desktop-portal
 Requires:       xdg-desktop-portal-hyprland-upstream >= 1.4.1
+Requires:       xdg-desktop-portal-gnome
 Requires:       xdg-desktop-portal-gtk
 Requires:       wl-clipboard
 Requires:       grim
@@ -156,6 +157,9 @@ install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %license LICENSE
 
 %changelog
+* Fri Nov 20 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-4
+- Install the GNOME portal backend for the Nautilus file chooser
+
 * Thu Oct 22 2026 Strata Maintainers <maintainers@strata.dev> - 1:1.1.1-3
 - Install FUSE 2 compatibility and FUSE 3 filesystem support by default
 
