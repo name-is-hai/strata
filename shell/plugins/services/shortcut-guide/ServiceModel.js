@@ -278,7 +278,7 @@ function shouldReloadCatalogBridge(generation, integrationState, lastReloadHash,
   return isObject(generation)
     && generation.ok === true
     && generation.changed === true
-    && integrationState === "enabled"
+    && (integrationState === "enabled" || integrationState === "disabled")
     && typeof generation.sourceHash === "string"
     && /^sha256:[0-9a-f]{64}$/.test(generation.sourceHash)
     && generation.sourceHash !== String(lastReloadHash || "")

@@ -18,6 +18,9 @@
 -- the bridge rather than broadening what it observes or emits.
 local STATE_NAME = "__strata_shortcut_guide_bridge_state"
 local ORDERED_MODIFIERS = { "SUPER", "SHIFT", "CTRL", "ALT" }
+-- A catalog publication is not a compositor config reload. Existing observers
+-- and pointer bindings remain installed; only replace their allowlist/state.
+local refresh_only = ... == "refresh"
 
 local state_home = os.getenv("XDG_STATE_HOME")
 if not state_home or state_home == "" then
@@ -98,6 +101,7 @@ end
 
 local existing = rawget(_G, STATE_NAME)
 if type(existing) == "table" and existing.behaviorVersion == 2 then
+  cancel_guide(existing)
   local catalog, modifiers = load_catalog()
   existing.enabled = catalog ~= nil
   existing.catalog = catalog
@@ -107,14 +111,14 @@ if type(existing) == "table" and existing.behaviorVersion == 2 then
   existing.guideRoot = nil
   existing.blocked = false
   existing.buttons = {}
-  observe_pointer(existing)
+  if not refresh_only then observe_pointer(existing) end
   return
 end
 -- Disable callbacks from an older bridge implementation during a live upgrade.
 if type(existing) == "table" then existing.enabled = false end
 
 -- A missing or malformed catalog leaves the bridge inert. The service will
--- request a Hyprland reload after publishing a valid catalog; never retry file
+-- refresh this bridge after publishing a valid catalog; never retry file
 -- access from the keyboard callback.
 local initial_catalog, initial_modifiers = load_catalog()
 if not initial_catalog then return end

@@ -86,6 +86,7 @@ Item {
   }
 
   readonly property string generatorPath: localPath(Qt.resolvedUrl("scripts/generate-catalog"))
+  readonly property string bridgePath: localPath(Qt.resolvedUrl("bridge.lua"))
   function protocolPayload(event) {
     if (!event || String(event.name || "") !== "custom") return ""
     var payload = String(event.data || "")
@@ -420,12 +421,15 @@ Item {
     }
     if (!Model.shouldReloadCatalogBridge(
           generation,
-          "enabled",
+          root.integrationState,
           lastBridgeReloadSourceHash,
           activeBridgeReloadSourceHash,
           pendingBridgeReloadSourceHash)) return false
     activeBridgeReloadSourceHash = generation.sourceHash
-    catalogBridgeReloadProcess.command = ["hyprctl", "reload"]
+    // Refresh only our allowlist. Reloading all of Hyprland reapplies monitor
+    // rules, briefly re-enabling a closed laptop display on shell startup.
+    catalogBridgeReloadProcess.command = ["hyprctl", "eval",
+      "assert(loadfile(" + JSON.stringify(root.bridgePath) + "))(\"refresh\")"]
     catalogBridgeReloadProcess.running = true
     return true
   }
@@ -505,10 +509,11 @@ Item {
   Process {
     id: catalogBridgeReloadProcess
     running: false
+    stdout: StdioCollector { id: bridgeRefreshOutput; waitForEnd: true }
     onExited: function(exitCode, exitStatus) {
       var completedHash = root.activeBridgeReloadSourceHash
       root.activeBridgeReloadSourceHash = ""
-      if (exitCode === 0) root.lastBridgeReloadSourceHash = completedHash
+      if (exitCode === 0 && String(bridgeRefreshOutput.text || "").trim() === "ok") root.lastBridgeReloadSourceHash = completedHash
       else root.setDiagnostic("integrationFailures", 1)
 
       if (root.pendingBridgeReloadSourceHash !== "") {

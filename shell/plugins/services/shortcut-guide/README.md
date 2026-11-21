@@ -27,6 +27,15 @@ bindings and the XKB keymap at startup/configuration changes; it is not a
 keyboard-watching daemon. Generated state lives in
 ~/.local/state/strata/shortcut-guide/.
 
+Catalog publications refresh the Lua observer's allowlist directly through
+`hyprctl eval`. They never reload the compositor configuration or reapply
+monitor rules. Refreshes reuse existing input observers and pointer bindings,
+cancel an open guide, and reset held modifiers before using the new catalog.
+Turning the guide off also refreshes the observer so it becomes inert.
+
+Regression check: `node scripts/tests/shortcut-guide-refresh.js` (requires
+LuaJIT). The test uses a simulated compositor and does not inject input.
+
 Strata installs the bridge through its packaged input defaults. It does not
 edit the user's Hyprland configuration. There is no additional bar icon.
 Diagnostics: strata-shell shortcut-guide diagnostics
